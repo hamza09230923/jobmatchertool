@@ -87,4 +87,4 @@ Open http://localhost:5173. For combined dev (frontend + backend) you can run th
 - Export annotated CV as PDF/Docx.
 
 ## License
-Proprietary (not specified by user). Update this section if you choose an OSS license.
+n/a
