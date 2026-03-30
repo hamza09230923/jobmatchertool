@@ -160,7 +160,8 @@ a {
   background: radial-gradient(circle, rgba(255, 209, 102, 0.5), transparent 62%);
 }
 
-.landing-shell {
+.landing-shell,
+.layout-shell {
   position: relative;
   z-index: 1;
   width: min(100%, 760px);
@@ -209,10 +210,11 @@ a {
 
 .hero-title {
   margin: 0 auto 24px;
-  max-width: 10ch;
+  width: 100%;
   padding-inline: 0.08em;
   font-size: clamp(3.4rem, 11vw, 5.5rem);
   line-height: 1.04;
+  text-align: center;
   text-shadow: none;
 }
 
@@ -225,6 +227,31 @@ a {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.typing-phrase {
+  display: inline;
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 3px;
+  height: 0.82em;
+  background: var(--accent);
+  border-radius: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+  animation: blink 1s step-end infinite;
+  box-shadow: 0 0 12px var(--accent);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .hero-subtitle {
@@ -1323,6 +1350,7 @@ a {
   pointer-events: none;
 }
 
+/* ── In-box orbs: offset-path chase animation ── */
 .hero-showcase__orb {
   position: absolute;
   top: 0;
@@ -1340,9 +1368,7 @@ a {
 
 .hero-showcase__orb--a {
   background: rgba(94, 228, 255, 0.92);
-  box-shadow:
-    0 0 22px rgba(94, 228, 255, 0.85),
-    0 0 42px rgba(94, 228, 255, 0.34);
+  box-shadow: 0 0 22px rgba(94, 228, 255, 0.85), 0 0 42px rgba(94, 228, 255, 0.34);
   offset-path: path("M 286 74 C 232 42, 138 52, 88 118 S 72 266, 138 320 S 304 348, 326 258 S 292 102, 206 116 S 70 214, 64 148 S 146 54, 256 78 S 334 244, 282 334 S 112 342, 100 248 S 228 156, 304 206 S 306 330, 210 334 S 78 262, 110 174 S 238 106, 286 74");
   animation: showcaseBlueRun 18.4s linear infinite;
 }
@@ -1351,11 +1377,102 @@ a {
   width: 9px;
   height: 9px;
   background: rgba(255, 209, 102, 0.94);
-  box-shadow:
-    0 0 20px rgba(255, 209, 102, 0.8),
-    0 0 34px rgba(255, 209, 102, 0.3);
+  box-shadow: 0 0 20px rgba(255, 209, 102, 0.8), 0 0 34px rgba(255, 209, 102, 0.3);
   offset-path: path("M 266 96 C 220 68, 146 78, 102 134 S 92 250, 150 292 S 286 310, 298 238 S 272 118, 204 132 S 96 210, 92 162 S 158 88, 242 104 S 306 228, 260 302 S 122 314, 118 228 S 222 164, 276 202 S 274 296, 198 302 S 104 246, 126 182 S 224 124, 266 96");
   animation: showcaseYellowChase 18.4s linear infinite -1.8s;
+}
+
+/* ── Hover dance: spin wildly inside the box then settle back ── */
+.orb-dance-a {
+  animation: orbDanceA 2.4s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+.orb-dance-b {
+  animation: orbDanceB 2.4s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+@keyframes orbDanceA {
+  0%   { offset-distance: 0%;   transform: scale(1); }
+  15%  { offset-distance: 8%;   transform: scale(1.9); }
+  30%  { offset-distance: 22%;  transform: scale(2.4); }
+  50%  { offset-distance: 42%;  transform: scale(2.1); }
+  68%  { offset-distance: 62%;  transform: scale(1.7); }
+  82%  { offset-distance: 78%;  transform: scale(1.3); }
+  92%  { offset-distance: 88%;  transform: scale(1.1); }
+  100% { offset-distance: 100%; transform: scale(1); }
+}
+
+@keyframes orbDanceB {
+  0%   { offset-distance: 0%;   transform: scale(1); }
+  15%  { offset-distance: 12%;  transform: scale(1.7); }
+  30%  { offset-distance: 28%;  transform: scale(2.2); }
+  50%  { offset-distance: 48%;  transform: scale(1.9); }
+  68%  { offset-distance: 65%;  transform: scale(1.5); }
+  82%  { offset-distance: 80%;  transform: scale(1.2); }
+  92%  { offset-distance: 90%;  transform: scale(1.05); }
+  100% { offset-distance: 100%; transform: scale(1); }
+}
+
+/* ── Traveling orbs spawned by JS on hover ── */
+.orb-real {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transform: translate(-50%, -50%);
+  will-change: left, top;
+}
+
+.orb-real--a {
+  width: 13px;
+  height: 13px;
+  background: rgba(94, 228, 255, 0.95);
+  box-shadow:
+    0 0 18px rgba(94, 228, 255, 0.9),
+    0 0 40px rgba(94, 228, 255, 0.45),
+    0 0 80px rgba(94, 228, 255, 0.18);
+}
+
+.orb-real--b {
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 209, 102, 0.96);
+  box-shadow:
+    0 0 16px rgba(255, 209, 102, 0.9),
+    0 0 34px rgba(255, 209, 102, 0.4),
+    0 0 68px rgba(255, 209, 102, 0.16);
+}
+
+/* ── Float-orb: unused ── */
+.float-orb {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transform: translate(-50%, -50%);
+  will-change: left, top;
+}
+
+.float-orb--a {
+  width: 13px;
+  height: 13px;
+  background: rgba(94, 228, 255, 0.95);
+  box-shadow:
+    0 0 18px rgba(94, 228, 255, 0.9),
+    0 0 40px rgba(94, 228, 255, 0.4),
+    0 0 72px rgba(94, 228, 255, 0.14);
+}
+
+.float-orb--b {
+  width: 9px;
+  height: 9px;
+  background: rgba(255, 209, 102, 0.96);
+  box-shadow:
+    0 0 16px rgba(255, 209, 102, 0.88),
+    0 0 32px rgba(255, 209, 102, 0.35),
+    0 0 60px rgba(255, 209, 102, 0.12);
 }
 
 .hero-showcase__caption {
@@ -1998,4 +2115,220 @@ a {
     transform: scale(0.9);
     opacity: 0.82;
   }
+}
+
+/* ═══════════════════════════════════════════
+   LANDING PAGE — PREMIUM ANIMATIONS
+═══════════════════════════════════════════ */
+
+/* ── Keyframes ── */
+@keyframes lpFadeDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lpFadeUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lpFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes lpScaleIn {
+  from { opacity: 0; transform: scale(0.88) translateY(16px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes lpSlideLeft {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lpSlideRight {
+  from { opacity: 0; transform: translateX(-40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lpCardFlyIn {
+  from { opacity: 0; transform: translateY(48px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes badgePulseRing {
+  0%   { box-shadow: 0 0 0 0 rgba(94, 228, 255, 0.4); }
+  70%  { box-shadow: 0 0 0 10px rgba(94, 228, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(94, 228, 255, 0); }
+}
+
+@keyframes dotBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 6px var(--accent); }
+  50%       { transform: scale(1.5); opacity: 0.6; box-shadow: 0 0 14px var(--accent); }
+}
+
+@keyframes shimmerSlide {
+  0%        { left: -100%; }
+  40%, 100% { left: 140%; }
+}
+
+/* ── Nav entrance ── */
+.landing-nav {
+  animation: lpFadeDown 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+
+/* ── Hero staggered children ── */
+.hero-section .hero-title  { animation: lpFadeUp 0.65s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both; }
+.hero-section .lp-anim-s3  { animation: lpFadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.38s both; }
+.hero-section .lp-anim-s4  { animation: lpFadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.52s both; }
+.hero-section .lp-anim-s5  { animation: lpFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.66s both; }
+
+/* ── Primary CTA button — shimmer sweep ── */
+.primary-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.primary-button::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+  transform: skewX(-18deg);
+  animation: shimmerSlide 4s ease-in-out infinite;
+}
+
+/* ── Tag pills stagger ── */
+.tag-row .tag-pill {
+  animation: lpScaleIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tag-row .tag-pill:nth-child(1) { animation-delay: 0.7s; }
+.tag-row .tag-pill:nth-child(2) { animation-delay: 0.82s; }
+.tag-row .tag-pill:nth-child(3) { animation-delay: 0.94s; }
+.tag-row .tag-pill:nth-child(4) { animation-delay: 1.06s; }
+
+/* ── Logo carousel fade-in ── */
+.logo-carousel-section {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.logo-carousel-section.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Scroll-reveal base ── */
+.sr-item {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.is-visible .sr-item { opacity: 1; transform: translateY(0); }
+
+.sr-delay-0 { transition-delay: 0s; }
+.sr-delay-1 { transition-delay: 0.12s; }
+.sr-delay-2 { transition-delay: 0.24s; }
+.sr-delay-3 { transition-delay: 0.36s; }
+.sr-delay-4 { transition-delay: 0.48s; }
+
+/* ── HeroShowcase parallax float ── */
+.hero-showcase {
+  animation: showcaseFloat 6s ease-in-out infinite;
+}
+
+@keyframes showcaseFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-8px) rotate(0.5deg); }
+  66%       { transform: translateY(-4px) rotate(-0.3deg); }
+}
+
+/* ── Process cards fly-in ── */
+.process-grid .step-card-anim {
+  opacity: 0;
+  transform: translateY(48px) scale(0.94);
+  transition: opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1), transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+}
+
+.process-grid.is-visible .step-card-anim-0 { opacity: 1; transform: none; transition-delay: 0s; }
+.process-grid.is-visible .step-card-anim-1 { opacity: 1; transform: none; transition-delay: 0.14s; }
+.process-grid.is-visible .step-card-anim-2 { opacity: 1; transform: none; transition-delay: 0.28s; }
+
+/* ── Process card hover lift ── */
+.process-card {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.process-card:hover {
+  transform: translateY(-6px) scale(1.012);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(94,228,255,0.12), 0 0 40px rgba(94,228,255,0.06);
+  border-color: rgba(94, 228, 255, 0.18);
+}
+
+/* ── Process live dot pulse ── */
+.process-live-dot {
+  animation: dotBreathe 2.2s ease-in-out infinite;
+}
+
+.process-card:nth-child(2) .process-live-dot { animation-delay: 0.7s; }
+.process-card:nth-child(3) .process-live-dot { animation-delay: 1.4s; }
+
+/* ── Closing / CTA section ── */
+.closing-section .cta-sr-1,
+.closing-section .cta-sr-2,
+.closing-section .cta-sr-3 {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.closing-section.is-visible .cta-sr-1 { opacity: 1; transform: none; transition-delay: 0s; }
+.closing-section.is-visible .cta-sr-2 { opacity: 1; transform: none; transition-delay: 0.14s; }
+.closing-section.is-visible .cta-sr-3 { opacity: 1; transform: none; transition-delay: 0.28s; }
+
+/* ── Closing button glow pulse ── */
+.closing-button {
+  animation: closingBtnPulse 3s ease-in-out infinite;
+}
+
+@keyframes closingBtnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(94, 228, 255, 0); }
+  50%       { box-shadow: 0 0 0 8px rgba(94, 228, 255, 0.08), 0 0 28px rgba(94, 228, 255, 0.12); }
+}
+
+/* space-orb parallax removed — stays fixed */
+
+/* ── Workflow summary chips pop-in ── */
+.workflow-summary span {
+  display: inline-flex;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.is-visible .workflow-summary span:nth-child(1) { opacity: 1; transform: scale(1); transition-delay: 0.5s; }
+.is-visible .workflow-summary span:nth-child(2) { opacity: 1; transform: scale(1); transition-delay: 0.62s; }
+.is-visible .workflow-summary span:nth-child(3) { opacity: 1; transform: scale(1); transition-delay: 0.74s; }
+
+/* ── Metric numbers highlight on card hover ── */
+.process-card:hover .process-card-metric strong {
+  background: linear-gradient(135deg, #5ee4ff, #ffd166);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transition: color 0.3s, background 0.3s;
+}
+
+/* ghost-button — no hover effects */
+
+/* ── Section kicker slide-in ── */
+.section-kicker {
+  transition: opacity 0.5s ease, transform 0.5s ease;
 }

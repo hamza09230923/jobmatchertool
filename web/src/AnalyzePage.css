@@ -1,0 +1,749 @@
+/* ─────────────────────────────────────────
+   ANALYZE PAGE  –  full redesign
+───────────────────────────────────────── */
+.analyze-page {
+  padding: 40px 0 80px;
+  animation: azFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes azFadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header ── */
+.analyze-header {
+  text-align: center;
+  margin-bottom: 56px;
+}
+
+.az-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent, #5ee4ff);
+  margin-bottom: 18px;
+}
+
+.az-kicker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #5ee4ff);
+  box-shadow: 0 0 10px var(--accent, #5ee4ff);
+  animation: azDotPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes azDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.45; transform: scale(0.75); }
+}
+
+.analyze-title {
+  margin: 0 auto 18px;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-size: clamp(2.4rem, 6vw, 3.8rem);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1.04;
+}
+
+.az-title-gradient {
+  background: linear-gradient(135deg, #5ee4ff 0%, #a78bfa 55%, #ffd166 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.analyze-subtitle {
+  max-width: 44ch;
+  margin: 0 auto 28px;
+  color: rgba(184, 192, 212, 0.75);
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
+.az-trust-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.az-trust-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 222, 128, 0.18);
+  background: rgba(74, 222, 128, 0.05);
+  color: rgba(74, 222, 128, 0.9);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* ── Error ── */
+.analyze-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: rgba(255, 80, 80, 0.08);
+  border: 1px solid rgba(255, 80, 80, 0.22);
+  color: #ff9090;
+  font-size: 0.9rem;
+}
+
+/* ── Form ── */
+.analyze-form {
+  display: grid;
+  gap: 36px;
+}
+
+/* ── Panels ── */
+.az-panels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0;
+  align-items: start;
+}
+
+.az-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.az-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.az-panel-num {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(94, 228, 255, 0.2);
+  background: rgba(94, 228, 255, 0.07);
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--accent, #5ee4ff);
+  flex-shrink: 0;
+}
+
+.az-panel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text, #f4f6fb);
+  line-height: 1.3;
+}
+
+.az-panel-sub {
+  font-size: 0.78rem;
+  color: rgba(184, 192, 212, 0.5);
+  margin-top: 2px;
+}
+
+/* ── Dropzone ── */
+.az-drop {
+  position: relative;
+  min-height: 280px;
+  border-radius: 20px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
+  overflow: hidden;
+}
+
+.az-drop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 50%, rgba(94, 228, 255, 0.07), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.22s;
+  pointer-events: none;
+}
+
+.az-drop:hover,
+.az-drop--drag {
+  border-color: rgba(94, 228, 255, 0.45);
+  background: rgba(94, 228, 255, 0.04);
+  box-shadow: 0 0 0 4px rgba(94, 228, 255, 0.07), inset 0 0 40px rgba(94, 228, 255, 0.04);
+}
+
+.az-drop:hover::after,
+.az-drop--drag::after {
+  opacity: 1;
+}
+
+.az-drop--drag {
+  border-style: solid;
+  border-color: rgba(94, 228, 255, 0.6);
+  box-shadow: 0 0 0 6px rgba(94, 228, 255, 0.09), inset 0 0 60px rgba(94, 228, 255, 0.07);
+}
+
+.az-drop--filled {
+  border-style: solid;
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(74, 222, 128, 0.03);
+  cursor: default;
+}
+
+/* Corner brackets */
+.az-drop-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: rgba(94, 228, 255, 0.35);
+  border-style: solid;
+  transition: border-color 0.22s, width 0.22s, height 0.22s;
+}
+
+.az-drop:hover .az-drop-corner,
+.az-drop--drag .az-drop-corner {
+  border-color: rgba(94, 228, 255, 0.7);
+  width: 20px;
+  height: 20px;
+}
+
+.az-drop-corner--tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
+.az-drop-corner--tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
+.az-drop-corner--bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
+.az-drop-corner--br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
+
+.az-drop-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 36px;
+  position: relative;
+  z-index: 1;
+}
+
+.az-drop-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  place-items: center;
+  color: rgba(244, 246, 251, 0.5);
+  margin-bottom: 4px;
+  transition: background 0.22s, border-color 0.22s, color 0.22s, transform 0.22s;
+}
+
+.az-drop:hover .az-drop-icon {
+  background: rgba(94, 228, 255, 0.1);
+  border-color: rgba(94, 228, 255, 0.25);
+  color: var(--accent, #5ee4ff);
+  transform: translateY(-3px);
+}
+
+.az-drop-prompt strong {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text, #f4f6fb);
+}
+
+.az-drop-prompt span {
+  font-size: 0.84rem;
+  color: rgba(184, 192, 212, 0.55);
+}
+
+.az-drop-prompt u { text-decoration-color: rgba(184, 192, 212, 0.4); }
+
+/* File ready state */
+.az-file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 22px;
+  width: 100%;
+  animation: azFadeUp 0.3s ease both;
+}
+
+.az-file-icon {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 13px;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  background: rgba(74, 222, 128, 0.1);
+  display: grid;
+  place-items: center;
+  color: #4ade80;
+}
+
+.az-file-meta {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.az-file-meta strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text, #f4f6fb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.az-file-meta span {
+  font-size: 0.78rem;
+  color: rgba(74, 222, 128, 0.7);
+}
+
+.az-file-check {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  display: grid;
+  place-items: center;
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+.az-file-remove {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: rgba(184, 192, 212, 0.45);
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  flex-shrink: 0;
+}
+
+.az-file-remove:hover {
+  background: rgba(255, 80, 80, 0.1);
+  border-color: rgba(255, 80, 80, 0.22);
+  color: #ff9090;
+}
+
+/* ── Connector ── */
+.az-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 20px;
+  min-height: 280px;
+  margin-top: 50px;
+}
+
+.az-connector-line {
+  width: 1px;
+  flex: 1;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+
+.az-connector-node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  place-items: center;
+  color: rgba(184, 192, 212, 0.4);
+  flex-shrink: 0;
+}
+
+/* ── Textarea ── */
+.az-textarea-wrap {
+  position: relative;
+  border-radius: 20px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
+  overflow: hidden;
+}
+
+.az-textarea-wrap.focused {
+  border-color: rgba(94, 228, 255, 0.4);
+  background: rgba(94, 228, 255, 0.03);
+  box-shadow: 0 0 0 4px rgba(94, 228, 255, 0.07);
+}
+
+.az-textarea-wrap.filled {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.az-textarea {
+  display: block;
+  width: 100%;
+  min-height: 280px;
+  padding: 18px 18px 0;
+  border: none;
+  background: transparent;
+  color: var(--text, #f4f6fb);
+  font-size: 0.93rem;
+  font-family: inherit;
+  line-height: 1.65;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.az-textarea::placeholder { color: transparent; }
+
+.az-textarea-overlay {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  pointer-events: none;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: rgba(184, 192, 212, 0.4);
+}
+
+.az-typing-hint { font-style: italic; }
+
+.az-typing-text {
+  color: rgba(94, 228, 255, 0.65);
+  font-style: normal;
+  font-weight: 500;
+}
+
+.az-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 0.85em;
+  background: rgba(94, 228, 255, 0.7);
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: azBlink 1s step-end infinite;
+}
+
+@keyframes azBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.az-textarea-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.az-char {
+  font-size: 0.76rem;
+  color: rgba(184, 192, 212, 0.4);
+  transition: color 0.2s;
+}
+
+.az-char.warn { color: rgba(255, 209, 102, 0.7); }
+
+.az-clear {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: rgba(184, 192, 212, 0.45);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.18s, background 0.18s;
+  font-family: inherit;
+}
+
+.az-clear:hover {
+  color: #ff9090;
+  background: rgba(255, 80, 80, 0.08);
+}
+
+/* ── Submit area ── */
+.az-submit-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.az-submit-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58px;
+  min-width: 240px;
+  padding: 0 36px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.04) 100%),
+    linear-gradient(135deg, rgba(94, 228, 255, 0.18), rgba(167, 139, 250, 0.14));
+  color: var(--text, #f4f6fb);
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 36px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(94, 228, 255, 0.09);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s, border-color 0.22s;
+}
+
+.az-submit-btn:hover {
+  transform: translateY(-3px);
+  border-color: rgba(94, 228, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 18px 52px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(94, 228, 255, 0.16),
+    0 0 40px rgba(94, 228, 255, 0.14);
+}
+
+.az-submit-btn:active { transform: translateY(0); }
+
+.az-submit-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.az-submit-shimmer {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  transform: skewX(-20deg);
+  animation: azShimmer 3.5s ease-in-out infinite;
+}
+
+@keyframes azShimmer {
+  0%   { left: -100%; }
+  40%, 100% { left: 140%; }
+}
+
+.az-submit-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: rgba(184, 192, 212, 0.38);
+}
+
+.az-meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(184, 192, 212, 0.25);
+}
+
+/* ── Loading screen ── */
+.az-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 56px 0 64px;
+  animation: azFadeUp 0.4s ease both;
+}
+
+.az-loading-orbit {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  display: grid;
+  place-items: center;
+}
+
+.az-loading-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: azOrbit linear infinite;
+}
+
+.az-ring-1 {
+  border-top-color: #5ee4ff;
+  border-right-color: rgba(94, 228, 255, 0.25);
+  animation-duration: 1.1s;
+  inset: 0;
+  box-shadow: 0 0 16px rgba(94, 228, 255, 0.22);
+}
+
+.az-ring-2 {
+  border-right-color: #a78bfa;
+  border-bottom-color: rgba(167, 139, 250, 0.2);
+  animation-duration: 1.8s;
+  animation-direction: reverse;
+  inset: 14px;
+}
+
+.az-ring-3 {
+  border-bottom-color: #ffd166;
+  border-left-color: rgba(255, 209, 102, 0.15);
+  animation-duration: 2.6s;
+  inset: 28px;
+}
+
+@keyframes azOrbit {
+  to { transform: rotate(360deg); }
+}
+
+.az-loading-center {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  place-items: center;
+  color: rgba(244, 246, 251, 0.7);
+}
+
+.az-loading-text {
+  text-align: center;
+}
+
+.az-loading-step {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text, #f4f6fb);
+  letter-spacing: -0.02em;
+}
+
+.az-loading-sub {
+  margin: 0;
+  font-size: 0.84rem;
+  color: rgba(184, 192, 212, 0.5);
+}
+
+.az-loading-track {
+  width: min(100%, 340px);
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.az-loading-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #5ee4ff, #a78bfa, #ffd166);
+  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 12px rgba(94, 228, 255, 0.4);
+}
+
+.az-loading-steps {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 280px);
+}
+
+.az-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.84rem;
+  color: rgba(184, 192, 212, 0.35);
+  transition: color 0.3s;
+}
+
+.az-step-item.active { color: var(--text, #f4f6fb); }
+.az-step-item.done   { color: rgba(74, 222, 128, 0.7); }
+
+.az-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: border-color 0.3s, background 0.3s;
+}
+
+.az-step-item.active .az-step-dot {
+  border-color: var(--accent, #5ee4ff);
+  background: rgba(94, 228, 255, 0.1);
+  box-shadow: 0 0 10px rgba(94, 228, 255, 0.25);
+  animation: azStepPulse 1s ease-in-out infinite;
+}
+
+.az-step-item.done .az-step-dot {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+}
+
+@keyframes azStepPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(94, 228, 255, 0.25); }
+  50%       { box-shadow: 0 0 18px rgba(94, 228, 255, 0.5); }
+}
+
+.az-step-label { line-height: 1.4; }
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  .az-panels {
+    grid-template-columns: 1fr;
+  }
+
+  .az-connector {
+    flex-direction: row;
+    min-height: auto;
+    padding: 8px 0;
+    margin-top: 0;
+  }
+
+  .az-connector-line {
+    width: auto;
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  }
+
+  .az-submit-btn {
+    width: 100%;
+  }
+
+  .az-trust-row {
+    gap: 6px;
+  }
+}
