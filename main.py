@@ -15,10 +15,17 @@ from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from pypdf import PdfReader
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_IMPORT_ERROR = None
+except Exception as exc:
+    genai = None
+    types = None
+    GENAI_IMPORT_ERROR = str(exc)
 
 load_dotenv()
 
@@ -63,7 +70,9 @@ app.openapi = custom_openapi
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.0-flash")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
-GENAI_CLIENT = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+GENAI_CLIENT = (
+    genai.Client(api_key=GEMINI_API_KEY) if genai is not None and GEMINI_API_KEY else None
+)
 TEXTRAZOR_API_KEY = os.getenv("TEXTRAZOR_API_KEY")
 TEXTRAZOR_ENDPOINT = os.getenv("TEXTRAZOR_ENDPOINT", "https://api.textrazor.com")
 
@@ -102,6 +111,7 @@ PENALTY_OTHER = 1.0
 SEMANTIC_WEIGHT = 0.55
 MUST_COVERAGE_WEIGHT = 0.3
 NICE_COVERAGE_WEIGHT = 0.15
+ATS_BLEND_WEIGHT = 0.4
 
 SWE_TITLE_TERMS = (
     "software engineer",
@@ -304,6 +314,51 @@ AT_LEAST_YEARS_RE = re.compile(
     re.IGNORECASE,
 )
 PLUS_YEARS_RE = re.compile(r"\b(\d+)\s*\+?\s*(?:years|yrs)\b", re.IGNORECASE)
+YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+DATE_RANGE_RE = re.compile(r"\b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b")
+MONTH_YEAR_RE = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(19|20)\d{2}\b",
+    re.IGNORECASE,
+)
+METRIC_RE = re.compile(
+    r"(\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b)\s*(%|x|k|m|mm|bn|b)\b|[$€£]\s*\d",
+    re.IGNORECASE,
+)
+
+ACTION_VERBS = (
+    "built",
+    "designed",
+    "developed",
+    "implemented",
+    "led",
+    "owned",
+    "delivered",
+    "launched",
+    "shipped",
+    "optimized",
+    "improved",
+    "reduced",
+    "increased",
+    "automated",
+    "migrated",
+    "created",
+    "analyzed",
+    "collaborated",
+    "architected",
+    "refactored",
+    "maintained",
+)
+SOFT_SKILLS = (
+    "communication",
+    "teamwork",
+    "leadership",
+    "problem solving",
+    "problem-solving",
+    "adaptability",
+    "time management",
+    "time-management",
+    "stakeholder management",
+)
 
 SECTION_HEADINGS = {
     "experience": ("experience", "work experience", "professional experience", "employment"),
@@ -361,6 +416,26 @@ def split_resume_sections(text: str) -> dict:
     return sections
 
 
+def split_resume_sections_raw(text: str) -> dict:
+    sections: dict[str, List[str]] = {"other": []}
+    current = "other"
+    lines = text.splitlines()
+    for line in lines:
+        if not line.strip():
+            continue
+        norm = normalize_phrase(line)
+        matched = False
+        for key, aliases in SECTION_HEADINGS.items():
+            if any(norm.startswith(alias) for alias in aliases):
+                current = key
+                sections.setdefault(current, [])
+                matched = True
+                break
+        if not matched:
+            sections.setdefault(current, []).append(line)
+    return {key: "\n".join(val).strip() for key, val in sections.items()}
+
+
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     if not a or not b:
         return 0.0
@@ -369,6 +444,24 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     norm_b = math.sqrt(sum(y * y for y in b))
     denom = norm_a * norm_b
     return 0.0 if denom == 0 else dot / denom
+
+
+def tfidf_similarity(text_a: str, text_b: str) -> float:
+    if not text_a.strip() or not text_b.strip():
+        return 0.0
+    vectorizer = TfidfVectorizer(
+        stop_words=list(STOPWORDS)
+        + ["job", "description", "responsibilities", "requirements", "resume", "cv"],
+        ngram_range=(1, 2),
+        lowercase=True,
+        max_features=5000,
+    )
+    try:
+        tfidf = vectorizer.fit_transform([text_a, text_b])
+    except ValueError:
+        return 0.0
+    vectors = tfidf.toarray()
+    return cosine_similarity(vectors[0].tolist(), vectors[1].tolist())
 
 
 def normalize_token(token: str) -> str:
@@ -736,9 +829,44 @@ def parse_json_response(text: str) -> dict:
     return {}
 
 
+def fallback_parse_resume(resume_text: str) -> dict:
+    skills = merge_unique(
+        extract_keyphrases(resume_text, limit=25)
+        + extract_skill_tokens(resume_text, limit=25)
+    )
+    years = extract_resume_years(resume_text)
+    return {
+        "skills": skills[:40],
+        "tools": [],
+        "years_experience": years,
+        "education": [],
+        "certifications": [],
+    }
+
+
+def parse_resume(resume_text: str, debug_info: dict | None = None) -> dict:
+    if GENAI_CLIENT:
+        try:
+            parsed = gemini_parse_resume(resume_text)
+            if not isinstance(parsed, dict):
+                parsed = {}
+            if debug_info is not None:
+                debug_info["parse_method"] = "gemini"
+            return parsed
+        except Exception as exc:
+            if debug_info is not None:
+                debug_info["parse_error"] = str(exc)
+    if debug_info is not None:
+        debug_info["parse_method"] = "heuristic"
+    return fallback_parse_resume(resume_text)
+
+
 def gemini_parse_resume(resume_text: str) -> dict:
     if not GENAI_CLIENT:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set.")
+        detail = "GEMINI_API_KEY is not set."
+        if GEMINI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GEMINI_IMPORT_ERROR}"
+        raise HTTPException(status_code=500, detail=detail)
     prompt = (
         "Extract resume data and return ONLY valid JSON. "
         "Keys: skills (list of strings), tools (list), years_experience (number|null), "
@@ -754,7 +882,10 @@ def gemini_parse_resume(resume_text: str) -> dict:
 
 def gemini_embed_texts(texts: List[str]) -> List[List[float]]:
     if not GENAI_CLIENT:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set.")
+        detail = "GEMINI_API_KEY is not set."
+        if GEMINI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GEMINI_IMPORT_ERROR}"
+        raise HTTPException(status_code=500, detail=detail)
     result = GENAI_CLIENT.models.embed_content(
         model=GEMINI_EMBED_MODEL,
         contents=texts,
@@ -770,6 +901,27 @@ def gemini_embed_texts(texts: List[str]) -> List[List[float]]:
         else:
             embeddings.append(embedding)
     return embeddings
+
+
+def compute_semantic_score(
+    resume_text: str,
+    job_description: str,
+    debug_info: dict | None = None,
+) -> float:
+    if GENAI_CLIENT:
+        try:
+            embeddings = gemini_embed_texts([resume_text, job_description])
+            similarity = cosine_similarity(embeddings[0], embeddings[1])
+            if debug_info is not None:
+                debug_info["semantic_method"] = "gemini"
+            return max(0.0, min(100.0, similarity * 100))
+        except Exception as exc:
+            if debug_info is not None:
+                debug_info["semantic_error"] = str(exc)
+    similarity = tfidf_similarity(resume_text, job_description)
+    if debug_info is not None:
+        debug_info["semantic_method"] = "tfidf"
+    return max(0.0, min(100.0, similarity * 100))
 
 
 def extract_must_have_skills(job_description: str, limit: int = 20) -> List[str]:
@@ -814,6 +966,205 @@ def extract_required_years(job_description: str) -> Optional[int]:
 def extract_resume_years(resume_text: str) -> Optional[int]:
     values = [int(match) for match in PLUS_YEARS_RE.findall(resume_text)]
     return max(values) if values else None
+
+
+def has_dates(text: str) -> bool:
+    if not text:
+        return False
+    if DATE_RANGE_RE.search(text):
+        return True
+    if YEAR_RE.search(text):
+        return True
+    return bool(MONTH_YEAR_RE.search(text))
+
+
+def has_metrics(text: str) -> bool:
+    if not text:
+        return False
+    return bool(METRIC_RE.search(text))
+
+
+def count_action_verbs(text: str) -> int:
+    if not text:
+        return 0
+    normalized = normalize_phrase(text)
+    return sum(1 for verb in ACTION_VERBS if verb in normalized)
+
+
+def extract_skill_list(text: str) -> List[str]:
+    if not text:
+        return []
+    items = re.split(r"[,|;/\n•]+", text)
+    cleaned = []
+    seen = set()
+    for item in items:
+        token = normalize_phrase(item)
+        if not token:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        cleaned.append(item.strip())
+    return cleaned
+
+
+def has_tech_terms(text: str) -> bool:
+    if not text:
+        return False
+    if extract_skill_tokens(text, limit=3):
+        return True
+    normalized = normalize_phrase(text)
+    return any(term in normalized for term in LANGUAGE_SKILLS)
+
+
+def build_section_feedback(
+    raw_sections: dict,
+    norm_sections: dict,
+    job_description: str,
+) -> dict:
+    feedback = {}
+    profile = detect_job_profile(job_description)
+    for section in ["summary", "experience", "projects", "skills", "education", "other"]:
+        raw_text = (raw_sections or {}).get(section, "") or ""
+        norm_text = (norm_sections or {}).get(section, "") or ""
+        good: List[str] = []
+        not_good: List[str] = []
+
+        word_count = len(re.findall(r"\b\w+\b", raw_text))
+        if not raw_text.strip() or word_count < 15:
+            not_good.append("Section is missing or too short to be useful.")
+            feedback[section] = {"good": good, "not_good": not_good}
+            continue
+
+        dates_present = has_dates(raw_text)
+        metrics_present = has_metrics(raw_text)
+        verbs_count = count_action_verbs(norm_text)
+        tech_present = has_tech_terms(raw_text)
+
+        if section == "summary":
+            if 40 <= word_count <= 110:
+                good.append("Summary length is concise and easy to scan.")
+            elif word_count > 130:
+                not_good.append("Summary is long; aim for 2-4 sentences.")
+            elif word_count < 30:
+                not_good.append("Summary is very short; add a focused value statement.")
+
+            if profile == "swe" and any(term in norm_text for term in SWE_TITLE_TERMS):
+                good.append("Target role is clear and aligned with the job description.")
+            elif profile == "swe":
+                not_good.append("Target role is not explicit; call out your software role.")
+
+            if PLUS_YEARS_RE.search(raw_text):
+                good.append("Includes years of experience for quick context.")
+            else:
+                not_good.append("Missing years of experience; add a brief years summary.")
+
+            if tech_present:
+                good.append("Mentions core technologies or domains.")
+            else:
+                not_good.append("No technical focus; add 1-2 core specialties.")
+
+        elif section == "experience":
+            if dates_present:
+                good.append("Role dates are present, which helps recruiters scan quickly.")
+            else:
+                not_good.append("Role dates are missing; add clear date ranges.")
+
+            if verbs_count >= 3:
+                good.append("Uses action verbs that emphasize ownership and impact.")
+            else:
+                not_good.append("Few action verbs; rewrite bullets to start with strong verbs.")
+
+            if metrics_present:
+                good.append("Includes measurable impact (numbers or percentages).")
+            else:
+                not_good.append("Little quantified impact; add metrics where possible.")
+
+            if tech_present:
+                good.append("Mentions relevant tools/technologies used.")
+            else:
+                not_good.append("Tech stack is unclear; add key tools or languages.")
+
+            if word_count > 380:
+                not_good.append("Experience section is long; trim to most relevant roles.")
+            elif word_count < 80:
+                not_good.append("Experience section is short; add 2-4 bullets per role.")
+
+        elif section == "projects":
+            if verbs_count >= 2:
+                good.append("Project descriptions use action verbs.")
+            else:
+                not_good.append("Project bullets read vague; lead with action verbs.")
+
+            if tech_present:
+                good.append("Tech stack is visible in project descriptions.")
+            else:
+                not_good.append("Missing tech stack; list languages, frameworks, or tools.")
+
+            if metrics_present:
+                good.append("Projects include measurable outcomes.")
+            else:
+                not_good.append("No quantified outcomes; add results or performance gains.")
+
+            if re.search(r"https?://|github\.com", raw_text, re.IGNORECASE):
+                good.append("Includes links to work or repos.")
+            else:
+                not_good.append("No project links; add a GitHub or demo link if available.")
+
+            if word_count < 40:
+                not_good.append("Projects section is short; add 2-3 strong projects.")
+
+        elif section == "skills":
+            skills_list = extract_skill_list(raw_text)
+            skill_count = len(skills_list)
+            if 6 <= skill_count <= 25:
+                good.append("Skill list length is ATS-friendly.")
+            elif skill_count < 6:
+                not_good.append("Too few skills; add core languages and tools.")
+            elif skill_count > 35:
+                not_good.append("Too many skills; prioritize the most relevant ones.")
+
+            if tech_present:
+                good.append("Skills are specific and technical.")
+            else:
+                not_good.append("Skills are too generic; add specific tools or languages.")
+
+            soft_hits = [term for term in SOFT_SKILLS if term in norm_text]
+            if soft_hits:
+                not_good.append("Soft skills mixed in; keep this section technical.")
+
+        elif section == "education":
+            degree_present = bool(
+                re.search(
+                    r"\b(bsc|bs|msc|ms|phd|bachelor|master|doctorate)\b",
+                    norm_text,
+                )
+            )
+            institution_present = bool(
+                re.search(r"\b(university|college|institute|school)\b", norm_text)
+            )
+            if degree_present and institution_present:
+                good.append("Degree and institution are clearly listed.")
+            else:
+                not_good.append("Degree or institution is missing; add both explicitly.")
+
+            if dates_present:
+                good.append("Education dates are present.")
+            else:
+                not_good.append("Education dates are missing; add graduation year.")
+
+            if word_count > 120:
+                not_good.append("Education section is long; keep it to key credentials.")
+
+        else:
+            if word_count > 40:
+                good.append("Additional content provides extra context.")
+            else:
+                not_good.append("Other section is brief; remove or expand if relevant.")
+
+        feedback[section] = {"good": good, "not_good": not_good}
+
+    return feedback
 
 
 def merge_unique(items: List[str]) -> List[str]:
@@ -908,7 +1259,7 @@ def compute_ats_score(
         "score": round(score, 2),
         "profile": profile,
         "breakdown": {
-            "title_match": 10 if title_match else 0,
+            "title_match": 15 if title_match else 0,
             "core_coverage": round(core_coverage * 100, 2),
             "nice_coverage": round(nice_coverage * 100, 2),
             "leadership": round(leadership * 100, 2),
@@ -989,7 +1340,8 @@ async def analyze(
     resume_text = extract_pdf_text(file_bytes)
     job_description = clean_text(job_description)
 
-    parsed_resume = gemini_parse_resume(resume_text)
+    debug_info = {} if debug else None
+    parsed_resume = parse_resume(resume_text, debug_info)
     parsed_skills = parsed_resume.get("skills") or []
     parsed_tools = parsed_resume.get("tools") or []
     parsed_text_blob = " ".join([*parsed_skills, *parsed_tools]).strip()
@@ -1011,7 +1363,6 @@ async def analyze(
             continue
         missing_must_have.append(skill)
 
-    debug_info = {}
     textrazor_terms = textrazor_extract_phrases(job_description, debug_info if debug else None)
     tfidf_terms = extract_tfidf_terms(job_description, limit=40)
     combined_terms = merge_unique(textrazor_terms + tfidf_terms)
@@ -1059,6 +1410,7 @@ async def analyze(
         skill for skill in job_skill_candidates if normalize_phrase(skill) not in must_norms
     ]
     resume_sections = split_resume_sections(resume_text)
+    resume_sections_raw = split_resume_sections_raw(resume_text)
     must_coverage = compute_coverage(must_have_skills, resume_sections)
     nice_coverage = compute_coverage(nice_to_have, resume_sections)
 
@@ -1073,47 +1425,68 @@ async def analyze(
             missing_keywords + [f"{required_years}+ years experience"]
         )
 
-    embeddings = gemini_embed_texts([resume_text_for_embeddings, job_description])
-    similarity = cosine_similarity(embeddings[0], embeddings[1])
-    semantic_score = max(0.0, min(100.0, similarity * 100))
+    semantic_score = compute_semantic_score(
+        resume_text_for_embeddings,
+        job_description,
+        debug_info,
+    )
     weight_total = SEMANTIC_WEIGHT + MUST_COVERAGE_WEIGHT + NICE_COVERAGE_WEIGHT
     combined_score = (
         semantic_score * SEMANTIC_WEIGHT
         + must_coverage * 100 * MUST_COVERAGE_WEIGHT
         + nice_coverage * 100 * NICE_COVERAGE_WEIGHT
     )
-    match_score = combined_score / weight_total if weight_total else semantic_score
+    base_score = combined_score / weight_total if weight_total else semantic_score
     other_missing = max(0, len(missing_keywords) - len(missing_must_have))
     penalty = len(missing_must_have) * PENALTY_MUST_HAVE + other_missing * PENALTY_OTHER
-    match_score = max(0.0, round(match_score - penalty, 2))
+    base_score = max(0.0, round(base_score - penalty, 2))
 
     ats_result = compute_ats_score(
         resume_sections=resume_sections,
         job_description=job_description,
         semantic_score=semantic_score,
     )
-    match_score = ats_result["score"]
+    if ats_result["profile"] == "swe":
+        match_score = round(
+            (1 - ATS_BLEND_WEIGHT) * base_score
+            + ATS_BLEND_WEIGHT * ats_result["score"],
+            2,
+        )
+    else:
+        match_score = base_score
+    match_score = max(0.0, min(100.0, match_score))
 
     response = {
         "match_score": match_score,
         "missing_keywords": missing_keywords,
         "resume_text": resume_text,
+        "section_feedback": build_section_feedback(
+            resume_sections_raw,
+            resume_sections,
+            job_description,
+        ),
     }
     if debug:
         response["debug"] = {
-            **debug_info,
+            **(debug_info or {}),
             "missing_keywords_count": len(missing_keywords),
             "missing_keywords_sample": missing_keywords[:20],
             "coverage_must": round(must_coverage * 100, 2),
             "coverage_nice": round(nice_coverage * 100, 2),
             "semantic_score": round(semantic_score, 2),
-            "combined_score": round(combined_score / weight_total, 2) if weight_total else round(semantic_score, 2),
+            "combined_score": round(combined_score / weight_total, 2)
+            if weight_total
+            else round(semantic_score, 2),
+            "base_score": base_score,
+            "penalty": penalty,
+            "ats_score": ats_result["score"],
             "ats_profile": ats_result["profile"],
             "ats_breakdown": ats_result["breakdown"],
             "weights": {
                 "semantic": SEMANTIC_WEIGHT,
                 "must_coverage": MUST_COVERAGE_WEIGHT,
                 "nice_coverage": NICE_COVERAGE_WEIGHT,
+                "ats_blend": ATS_BLEND_WEIGHT,
             },
             "skills_loaded": len(SKILLS_SET),
             "skills_path": SKILLS_PATH,

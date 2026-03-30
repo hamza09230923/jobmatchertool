@@ -11,5 +11,7 @@ body,
 }
 
 body {
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  background: #0f1115;
+  color: #f4f6fb;
 }

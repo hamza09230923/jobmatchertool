@@ -9,10 +9,13 @@
     "dev:full:5174": "concurrently -k \"npm run dev -- --port 5174\" \"cd .. && python -m uvicorn main:app --reload\"",
     "dev:full:5175": "concurrently -k \"npm run dev -- --host 127.0.0.1 --port 5175 --strictPort\" \"cd .. && python -m uvicorn main:app --reload\"",
     "build": "vite build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "motion": "^12.38.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -21,11 +24,12 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.2.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "gh-pages": "^6.3.0",
     "globals": "^16.5.0",
-    "vite": "^5.4.10",
-    "concurrently": "^9.2.0"
+    "vite": "^5.4.10"
   }
 }
