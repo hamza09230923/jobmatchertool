@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
 
 const COLORS = [
-  [255, 255, 255],   // white
-  [94,  228, 255],   // cyan
-  [255, 209, 102],   // gold
-  [167, 139, 250],   // purple
+  [255, 255, 255],
 ];
 
 function mkParticle(w, h) {
@@ -59,12 +56,12 @@ export default function ParticleField({ count = 60 }) {
         const [r, g, b] = p.color;
 
         // glow halo
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 7);
-        grad.addColorStop(0, `rgba(${r},${g},${b},${(alpha * 0.28).toFixed(3)})`);
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3.5);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${(alpha * 0.1).toFixed(3)})`);
         grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * 7, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.r * 3.5, 0, Math.PI * 2);
         ctx.fill();
 
         // core
