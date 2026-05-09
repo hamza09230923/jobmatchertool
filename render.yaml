@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: shortlistly-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://hamza09230923.github.io,http://localhost:5173,http://localhost:5175
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TEXTRAZOR_API_KEY
+        sync: false
+      - key: GEMINI_PARSE_MODEL
+        value: gemini-2.0-flash
+      - key: GEMINI_EMBED_MODEL
+        value: gemini-embedding-001
+      - key: GEMINI_REWRITE_MODEL
+        value: gemini-2.0-flash

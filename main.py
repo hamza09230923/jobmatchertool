@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import os
 import re
-from urllib.parse import urlparse
+import secrets
+import uuid
+import xml.etree.ElementTree as ET
+from datetime import date, datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse, quote_plus
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,18 +35,17 @@ except Exception as exc:
     types = None
     GENAI_IMPORT_ERROR = str(exc)
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 app = FastAPI()
 
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5175")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+_allowed_origins += [o.replace("localhost", "127.0.0.1") for o in _allowed_origins if "localhost" in o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-    ],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,9 +77,103 @@ app.openapi = custom_openapi
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.0-flash")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
+GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.0-flash")
+GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_REWRITE_MODEL = os.getenv("OPENAI_REWRITE_MODEL", "gpt-5-mini")
 GENAI_CLIENT = (
     genai.Client(api_key=GEMINI_API_KEY) if genai is not None and GEMINI_API_KEY else None
 )
+
+# ── Auth & rate limiting ──────────────────────────────────────────────────────
+# ACCOUNTS env var format: "email:password:daily_limit,email2:password2:daily_limit"
+# e.g. ACCOUNTS=tester1@shortlistly.com:pass123:10,tester2@shortlistly.com:pass456:5
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+DEFAULT_DAILY_LIMIT = int(os.getenv("DEFAULT_DAILY_LIMIT", "10"))
+SCAN_COUNTS_FILE = Path(os.getenv("SCAN_COUNTS_FILE", "scan_counts.json"))
+FEEDBACK_FILE    = Path(os.getenv("FEEDBACK_FILE", "feedback.json"))
+
+def _load_accounts() -> dict:
+    raw = os.getenv("ACCOUNTS", "")
+    accounts = {}
+    for entry in raw.split(","):
+        parts = entry.strip().split(":")
+        if len(parts) >= 2:
+            email = parts[0].strip().lower()
+            password = parts[1].strip()
+            limit = int(parts[2]) if len(parts) >= 3 else DEFAULT_DAILY_LIMIT
+            if email and password:
+                accounts[email] = {"password": password, "daily_limit": limit}
+    return accounts
+
+ACCOUNTS: dict = _load_accounts()
+
+# In-memory sessions: token → {email, created_at}
+_sessions: dict[str, dict] = {}
+
+def _load_scan_counts() -> dict:
+    if SCAN_COUNTS_FILE.exists():
+        try:
+            return json.loads(SCAN_COUNTS_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+def _save_scan_counts(counts: dict) -> None:
+    try:
+        SCAN_COUNTS_FILE.write_text(json.dumps(counts, indent=2))
+    except Exception as exc:
+        logger.warning("Could not save scan counts: %s", exc)
+
+_scan_counts: dict = _load_scan_counts()
+
+def _today() -> str:
+    return date.today().isoformat()
+
+def get_scans_today(email: str) -> int:
+    return _scan_counts.get(email, {}).get(_today(), 0)
+
+def increment_scan(email: str) -> int:
+    today = _today()
+    if email not in _scan_counts:
+        _scan_counts[email] = {}
+    _scan_counts[email][today] = _scan_counts[email].get(today, 0) + 1
+    _save_scan_counts(_scan_counts)
+    return _scan_counts[email][today]
+
+def get_email_from_token(token: str) -> str | None:
+    session = _sessions.get(token)
+    if not session:
+        return None
+    # Sessions expire after 7 days
+    created = datetime.fromisoformat(session["created_at"])
+    if (datetime.now(timezone.utc) - created).days >= 7:
+        _sessions.pop(token, None)
+        return None
+    return session["email"]
+
+def require_auth(request_data: dict) -> str:
+    """Extract and validate token from request body. Returns email or raises 401."""
+    token = str((request_data or {}).get("_token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    email = get_email_from_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+    return email
+
+def check_scan_limit(email: str) -> None:
+    """Raise 429 if user has hit their daily scan limit."""
+    account = ACCOUNTS.get(email, {})
+    limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
+    used = get_scans_today(email)
+    if used >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily scan limit of {limit} reached. Resets at midnight."
+        )
+# ─────────────────────────────────────────────────────────────────────────────
 TEXTRAZOR_API_KEY = os.getenv("TEXTRAZOR_API_KEY")
 TEXTRAZOR_ENDPOINT = os.getenv("TEXTRAZOR_ENDPOINT", "https://api.textrazor.com")
 
@@ -112,6 +213,12 @@ SEMANTIC_WEIGHT = 0.55
 MUST_COVERAGE_WEIGHT = 0.3
 NICE_COVERAGE_WEIGHT = 0.15
 ATS_BLEND_WEIGHT = 0.4
+RESPONSIBILITY_MATCH_WEIGHT = 0.65
+EXPERIENCE_MATCH_WEIGHT = 0.10
+SKILLS_MATCH_WEIGHT = 0.05
+SEMANTIC_MATCH_WEIGHT = 0.20
+RESPONSIBILITY_SIMILARITY_THRESHOLD = 0.34
+RESPONSIBILITY_EMBEDDING_THRESHOLD = 0.68
 
 SWE_TITLE_TERMS = (
     "software engineer",
@@ -321,32 +428,153 @@ MONTH_YEAR_RE = re.compile(
     re.IGNORECASE,
 )
 METRIC_RE = re.compile(
-    r"(\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b)\s*(%|x|k|m|mm|bn|b)\b|[$€£]\s*\d",
+    r"(\b\d{1,3}(?:,\d{3})+(?:\.\d+)?|\b\d+(?:\.\d+)?)\s*(%|(?:x|k|m|mm|bn|b)\b)|[$€£]\s*\d|\b\d+[+]",
     re.IGNORECASE,
 )
 
 ACTION_VERBS = (
+    "build",
     "built",
+    "design",
     "designed",
+    "develop",
     "developed",
+    "implement",
     "implemented",
+    "lead",
     "led",
+    "manage",
+    "managed",
+    "drive",
+    "driven",
+    "own",
     "owned",
+    "deliver",
     "delivered",
+    "launch",
     "launched",
+    "ship",
     "shipped",
+    "optimize",
     "optimized",
+    "improve",
     "improved",
+    "reduce",
     "reduced",
+    "increase",
     "increased",
+    "automate",
     "automated",
+    "migrate",
     "migrated",
+    "create",
     "created",
+    "analyze",
     "analyzed",
+    "collaborate",
     "collaborated",
+    "architect",
     "architected",
+    "refactor",
     "refactored",
+    "maintain",
     "maintained",
+    "mentor",
+    "mentored",
+    "coordinate",
+    "coordinated",
+    "support",
+    "supported",
+)
+ACTION_VERB_BASE = {
+    "build": "build",
+    "built": "build",
+    "design": "design",
+    "designed": "design",
+    "develop": "develop",
+    "developed": "develop",
+    "implement": "implement",
+    "implemented": "implement",
+    "lead": "lead",
+    "led": "lead",
+    "manage": "manage",
+    "managed": "manage",
+    "drive": "drive",
+    "driven": "drive",
+    "own": "own",
+    "owned": "own",
+    "deliver": "deliver",
+    "delivered": "deliver",
+    "launch": "launch",
+    "launched": "launch",
+    "ship": "ship",
+    "shipped": "ship",
+    "optimize": "optimize",
+    "optimized": "optimize",
+    "improve": "improve",
+    "improved": "improve",
+    "reduce": "reduce",
+    "reduced": "reduce",
+    "increase": "increase",
+    "increased": "increase",
+    "automate": "automate",
+    "automated": "automate",
+    "migrate": "migrate",
+    "migrated": "migrate",
+    "create": "create",
+    "created": "create",
+    "analyze": "analyze",
+    "analyzed": "analyze",
+    "collaborate": "collaborate",
+    "collaborated": "collaborate",
+    "architect": "architect",
+    "architected": "architect",
+    "refactor": "refactor",
+    "refactored": "refactor",
+    "maintain": "maintain",
+    "maintained": "maintain",
+    "mentor": "mentor",
+    "mentored": "mentor",
+    "coordinate": "coordinate",
+    "coordinated": "coordinate",
+    "support": "support",
+    "supported": "support",
+}
+SENIORITY_ALIASES = {
+    "jr": "junior",
+    "junior": "junior",
+    "mid": "mid",
+    "midlevel": "mid",
+    "mid-level": "mid",
+    "senior": "senior",
+    "sr": "senior",
+    "lead": "lead",
+    "manager": "manager",
+    "principal": "principal",
+    "staff": "principal",
+}
+SENIORITY_LEVELS = {
+    "junior": 1,
+    "mid": 2,
+    "senior": 3,
+    "lead": 4,
+    "manager": 4,
+    "principal": 5,
+}
+RESPONSIBILITY_SECTION_WEIGHTS = {
+    "experience": 1.0,
+    "projects": 0.75,
+    "summary": 0.4,
+}
+RESPONSIBILITY_HINTS = (
+    "you will",
+    "responsible for",
+    "responsibilities",
+    "what you'll do",
+    "what you will do",
+    "what you ll do",
+    "day to day",
+    "in this role",
 )
 SOFT_SKILLS = (
     "communication",
@@ -361,11 +589,34 @@ SOFT_SKILLS = (
 )
 
 SECTION_HEADINGS = {
-    "experience": ("experience", "work experience", "professional experience", "employment"),
-    "projects": ("projects", "technical projects", "personal projects"),
-    "education": ("education", "academics"),
-    "skills": ("skills", "technical skills"),
-    "summary": ("summary", "profile", "objective"),
+    "experience": (
+        "experience", "work experience", "professional experience", "employment",
+        "work history", "career history", "professional background", "relevant experience",
+    ),
+    "projects": (
+        "projects", "technical projects", "personal projects", "side projects",
+        "portfolio", "selected projects", "key projects",
+    ),
+    "education": (
+        "education", "academics", "qualifications", "certifications", "certificates",
+        "training", "academic background", "courses", "licences",
+    ),
+    "skills": (
+        "skills", "technical skills", "core competencies", "competencies",
+        "technologies", "tools and technologies", "key skills", "areas of expertise",
+        "expertise", "programming languages", "tools", "languages and tools",
+        "core skills", "tech stack", "technical stack", "my stack",
+        "software skills", "hard skills", "digital skills", "it skills",
+        "proficiencies", "technical proficiencies", "professional skills",
+        "technical expertise", "capabilities", "technical capabilities",
+        "development tools", "frameworks", "what i know", "my skills",
+        "stack", "languages skills", "technical knowledge", "knowledge",
+        "software and tools", "tools technologies", "relevant skills",
+    ),
+    "summary": (
+        "summary", "profile", "objective", "professional summary", "about me",
+        "personal statement", "career summary", "executive summary", "overview",
+    ),
 }
 
 SECTION_WEIGHTS = {
@@ -386,7 +637,11 @@ def clean_text(text: str) -> str:
 
 
 def extract_pdf_text(file_bytes: bytes) -> str:
-    reader = PdfReader(io.BytesIO(file_bytes))
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Unable to read PDF upload.") from exc
+
     pages_text: List[str] = []
     for page in reader.pages:
         pages_text.append(page.extract_text() or "")
@@ -854,6 +1109,7 @@ def parse_resume(resume_text: str, debug_info: dict | None = None) -> dict:
                 debug_info["parse_method"] = "gemini"
             return parsed
         except Exception as exc:
+            logger.warning("Gemini parse failed, falling back to heuristics: %s", exc)
             if debug_info is not None:
                 debug_info["parse_error"] = str(exc)
     if debug_info is not None:
@@ -864,13 +1120,48 @@ def parse_resume(resume_text: str, debug_info: dict | None = None) -> dict:
 def gemini_parse_resume(resume_text: str) -> dict:
     if not GENAI_CLIENT:
         detail = "GEMINI_API_KEY is not set."
-        if GEMINI_IMPORT_ERROR:
-            detail = f"Gemini SDK unavailable: {GEMINI_IMPORT_ERROR}"
+        if GENAI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=500, detail=detail)
     prompt = (
-        "Extract resume data and return ONLY valid JSON. "
-        "Keys: skills (list of strings), tools (list), years_experience (number|null), "
-        "education (list), certifications (list)."
+        "You are an expert CV parser. Extract ALL data from the CV/resume below and return ONLY valid JSON "
+        "with exactly this structure (use null for missing strings, [] for missing lists, {} for missing objects):\n"
+        "{\n"
+        '  "name": "string or null",\n'
+        '  "location": "City, Country or null",\n'
+        '  "summary": "string or null",\n'
+        '  "links": {"linkedin": "url or null", "github": "url or null", "portfolio": "url or null", "other": []},\n'
+        '  "skills": ["technical skills, frameworks, languages, tools"],\n'
+        '  "tools": ["additional tools not in skills"],\n'
+        '  "soft_skills": ["communication", "leadership", ...],\n'
+        '  "languages": [{"language": "English", "proficiency": "Native/Fluent/Conversational/Basic"}],\n'
+        '  "years_experience": number_or_null,\n'
+        '  "seniority_level": "junior or mid or senior or lead or principal or director or vp or c-suite",\n'
+        '  "industry_domains": ["fintech", "healthcare", "saas", "e-commerce", etc.],\n'
+        '  "management_experience": {"has_managed": false, "max_team_size": null},\n'
+        '  "work_experience": [\n'
+        '    {"company": "string", "title": "string", "start_date": "MM/YYYY or YYYY",\n'
+        '     "end_date": "MM/YYYY or YYYY or Present", "bullets": ["bullet text verbatim"]}\n'
+        '  ],\n'
+        '  "employment_gaps": [{"start": "MM/YYYY", "end": "MM/YYYY", "duration_months": number}],\n'
+        '  "projects": [\n'
+        '    {"name": "string", "tech_stack": ["tech1", "tech2"], "bullets": ["description"]}\n'
+        '  ],\n'
+        '  "education": [\n'
+        '    {"degree": "string", "institution": "string", "graduation_year": "string or null", "gpa": "string or null"}\n'
+        '  ],\n'
+        '  "certifications": ["string"],\n'
+        '  "achievements": ["award, honour, publication, or recognition text"],\n'
+        '  "quantified_achievements": ["verbatim bullet text containing a number, %, £, $, or metric"]\n'
+        "}\n\n"
+        "RULES:\n"
+        "- Extract ALL work bullets verbatim — do not summarise or truncate.\n"
+        "- For employment_gaps: compare consecutive work_experience entries by date; list any gap > 3 months with start/end dates and duration_months.\n"
+        "- For seniority_level: infer from most recent job title and total years of experience.\n"
+        "- For quantified_achievements: copy verbatim every bullet from work_experience or projects that contains any number, percentage, currency symbol, or measurable metric.\n"
+        "- For management_experience: set has_managed=true if any role mentions managing, leading, or mentoring a team; set max_team_size to the largest team size mentioned.\n"
+        "- For industry_domains: list the industries/sectors the candidate has worked in based on company descriptions and role context.\n"
+        "- Return ONLY the JSON object, no markdown fences, no extra commentary."
     )
     response = GENAI_CLIENT.models.generate_content(
         model=GEMINI_PARSE_MODEL,
@@ -880,11 +1171,485 @@ def gemini_parse_resume(resume_text: str) -> dict:
     return parse_json_response(getattr(response, "text", "") or "")
 
 
+def analyze_cv_sections(
+    resume_text: str,
+    parsed_resume: dict,
+    job_description: str,
+) -> dict:
+    """Deep per-section CV analysis powered by Gemini. Returns {} if Gemini unavailable."""
+    if not GENAI_CLIENT:
+        return {}
+    try:
+        parsed_summary = json.dumps({
+            "name": parsed_resume.get("name"),
+            "summary": parsed_resume.get("summary"),
+            "seniority_level": parsed_resume.get("seniority_level"),
+            "years_experience": parsed_resume.get("years_experience"),
+            "skills": parsed_resume.get("skills", [])[:30],
+            "soft_skills": parsed_resume.get("soft_skills", [])[:15],
+            "work_experience": [
+                {
+                    "company": r.get("company"), "title": r.get("title"),
+                    "start_date": r.get("start_date"), "end_date": r.get("end_date"),
+                    "bullets": r.get("bullets", [])
+                }
+                for r in (parsed_resume.get("work_experience") or [])
+            ],
+            "projects": parsed_resume.get("projects", []),
+            "education": parsed_resume.get("education", []),
+            "certifications": parsed_resume.get("certifications", []),
+            "employment_gaps": parsed_resume.get("employment_gaps", []),
+            "management_experience": parsed_resume.get("management_experience", {}),
+            "industry_domains": parsed_resume.get("industry_domains", []),
+        }, indent=2)
+
+        prompt = (
+            "You are a world-class CV coach analysing a candidate's CV against a job description. "
+            "Return ONLY a valid JSON object with no markdown fences matching this exact structure:\n\n"
+            "{\n"
+            '  "overall_quality_score": 0-100,\n'
+            '  "career_narrative": "One sentence describing the candidate\'s career arc and progression.",\n'
+            '  "ats_compatibility": {\n'
+            '    "score": 0-100,\n'
+            '    "issues": ["list of ATS compatibility problems found"],\n'
+            '    "strengths": ["list of ATS strengths"]\n'
+            '  },\n'
+            '  "red_flags": ["e.g. Two roles under 8 months", "Unexplained 18-month gap"],\n'
+            '  "interview_questions": [\n'
+            '    "Specific question tied to a CV detail or gap, e.g. Walk me through the 40% improvement at Acme — what was your specific contribution?"\n'
+            '  ],\n'
+            '  "sections": {\n'
+            '    "intro": {\n'
+            '      "score": 0-100,\n'
+            '      "grade": "A/B/C/D",\n'
+            '      "strengths": ["strength 1"],\n'
+            '      "issues": ["issue 1"],\n'
+            '      "rewrite": "Improved summary tailored to this job description"\n'
+            '    },\n'
+            '    "skills": {\n'
+            '      "score": 0-100,\n'
+            '      "grade": "A/B/C/D",\n'
+            '      "strengths": ["strength 1"],\n'
+            '      "issues": ["issue 1"],\n'
+            '      "jd_skills_present": ["skills from JD found in CV"],\n'
+            '      "jd_skills_missing": ["skills from JD not found in CV"],\n'
+            '      "listed_but_unevidenced": ["skills listed but not demonstrated in experience"]\n'
+            '    },\n'
+            '    "experience": {\n'
+            '      "score": 0-100,\n'
+            '      "grade": "A/B/C/D",\n'
+            '      "overall_strengths": ["strength 1"],\n'
+            '      "overall_issues": ["issue 1"],\n'
+            '      "roles": [\n'
+            '        {\n'
+            '          "company": "Company name",\n'
+            '          "title": "Job title",\n'
+            '          "dates": "Start – End",\n'
+            '          "role_score": 0-100,\n'
+            '          "quantification_rate": "X/Y bullets have metrics",\n'
+            '          "bullets": [\n'
+            '            {\n'
+            '              "text": "Original bullet text",\n'
+            '              "quality": "strong or good or weak",\n'
+            '              "issue": "Specific problem or null",\n'
+            '              "rewrite": "Improved bullet or null"\n'
+            '            }\n'
+            '          ]\n'
+            '        }\n'
+            '      ]\n'
+            '    },\n'
+            '    "education": {\n'
+            '      "score": 0-100,\n'
+            '      "grade": "A/B/C/D",\n'
+            '      "strengths": ["strength 1"],\n'
+            '      "issues": ["issue 1"]\n'
+            '    },\n'
+            '    "projects": {\n'
+            '      "score": 0-100,\n'
+            '      "grade": "A/B/C/D",\n'
+            '      "strengths": ["strength 1"],\n'
+            '      "issues": ["issue 1"]\n'
+            '    }\n'
+            '  }\n'
+            "}\n\n"
+            "RULES:\n"
+            "- overall_quality_score: holistic CV quality ignoring JD fit (writing, structure, impact clarity).\n"
+            "- For experience.roles: include ALL roles from the parsed data. For each bullet, rate quality as 'strong' (has action verb + metric + impact), 'good' (has action verb or metric), or 'weak' (vague, passive, no metric). For 'weak' bullets, provide a specific rewrite.\n"
+            "- For skills.jd_skills_missing: list skills/tools mentioned in the JD that are absent from the CV skills section.\n"
+            "- For interview_questions: generate 4-6 questions a hiring manager would actually ask based on the CV's gaps, ambiguities, or impressive claims that need substantiation.\n"
+            "- For intro.rewrite: write a crisp 3-sentence professional summary tailored to the JD.\n"
+            "- If projects section is empty in the CV, set projects score=null and omit issues/strengths.\n"
+            "- Return ONLY the JSON object, no markdown fences."
+        )
+
+        full_prompt = (
+            f"{prompt}\n\n"
+            f"PARSED CV DATA:\n{parsed_summary}\n\n"
+            f"JOB DESCRIPTION:\n{job_description[:3000]}"
+        )
+
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_PARSE_MODEL,
+            contents=full_prompt,
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        result = parse_json_response(getattr(response, "text", "") or "")
+        return result if isinstance(result, dict) else {}
+    except Exception as exc:
+        logger.warning("analyze_cv_sections failed: %s", exc)
+        return {}
+
+
+def normalize_rewrite_response(payload: dict) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    diagnosis = payload.get("diagnosis")
+    if not isinstance(diagnosis, dict):
+        diagnosis = {}
+
+    def normalize_section_items(items, key_name: str):
+        normalized_items = []
+        if not isinstance(items, list):
+            return normalized_items
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            heading = str(item.get("heading") or item.get(key_name) or "").strip()
+            bullets = item.get("bullets")
+            if not isinstance(bullets, list):
+                bullets = []
+            clean_bullets = [str(bullet).strip() for bullet in bullets if str(bullet).strip()]
+            if heading or clean_bullets:
+                normalized_items.append(
+                    {
+                        "heading": heading,
+                        "bullets": clean_bullets[:8],
+                    }
+                )
+        return normalized_items
+
+    contact_raw = payload.get("contact") or {}
+    if not isinstance(contact_raw, dict):
+        contact_raw = {}
+
+    normalized = {
+        "name": str(payload.get("name") or "").strip(),
+        "contact": {
+            k: str(contact_raw.get(k) or "").strip()
+            for k in ("email", "phone", "linkedin", "location")
+        },
+        "role_target": str(payload.get("role_target") or "").strip(),
+        "diagnosis": {
+            "current_positioning": str(diagnosis.get("current_positioning") or "").strip(),
+            "target_positioning": str(diagnosis.get("target_positioning") or "").strip(),
+            "key_gaps": [
+                str(item).strip()
+                for item in (diagnosis.get("key_gaps") or [])
+                if str(item).strip()
+            ][:8],
+        },
+        "rewritten_summary": str(payload.get("rewritten_summary") or "").strip(),
+        "skills_section": [
+            {
+                "category": str(item.get("category") or "").strip(),
+                "items": [str(s).strip() for s in (item.get("items") or []) if str(s).strip()],
+            }
+            for item in (payload.get("skills_section") or [])
+            if isinstance(item, dict)
+        ],
+        "education_section": [
+            {
+                "heading": str(item.get("heading") or "").strip(),
+                "details": str(item.get("details") or "").strip(),
+            }
+            for item in (payload.get("education_section") or [])
+            if isinstance(item, dict) and str(item.get("heading") or "").strip()
+        ],
+        "experience_section": normalize_section_items(payload.get("experience_section"), "company"),
+        "projects_section": normalize_section_items(payload.get("projects_section"), "project_name"),
+        "additional_keywords_to_include": [
+            str(item).strip()
+            for item in (payload.get("additional_keywords_to_include") or [])
+            if str(item).strip()
+        ][:15],
+        "missing_information": [
+            str(item).strip()
+            for item in (payload.get("missing_information") or [])
+            if str(item).strip()
+        ][:12],
+        "section_changes": [
+            {
+                "section": str(item.get("section") or "").strip(),
+                "label": str(item.get("label") or "").strip(),
+                "type": str(item.get("type") or "improved").strip(),
+                "change": str(item.get("change") or "").strip(),
+            }
+            for item in (payload.get("section_changes") or [])
+            if isinstance(item, dict) and str(item.get("change") or "").strip()
+        ][:12],
+    }
+    return normalized
+
+
+def extract_openai_output_text(response_json: dict) -> str:
+    if not isinstance(response_json, dict):
+        return ""
+
+    output = response_json.get("output")
+    if not isinstance(output, list):
+        return ""
+
+    parts: List[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "output_text":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    parts.append(text)
+    return "\n".join(parts).strip()
+
+
+def openai_rewrite_cv(
+    resume_text: str,
+    job_description: str,
+    role_fit_breakdown: dict | None = None,
+) -> dict:
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set.")
+
+    analysis_blob = json.dumps(role_fit_breakdown or {}, indent=2)
+    instructions = (
+        "You rewrite CVs for one specific role. "
+        "Ground every rewrite in the source CV and the structured analysis. "
+        "Do not invent employers, titles, dates, metrics, technologies, certifications, or outcomes. "
+        "If evidence is missing, keep the wording factual and list the missing fact in missing_information. "
+        "Return only valid JSON."
+    )
+    prompt = f"""
+Rewrite this CV for the target role.
+
+Return ONLY valid JSON with this exact schema:
+{{
+  "name": "Full name from CV",
+  "contact": {{
+    "email": "email from CV or empty string",
+    "phone": "phone from CV or empty string",
+    "linkedin": "linkedin URL or handle from CV or empty string",
+    "location": "city/country from CV or empty string"
+  }},
+  "role_target": "string",
+  "diagnosis": {{
+    "current_positioning": "string",
+    "target_positioning": "string",
+    "key_gaps": ["string"]
+  }},
+  "rewritten_summary": "string",
+  "skills_section": [
+    {{
+      "category": "Technical Skills",
+      "items": ["string"]
+    }}
+  ],
+  "education_section": [
+    {{
+      "heading": "Degree | University | Year",
+      "details": "Classification or empty string"
+    }}
+  ],
+  "experience_section": [
+    {{
+      "heading": "Role | Company | Dates",
+      "bullets": ["string"]
+    }}
+  ],
+  "projects_section": [
+    {{
+      "heading": "project name",
+      "bullets": ["string"]
+    }}
+  ],
+  "additional_keywords_to_include": ["string"],
+  "missing_information": ["string"]
+}}
+
+Use concise UK CV style — action verb + outcome, no first-person pronouns. Optimize for role fit. Group skills into Technical Skills and Soft Skills. Preserve education as-is. Do not invent facts. For bullets missing a quantitative metric that would strengthen them, append [METRIC: short question] at the end. Add section_changes entries explaining what changed and why for each major rewrite.
+
+Source CV:
+{resume_text}
+
+Job description:
+{job_description}
+
+Structured analysis:
+{analysis_blob}
+""".strip()
+
+    response = requests.post(
+        f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": OPENAI_REWRITE_MODEL,
+            "instructions": instructions,
+            "input": prompt,
+            "max_output_tokens": 2200,
+        },
+        timeout=60,
+    )
+    if response.status_code >= 400:
+        detail = f"OpenAI rewrite request failed ({response.status_code})."
+        try:
+            error_payload = response.json()
+            message = ((error_payload.get("error") or {}).get("message") or "").strip()
+            if message:
+                detail = f"OpenAI rewrite request failed ({response.status_code}): {message}"
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=detail)
+
+    payload = response.json()
+    text = extract_openai_output_text(payload)
+    parsed = parse_json_response(text)
+    normalized = normalize_rewrite_response(parsed)
+    if not normalized["rewritten_summary"] and not normalized["experience_section"]:
+        raise HTTPException(status_code=502, detail="OpenAI rewrite generation returned an invalid response.")
+    return normalized
+
+
+def generate_cv_rewrite(
+    resume_text: str,
+    job_description: str,
+    role_fit_breakdown: dict | None = None,
+) -> dict:
+    if OPENAI_API_KEY:
+        return openai_rewrite_cv(
+            resume_text=resume_text,
+            job_description=job_description,
+            role_fit_breakdown=role_fit_breakdown,
+        )
+    return gemini_rewrite_cv(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown,
+    )
+
+
+def gemini_rewrite_cv(
+    resume_text: str,
+    job_description: str,
+    role_fit_breakdown: dict | None = None,
+) -> dict:
+    if not GENAI_CLIENT:
+        detail = "GEMINI_API_KEY is not set."
+        if GENAI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
+        raise HTTPException(status_code=503, detail=detail)
+
+    analysis_blob = json.dumps(role_fit_breakdown or {}, indent=2)
+    prompt = f"""
+You are rewriting a CV for one specific role.
+
+Your job:
+1. Extract the candidate's name and contact details from the CV header.
+2. Diagnose how the current CV is positioned.
+3. Rewrite the summary, skills, experience, projects, and preserve education for the target role.
+4. Ground every rewrite in the source CV and analysis evidence.
+5. Do NOT invent employers, titles, dates, metrics, technologies, certifications, or outcomes.
+6. If a metric is missing, write a strong factual bullet without inventing the number, and list the missing metric in missing_information.
+7. Use concise UK CV style bullet points — action verb + outcome, no first-person pronouns.
+8. Optimize for role fit: responsibilities, ownership, governance, stakeholder communication.
+9. For skills_section, group into Technical Skills and Soft Skills (or other logical groups). Include only skills evidenced in the CV or clearly relevant to the JD.
+10. For education_section, extract as-is from the CV — do not rewrite or omit.
+11. For every bullet where a specific quantitative metric (%, £/$, number, timeframe) is absent but would materially change how a recruiter reads it, append exactly [METRIC: <short question>] at the end of the bullet. E.g. "Reduced churn [METRIC: by what %? over what period?]". Only add [METRIC:] where a real number would noticeably strengthen the line.
+12. For section_changes, write one concise entry per major rewrite — what changed and why it improves the candidate's positioning for this role. Be specific, not generic.
+
+Return ONLY valid JSON with this exact schema:
+{{
+  "name": "Full name from CV",
+  "contact": {{
+    "email": "email from CV or empty string",
+    "phone": "phone from CV or empty string",
+    "linkedin": "linkedin URL or handle from CV or empty string",
+    "location": "city/country from CV or empty string"
+  }},
+  "role_target": "string",
+  "diagnosis": {{
+    "current_positioning": "string",
+    "target_positioning": "string",
+    "key_gaps": ["string"]
+  }},
+  "rewritten_summary": "string",
+  "skills_section": [
+    {{
+      "category": "Technical Skills",
+      "items": ["string"]
+    }}
+  ],
+  "education_section": [
+    {{
+      "heading": "Degree | University | Year",
+      "details": "Classification or extra detail, or empty string"
+    }}
+  ],
+  "experience_section": [
+    {{
+      "heading": "Role | Company | Dates",
+      "bullets": ["bullet text, optionally ending with [METRIC: question]"]
+    }}
+  ],
+  "projects_section": [
+    {{
+      "heading": "project name",
+      "bullets": ["bullet text, optionally ending with [METRIC: question]"]
+    }}
+  ],
+  "additional_keywords_to_include": ["string"],
+  "missing_information": ["string"],
+  "section_changes": [
+    {{
+      "section": "summary|skills|experience|projects",
+      "label": "Short label — e.g. role heading or section name",
+      "type": "repositioned|optimised|restructured|added",
+      "change": "One specific sentence: what changed and why it helps for this role"
+    }}
+  ]
+}}
+
+Source CV:
+{resume_text}
+
+Job description:
+{job_description}
+
+Structured analysis:
+{analysis_blob}
+""".strip()
+
+    response = GENAI_CLIENT.models.generate_content(
+        model=GEMINI_REWRITE_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=0.2),
+    )
+    parsed = parse_json_response(getattr(response, "text", "") or "")
+    normalized = normalize_rewrite_response(parsed)
+    if not normalized["rewritten_summary"] and not normalized["experience_section"]:
+        raise HTTPException(status_code=502, detail="CV rewrite generation returned an invalid response.")
+    return normalized
+
+
 def gemini_embed_texts(texts: List[str]) -> List[List[float]]:
     if not GENAI_CLIENT:
         detail = "GEMINI_API_KEY is not set."
-        if GEMINI_IMPORT_ERROR:
-            detail = f"Gemini SDK unavailable: {GEMINI_IMPORT_ERROR}"
+        if GENAI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=500, detail=detail)
     result = GENAI_CLIENT.models.embed_content(
         model=GEMINI_EMBED_MODEL,
@@ -916,6 +1681,7 @@ def compute_semantic_score(
                 debug_info["semantic_method"] = "gemini"
             return max(0.0, min(100.0, similarity * 100))
         except Exception as exc:
+            logger.warning("Gemini semantic scoring failed, falling back to TF-IDF: %s", exc)
             if debug_info is not None:
                 debug_info["semantic_error"] = str(exc)
     similarity = tfidf_similarity(resume_text, job_description)
@@ -950,22 +1716,785 @@ def extract_must_have_skills(job_description: str, limit: int = 20) -> List[str]
 
 
 def extract_required_years(job_description: str) -> Optional[int]:
+    """Use Gemini to extract the minimum years of experience required; fallback to regex."""
+    if GENAI_CLIENT:
+        try:
+            response = GENAI_CLIENT.models.generate_content(
+                model=GEMINI_PARSE_MODEL,
+                contents=(
+                    "From this job description, what is the minimum total years of professional experience "
+                    "explicitly required for the role?\n"
+                    "Return ONLY valid JSON: {\"required_years\": N} where N is an integer, "
+                    "or {\"required_years\": null} if not stated.\n"
+                    "Rules:\n"
+                    "- Only count the overall experience requirement (e.g. '5+ years experience'), "
+                    "NOT years mentioned for specific skills/tools.\n"
+                    "- If a range is given (e.g. '3-5 years'), return the lower bound.\n"
+                    "- Do not count years that refer to company history, product age, or founding date.\n\n"
+                    f"{job_description[:3000]}"
+                ),
+                config=types.GenerateContentConfig(temperature=0),
+            )
+            raw = getattr(response, "text", "") or ""
+            parsed = parse_json_response(raw)
+            if isinstance(parsed, dict):
+                val = parsed.get("required_years")
+                if val is not None:
+                    return int(val)
+        except Exception:
+            pass
+
+    # Regex fallback
     values: List[int] = []
-    for match in RANGE_YEARS_RE.findall(job_description):
+    for match in AT_LEAST_YEARS_RE.findall(job_description):
+        values.append(int(match))
+    scrubbed = AT_LEAST_YEARS_RE.sub("", job_description)
+    for match in RANGE_YEARS_RE.findall(scrubbed):
         values.append(int(match[0]))
-
-    scrubbed = RANGE_YEARS_RE.sub("", job_description)
-    for match in AT_LEAST_YEARS_RE.findall(scrubbed):
-        values.append(int(match))
-    for match in PLUS_YEARS_RE.findall(scrubbed):
-        values.append(int(match))
-
-    return max(values) if values else None
+    scrubbed2 = RANGE_YEARS_RE.sub("", scrubbed)
+    for match in PLUS_YEARS_RE.findall(scrubbed2):
+        v = int(match)
+        if v <= 20:  # ignore obvious noise like founding years
+            values.append(v)
+    return min(values) if values else None
 
 
 def extract_resume_years(resume_text: str) -> Optional[int]:
     values = [int(match) for match in PLUS_YEARS_RE.findall(resume_text)]
     return max(values) if values else None
+
+
+def _parse_work_date(date_str: str) -> Optional[int]:
+    """Return year as int from a date string like '03/2021', '2021', 'Present', or None."""
+    if not date_str:
+        return None
+    s = str(date_str).strip().lower()
+    if s in ("present", "current", "now", "ongoing", "till date", "to date"):
+        import datetime
+        return datetime.date.today().year
+    match = re.search(r"\b(20\d{2}|19\d{2})\b", s)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def years_from_work_experience(work_exp: list) -> Optional[int]:
+    """Calculate total years of experience from parsed work_experience date ranges."""
+    if not work_exp or not isinstance(work_exp, list):
+        return None
+    periods: List[tuple] = []
+    for entry in work_exp:
+        if not isinstance(entry, dict):
+            continue
+        start = _parse_work_date(entry.get("start_date") or "")
+        end = _parse_work_date(entry.get("end_date") or "")
+        if start and end and end >= start:
+            periods.append((start, end))
+    if not periods:
+        return None
+    # Sum unique years across periods (handle overlaps via union)
+    all_years: set = set()
+    for start, end in periods:
+        for yr in range(start, end + 1):
+            all_years.add(yr)
+    return len(all_years) if all_years else None
+
+
+def split_text_units(text: str) -> List[str]:
+    if not text:
+        return []
+
+    units: List[str] = []
+    seen = set()
+    raw_chunks = re.split(r"[\r\n]+", text)
+    for chunk in raw_chunks:
+        parts = re.split(r"[;•]+", chunk)
+        for part in parts:
+            line = part.strip().strip("-*• ").strip()
+            if len(line.split()) < 3:
+                continue
+            normalized = normalize_phrase(line)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            units.append(line)
+
+    if units:
+        return units
+
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        line = part.strip().strip("-*• ").strip()
+        if len(line.split()) < 3:
+            continue
+        normalized = normalize_phrase(line)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        units.append(line)
+    return units
+
+
+def extract_action_phrases(text: str) -> List[str]:
+    tokens = [normalize_token(tok) for tok in TOKEN_RE.findall(text)]
+    phrases: List[str] = []
+    seen = set()
+    for idx, token in enumerate(tokens):
+        if token not in ACTION_VERBS:
+            continue
+        canonical_verb = ACTION_VERB_BASE.get(token, token)
+        obj_tokens: List[str] = []
+        for nxt in tokens[idx + 1 :]:
+            if nxt in STOPWORDS:
+                continue
+            if nxt in ACTION_VERBS and obj_tokens:
+                break
+            if not nxt:
+                continue
+            obj_tokens.append(nxt)
+            if len(obj_tokens) >= 2:
+                break
+        if not obj_tokens:
+            continue
+        phrase = " ".join([canonical_verb, *obj_tokens])
+        if phrase in seen:
+            continue
+        seen.add(phrase)
+        phrases.append(phrase)
+    return phrases
+
+
+def extract_seniority_terms(text: str) -> List[str]:
+    normalized = normalize_phrase(text)
+    terms: List[str] = []
+    seen = set()
+    for raw, canonical in SENIORITY_ALIASES.items():
+        if raw in normalized and canonical not in seen:
+            seen.add(canonical)
+            terms.append(canonical)
+    return terms
+
+
+_COMPANY_SUBJECT_RE = re.compile(
+    r'^\s*(\([A-Za-z]+:[A-Za-z]+\)|we\b|our\b)',
+    re.IGNORECASE,
+)
+_COMPANY_DESC_SIGNALS = (
+    "is a leading", "is an industry", "is dedicated to", "dedicated to helping",
+    "solutions provider", "our portfolio", "our comprehensive", "our mission",
+    "our vision", "our customers", "helping customers",
+)
+_CANDIDATE_HINTS = (
+    "you will", "you'll", "you are", "you should", "you must",
+    "candidate will", "the candidate", "successful candidate",
+    "responsible for", "responsibilities", "what you'll do",
+    "what you will do", "day to day", "in this role",
+)
+_ACTION_VERBS_SET = set(ACTION_VERBS)
+
+
+def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[dict]:
+    """Extract essential + nice-to-have requirements from a JD using Gemini; regex fallback."""
+    if GENAI_CLIENT:
+        try:
+            response = GENAI_CLIENT.models.generate_content(
+                model=GEMINI_PARSE_MODEL,
+                contents=(
+                    "Extract the candidate requirements from this job description — the things the candidate must HAVE or BRING to be hired.\n\n"
+                    "Separate them into:\n"
+                    "- essential: mandatory requirements labelled 'Essential', 'Required', 'Must have', 'Qualifications', 'What you need', etc.\n"
+                    "- nice_to_have: preferred/optional requirements labelled 'Nice to have', 'Desirable', 'Preferred', 'Bonus', 'Advantageous', etc.\n\n"
+                    "Return ONLY valid JSON:\n"
+                    "{\"requirements\": [{\"text\": \"...\", \"category\": \"essential\"}, {\"text\": \"...\", \"category\": \"nice_to_have\"}, ...]}\n\n"
+                    "STRICT rules:\n"
+                    "- Include ONLY things the candidate must HAVE or DEMONSTRATE — skills, experience, qualifications, behaviours.\n"
+                    "- Exclude entirely: company benefits, perks, salary, equity, flexible working, onboarding, about-the-company text, job duties/tasks.\n"
+                    "- Each requirement should be a concise standalone statement.\n"
+                    "- Remove bullet markers, numbers, and leading dashes.\n"
+                    f"- Return at most {limit} requirements total.\n\n"
+                    f"{job_description[:4000]}"
+                ),
+                config=types.GenerateContentConfig(temperature=0),
+            )
+            raw = getattr(response, "text", "") or ""
+            parsed = parse_json_response(raw)
+            if isinstance(parsed, dict):
+                reqs = parsed.get("requirements") or []
+                if isinstance(reqs, list) and reqs:
+                    result = []
+                    seen = set()
+                    for req in reqs[:limit]:
+                        if not isinstance(req, dict):
+                            continue
+                        text = str(req.get("text", "")).strip().strip("-*• ").strip()
+                        category = str(req.get("category", "essential")).strip()
+                        if category not in ("essential", "nice_to_have"):
+                            category = "essential"
+                        if len(text.split()) < 3:
+                            continue
+                        norm = normalize_phrase(text)
+                        if norm in seen:
+                            continue
+                        seen.add(norm)
+                        result.append({
+                            "text": text,
+                            "normalized": norm,
+                            "action_phrases": extract_action_phrases(text),
+                            "category": category,
+                        })
+                    if result:
+                        return result
+        except Exception as exc:
+            logger.warning("Gemini requirement extraction failed, using regex: %s", exc)
+
+    # Regex fallback
+    responsibilities: List[dict] = []
+    seen: set = set()
+    for line in split_text_units(job_description):
+        for sentence in re.split(r"(?<=[.!?])\s+", line):
+            for clause in re.split(r",|\band\b", sentence, flags=re.IGNORECASE):
+                clause_text = clause.strip().strip("-*• ").strip()
+                if len(clause_text.split()) < 4:
+                    continue
+                normalized = normalize_phrase(clause_text)
+                tokens = normalized.split()
+                starts_imperative = bool(tokens) and tokens[0] in _ACTION_VERBS_SET
+                has_candidate_signal = any(h in normalized for h in _CANDIDATE_HINTS)
+                if not starts_imperative and not has_candidate_signal:
+                    continue
+                action_phrases = extract_action_phrases(clause_text)
+                if not action_phrases and not has_candidate_signal:
+                    continue
+                if _COMPANY_SUBJECT_RE.match(clause_text):
+                    continue
+                if any(sig in normalized for sig in _COMPANY_DESC_SIGNALS):
+                    continue
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                responsibilities.append({
+                    "text": clause_text,
+                    "normalized": normalized,
+                    "action_phrases": action_phrases,
+                })
+                if len(responsibilities) >= limit:
+                    return responsibilities
+    return responsibilities
+
+
+def extract_resume_evidence_units(raw_sections: dict) -> List[dict]:
+    evidence_units: List[dict] = []
+    for section, weight in RESPONSIBILITY_SECTION_WEIGHTS.items():
+        raw_text = (raw_sections or {}).get(section, "") or ""
+        for line in split_text_units(raw_text):
+            evidence_units.append(
+                {
+                    "section": section,
+                    "weight": weight,
+                    "text": line,
+                    "normalized": normalize_phrase(line),
+                    "action_phrases": extract_action_phrases(line),
+                }
+            )
+    return evidence_units
+
+
+def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
+    """Build precise evidence units from structured Gemini-parsed CV data."""
+    if not parsed_resume or not isinstance(parsed_resume, dict):
+        return []
+    units: List[dict] = []
+    seen: set = set()
+
+    def _add(text: str, section: str, weight: float) -> None:
+        if not text or not text.strip():
+            return
+        norm = normalize_phrase(text)
+        if not norm or norm in seen:
+            return
+        seen.add(norm)
+        units.append({
+            "section": section,
+            "weight": weight,
+            "text": text.strip(),
+            "normalized": norm,
+            "action_phrases": extract_action_phrases(text),
+        })
+
+    summary = parsed_resume.get("summary")
+    if summary and isinstance(summary, str):
+        _add(summary, "summary", 0.25)
+
+    for job in (parsed_resume.get("work_experience") or []):
+        if not isinstance(job, dict):
+            continue
+        for bullet in (job.get("bullets") or []):
+            if isinstance(bullet, str):
+                _add(bullet, "experience", 1.0)
+
+    for proj in (parsed_resume.get("projects") or []):
+        if not isinstance(proj, dict):
+            continue
+        for bullet in (proj.get("bullets") or []):
+            if isinstance(bullet, str):
+                _add(bullet, "projects", 0.8)
+
+    return units
+
+
+def score_responsibility_match(
+    responsibilities: List[dict],
+    evidence_units: List[dict],
+) -> dict:
+    if not responsibilities:
+        return {
+            "score": 0.0,
+            "matched_responsibilities": [],
+            "missing_responsibilities": [],
+            "matched_action_phrases": [],
+            "missing_action_phrases": [],
+            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0},
+        }
+
+    matched_items: List[dict] = []
+    missing_items: List[dict] = []
+    matched_action_phrases: List[str] = []
+    missing_action_phrases: List[str] = []
+    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0}
+    total_strength = 0.0
+
+    for responsibility in responsibilities:
+        best_match = None
+        best_strength = 0.0
+        best_similarity = 0.0
+        best_match_type = None
+        responsibility_norm = responsibility["normalized"]
+
+        for unit in evidence_units:
+            direct_phrase = False
+            for phrase in responsibility["action_phrases"]:
+                if phrase and phrase in unit["action_phrases"]:
+                    direct_phrase = True
+                    break
+            if not direct_phrase and responsibility_norm and responsibility_norm in unit["normalized"]:
+                direct_phrase = True
+
+            if direct_phrase:
+                strength = unit["weight"]
+                similarity = 1.0
+                match_type = "phrase"
+            else:
+                similarity = tfidf_similarity(responsibility["text"], unit["text"])
+                if similarity < RESPONSIBILITY_SIMILARITY_THRESHOLD:
+                    continue
+                strength = unit["weight"] * max(
+                    0.0,
+                    min(
+                        1.0,
+                        similarity / max(RESPONSIBILITY_SIMILARITY_THRESHOLD, 0.0001),
+                    ),
+                )
+                match_type = "semantic"
+
+            if strength > best_strength or (
+                math.isclose(strength, best_strength) and similarity > best_similarity
+            ):
+                best_match = unit
+                best_strength = strength
+                best_similarity = similarity
+                best_match_type = match_type
+
+        if best_match is None:
+            missing_items.append(
+                {
+                    "responsibility": responsibility["text"],
+                    "action_phrases": responsibility["action_phrases"],
+                }
+            )
+            missing_action_phrases.extend(responsibility["action_phrases"])
+            continue
+
+        evidence_by_section[best_match["section"]] += 1
+        total_strength += best_strength
+        matched_items.append(
+            {
+                "responsibility": responsibility["text"],
+                "action_phrases": responsibility["action_phrases"],
+                "evidence": best_match["text"],
+                "section": best_match["section"],
+                "similarity": round(best_similarity, 3),
+                "match_type": best_match_type,
+            }
+        )
+        matched_action_phrases.extend(
+            [phrase for phrase in responsibility["action_phrases"] if phrase in best_match["normalized"]]
+        )
+
+    score = 100.0 * (total_strength / len(responsibilities))
+    return {
+        "score": round(max(0.0, min(100.0, score)), 2),
+        "matched_responsibilities": matched_items,
+        "missing_responsibilities": missing_items,
+        "matched_action_phrases": merge_unique(matched_action_phrases),
+        "missing_action_phrases": merge_unique(missing_action_phrases),
+        "evidence_by_section": evidence_by_section,
+    }
+
+
+def score_responsibility_match_semantic(
+    responsibilities: List[dict],
+    evidence_units: List[dict],
+) -> dict:
+    """Responsibility matching using Gemini embeddings; falls back to TF-IDF on any error."""
+    if not responsibilities:
+        return {
+            "score": 0.0,
+            "matched_responsibilities": [],
+            "missing_responsibilities": [],
+            "matched_action_phrases": [],
+            "missing_action_phrases": [],
+            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0},
+        }
+    if not GENAI_CLIENT or not evidence_units:
+        return score_responsibility_match(responsibilities, evidence_units)
+
+    all_texts = [r["text"] for r in responsibilities] + [u["text"] for u in evidence_units]
+    try:
+        # Batch in chunks of 100 (Gemini embedding API limit)
+        all_embeddings: List[List[float]] = []
+        for i in range(0, len(all_texts), 100):
+            all_embeddings.extend(gemini_embed_texts(all_texts[i:i + 100]))
+    except Exception as exc:
+        logger.warning("Gemini embedding failed for responsibility match, using TF-IDF: %s", exc)
+        return score_responsibility_match(responsibilities, evidence_units)
+
+    resp_embeddings = all_embeddings[:len(responsibilities)]
+    unit_embeddings = all_embeddings[len(responsibilities):]
+
+    matched_items: List[dict] = []
+    missing_items: List[dict] = []
+    matched_action_phrases: List[str] = []
+    missing_action_phrases: List[str] = []
+    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0}
+    total_strength = 0.0
+
+    for i, responsibility in enumerate(responsibilities):
+        best_match = None
+        best_strength = 0.0
+        best_similarity = 0.0
+        best_match_type = None
+        responsibility_norm = responsibility["normalized"]
+
+        for j, unit in enumerate(evidence_units):
+            direct_phrase = False
+            for phrase in responsibility["action_phrases"]:
+                if phrase and phrase in unit["action_phrases"]:
+                    direct_phrase = True
+                    break
+            if not direct_phrase and responsibility_norm and responsibility_norm in unit["normalized"]:
+                direct_phrase = True
+
+            if direct_phrase:
+                strength = unit["weight"]
+                similarity = 1.0
+                match_type = "phrase"
+            else:
+                similarity = cosine_similarity(resp_embeddings[i], unit_embeddings[j])
+                if similarity < RESPONSIBILITY_EMBEDDING_THRESHOLD:
+                    continue
+                strength = unit["weight"] * similarity
+                match_type = "semantic"
+
+            if strength > best_strength or (math.isclose(strength, best_strength) and similarity > best_similarity):
+                best_match = unit
+                best_strength = strength
+                best_similarity = similarity
+                best_match_type = match_type
+
+        if best_match is None:
+            missing_items.append({"responsibility": responsibility["text"], "action_phrases": responsibility["action_phrases"]})
+            missing_action_phrases.extend(responsibility["action_phrases"])
+            continue
+
+        evidence_by_section[best_match["section"]] = evidence_by_section.get(best_match["section"], 0) + 1
+        total_strength += best_strength
+        matched_items.append({
+            "responsibility": responsibility["text"],
+            "action_phrases": responsibility["action_phrases"],
+            "evidence": best_match["text"],
+            "section": best_match["section"],
+            "similarity": round(best_similarity, 3),
+            "match_type": best_match_type,
+        })
+        matched_action_phrases.extend(
+            [p for p in responsibility["action_phrases"] if p in best_match["normalized"]]
+        )
+
+    score = 100.0 * (total_strength / len(responsibilities))
+    return {
+        "score": round(max(0.0, min(100.0, score)), 2),
+        "matched_responsibilities": matched_items,
+        "missing_responsibilities": missing_items,
+        "matched_action_phrases": merge_unique(matched_action_phrases),
+        "missing_action_phrases": merge_unique(missing_action_phrases),
+        "evidence_by_section": evidence_by_section,
+    }
+
+
+def gemini_responsibility_match(
+    responsibilities: List[dict],
+    parsed_resume: dict,
+) -> dict:
+    """Use Gemini to intelligently match JD responsibilities against CV evidence."""
+    if not GENAI_CLIENT or not responsibilities:
+        ev_units = evidence_units_from_parsed(parsed_resume)
+        return score_responsibility_match_semantic(responsibilities, ev_units)
+
+    cv_bullets = []
+    for job in (parsed_resume.get("work_experience") or []):
+        title = job.get("title", "")
+        company = job.get("company", "")
+        for bullet in (job.get("bullets") or []):
+            if isinstance(bullet, str) and bullet.strip():
+                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
+
+    summary = (parsed_resume.get("summary") or "").strip()
+    skills = [str(s) for s in (parsed_resume.get("skills") or [])[:30]]
+
+    resp_list = "\n".join(f"{i + 1}. {r['text']}" for i, r in enumerate(responsibilities))
+
+    cv_parts = []
+    if summary:
+        cv_parts.append(f"SUMMARY:\n{summary}")
+    if cv_bullets:
+        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
+    if skills:
+        cv_parts.append("SKILLS: " + ", ".join(skills))
+    cv_section = "\n\n".join(cv_parts)
+
+    prompt = (
+        "You are an expert recruiter matching a CV against job responsibilities.\n"
+        "For each numbered job responsibility, decide whether the candidate's CV demonstrates it — using semantic understanding, not just keyword matching.\n\n"
+        "Return ONLY valid JSON with exactly this structure:\n"
+        "{\n"
+        '  "matches": [\n'
+        '    {\n'
+        '      "index": 1,\n'
+        '      "responsibility": "exact text from the numbered list",\n'
+        '      "evidence": "quote the specific CV bullet that proves this, keeping the [Title @ Company] prefix",\n'
+        '      "confidence": "strong or partial"\n'
+        '    }\n'
+        '  ],\n'
+        '  "missing": [\n'
+        '    {\n'
+        '      "index": 2,\n'
+        '      "responsibility": "exact text from the numbered list",\n'
+        '      "gap": "one sentence: what specific experience or evidence is absent from this CV"\n'
+        '    }\n'
+        '  ]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Use semantic matching: 'managed client relationships' can match 'led stakeholder engagement across 3 enterprise accounts'\n"
+        "- strong: CV clearly and directly demonstrates this — the evidence directly maps to what is asked\n"
+        "- partial: CV shows genuinely related experience but not an exact match (e.g. adjacent domain, smaller scale)\n"
+        "- Every responsibility index must appear in exactly one of matches or missing\n"
+        "- evidence: quote the CV bullet verbatim including the [Title @ Company] prefix so the candidate knows exactly where it came from\n"
+        "- gap: be specific — e.g. 'No experience leading cross-functional teams, only individual contributor roles shown' not 'needs more leadership'\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = f"{prompt}\n\nJOB RESPONSIBILITIES:\n{resp_list}\n\nCANDIDATE CV:\n{cv_section}"
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_REWRITE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected response shape")
+    except Exception as exc:
+        logger.warning("Gemini responsibility match failed, using embedding fallback: %s", exc)
+        ev_units = evidence_units_from_parsed(parsed_resume)
+        return score_responsibility_match_semantic(responsibilities, ev_units)
+
+    def _find_original(item: dict) -> dict | None:
+        idx = item.get("index")
+        if idx is not None:
+            try:
+                return responsibilities[int(idx) - 1]
+            except (IndexError, ValueError, TypeError):
+                pass
+        resp_text = str(item.get("responsibility") or "").strip()
+        resp_norm = normalize_phrase(resp_text)
+        return next(
+            (r for r in responsibilities if r["text"] == resp_text or r["normalized"] == resp_norm),
+            None,
+        )
+
+    matched_items: List[dict] = []
+    missing_items: List[dict] = []
+    total_weight = 0.0
+    STRONG_W, PARTIAL_W = 1.0, 0.55
+
+    for m in (parsed.get("matches") or []):
+        if not isinstance(m, dict):
+            continue
+        original = _find_original(m)
+        if original is None:
+            continue
+        confidence = str(m.get("confidence") or "partial").lower().strip()
+        if confidence not in ("strong", "partial"):
+            confidence = "partial"
+        total_weight += STRONG_W if confidence == "strong" else PARTIAL_W
+        matched_items.append({
+            "responsibility": original["text"],
+            "action_phrases": original["action_phrases"],
+            "evidence": str(m.get("evidence") or "").strip(),
+            "section": "experience",
+            "similarity": 1.0 if confidence == "strong" else 0.75,
+            "match_type": "ai",
+            "confidence": confidence,
+            "category": original.get("category", "essential"),
+        })
+
+    for m in (parsed.get("missing") or []):
+        if not isinstance(m, dict):
+            continue
+        original = _find_original(m)
+        if original is None:
+            continue
+        missing_items.append({
+            "responsibility": original["text"],
+            "action_phrases": original["action_phrases"],
+            "gap": str(m.get("gap") or "").strip(),
+            "category": original.get("category", "essential"),
+        })
+
+    total = len(responsibilities)
+    score = round(max(0.0, min(100.0, 100.0 * total_weight / total)), 2) if total else 0.0
+
+    return {
+        "score": score,
+        "matched_responsibilities": matched_items,
+        "missing_responsibilities": missing_items,
+        "matched_action_phrases": merge_unique([p for item in matched_items for p in item.get("action_phrases", [])]),
+        "missing_action_phrases": merge_unique([p for item in missing_items for p in item.get("action_phrases", [])]),
+        "evidence_by_section": {"experience": len(matched_items), "projects": 0, "summary": 0},
+    }
+
+
+def compute_title_alignment(job_description: str, resume_text: str) -> dict:
+    job_terms = extract_seniority_terms(job_description)
+    resume_terms = extract_seniority_terms(resume_text)
+    if not job_terms:
+        return {
+            "score": None,
+            "job_terms": [],
+            "resume_terms": resume_terms,
+            "aligned": None,
+        }
+
+    job_level = max(SENIORITY_LEVELS.get(term, 0) for term in job_terms)
+    resume_level = max((SENIORITY_LEVELS.get(term, 0) for term in resume_terms), default=0)
+    if resume_level == 0:
+        score = 0.0
+    else:
+        score = max(0.0, 1.0 - (abs(job_level - resume_level) / 4))
+
+    return {
+        "score": round(score * 100, 2),
+        "job_terms": job_terms,
+        "resume_terms": resume_terms,
+        "aligned": bool(score >= 0.75),
+    }
+
+
+def compute_experience_match(
+    raw_sections: dict,
+    resume_text: str,
+    job_description: str,
+    responsibilities: List[dict],
+    responsibility_result: dict,
+    required_years: Optional[int],
+    resume_years: Optional[int],
+) -> dict:
+    experience_text = (raw_sections or {}).get("experience", "") or ""
+    experience_lines = split_text_units(experience_text)
+    lines_with_dates = [line for line in experience_lines if has_dates(line)]
+    estimated_entries = max(1, min(4, max(len(experience_lines), 1) // 3 or 1))
+    date_coverage_ratio = min(1.0, len(lines_with_dates) / estimated_entries) if experience_text else 0.0
+
+    if required_years is None:
+        years_score = None
+    elif resume_years is None:
+        years_score = 0.0
+    else:
+        years_score = min(1.0, resume_years / required_years) if required_years > 0 else 1.0
+
+    title_alignment = compute_title_alignment(job_description, resume_text)
+
+    matched_experience = [
+        item
+        for item in responsibility_result["matched_responsibilities"]
+        if item.get("section") == "experience"
+    ]
+    evidence_density = min(
+        1.0,
+        len(matched_experience) / max(1, len(responsibilities)),
+    )
+
+    component_weights = [
+        ("years", 0.4, years_score),
+        ("dates", 0.2, date_coverage_ratio),
+        ("evidence", 0.2, evidence_density),
+        (
+            "title_alignment",
+            0.2,
+            None if title_alignment["score"] is None else title_alignment["score"] / 100,
+        ),
+    ]
+    total_weight = sum(weight for _name, weight, value in component_weights if value is not None)
+    weighted_total = sum(weight * value for _name, weight, value in component_weights if value is not None)
+    experience_score = (weighted_total / total_weight) * 100 if total_weight else 0.0
+
+    experience_evidence: List[str] = []
+    experience_gaps: List[str] = []
+    if resume_years is not None:
+        experience_evidence.append(f"Detected {resume_years}+ years of experience on the CV.")
+    if required_years is not None:
+        if resume_years is not None and resume_years >= required_years:
+            experience_evidence.append(f"Meets the role's {required_years}+ years requirement.")
+        else:
+            experience_gaps.append(f"Role asks for {required_years}+ years; the CV does not clearly show that level yet.")
+    if date_coverage_ratio >= 0.75:
+        experience_evidence.append("Experience entries include visible date ranges.")
+    else:
+        experience_gaps.append("Experience section needs clearer date ranges across roles.")
+    if matched_experience:
+        experience_evidence.append(
+            f"{len(matched_experience)} responsibility matches are backed by experience bullets."
+        )
+    else:
+        experience_gaps.append("Experience bullets do not strongly prove the job's key responsibilities yet.")
+    if title_alignment["score"] is not None:
+        if title_alignment["aligned"]:
+            experience_evidence.append("Seniority language in the CV aligns with the role level.")
+        else:
+            experience_gaps.append("Seniority/title language is not clearly aligned with the role level.")
+
+    return {
+        "score": round(max(0.0, min(100.0, experience_score)), 2),
+        "required_years": required_years,
+        "resume_years": resume_years,
+        "years_score": None if years_score is None else round(years_score * 100, 2),
+        "date_coverage_score": round(date_coverage_ratio * 100, 2),
+        "responsibility_evidence_score": round(evidence_density * 100, 2),
+        "title_alignment_score": title_alignment["score"],
+        "title_alignment": title_alignment,
+        "experience_evidence": experience_evidence,
+        "experience_gaps": experience_gaps,
+    }
 
 
 def has_dates(text: str) -> bool:
@@ -1021,6 +2550,7 @@ def build_section_feedback(
     raw_sections: dict,
     norm_sections: dict,
     job_description: str,
+    parsed_resume: dict | None = None,
 ) -> dict:
     feedback = {}
     profile = detect_job_profile(job_description)
@@ -1029,6 +2559,19 @@ def build_section_feedback(
         norm_text = (norm_sections or {}).get(section, "") or ""
         good: List[str] = []
         not_good: List[str] = []
+
+        # Fall back to Gemini-parsed data when heading detection misses the section
+        if section == "skills" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
+            parsed_skills_fallback = (parsed_resume or {}).get("skills") or []
+            if parsed_skills_fallback:
+                raw_text = ", ".join(str(s) for s in parsed_skills_fallback[:40])
+                norm_text = normalize_phrase(raw_text)
+
+        if section == "summary" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
+            parsed_summary_fallback = str((parsed_resume or {}).get("summary") or "")
+            if parsed_summary_fallback.strip():
+                raw_text = parsed_summary_fallback
+                norm_text = normalize_phrase(raw_text)
 
         word_count = len(re.findall(r"\b\w+\b", raw_text))
         if not raw_text.strip() or word_count < 15:
@@ -1115,23 +2658,28 @@ def build_section_feedback(
                 not_good.append("Projects section is short; add 2-3 strong projects.")
 
         elif section == "skills":
-            skills_list = extract_skill_list(raw_text)
+            parsed_skills_list = list((parsed_resume or {}).get("skills") or [])
+            skills_list = parsed_skills_list if parsed_skills_list else extract_skill_list(raw_text)
             skill_count = len(skills_list)
-            if 6 <= skill_count <= 25:
-                good.append("Skill list length is ATS-friendly.")
-            elif skill_count < 6:
-                not_good.append("Too few skills; add core languages and tools.")
-            elif skill_count > 35:
-                not_good.append("Too many skills; prioritize the most relevant ones.")
 
-            if tech_present:
-                good.append("Skills are specific and technical.")
+            if 6 <= skill_count <= 25:
+                good.append(f"Skill count ({skill_count}) is in the ATS-friendly range.")
+            elif skill_count < 6:
+                not_good.append("Too few skills listed; add core languages, tools, and frameworks.")
+            elif skill_count > 35:
+                not_good.append(f"Too many skills ({skill_count}); trim to the 15–25 most relevant.")
+
+            tech_skills_found = [str(s) for s in skills_list if has_tech_terms(str(s))][:6]
+            if tech_skills_found:
+                good.append(f"Technical skills detected: {', '.join(tech_skills_found)}.")
+            elif tech_present:
+                good.append("Skills section includes technical tools or technologies.")
             else:
-                not_good.append("Skills are too generic; add specific tools or languages.")
+                not_good.append("Skills are too generic; add specific tools, languages, or frameworks.")
 
             soft_hits = [term for term in SOFT_SKILLS if term in norm_text]
             if soft_hits:
-                not_good.append("Soft skills mixed in; keep this section technical.")
+                not_good.append(f"Soft skills detected ({', '.join(soft_hits[:3])}); keep this section technical only.")
 
         elif section == "education":
             degree_present = bool(
@@ -1330,169 +2878,615 @@ def infer_missing_keywords(
     return ordered_keywords
 
 
+_SECTION_LABELS = {
+    "summary": "Summary",
+    "experience": "Experience",
+    "projects": "Projects",
+    "skills": "Skills",
+    "education": "Education",
+    "other": "Other",
+}
+
+
+def annotate_cv_lines(
+    raw_sections_raw: dict,
+    responsibility_result: dict,
+    parsed_resume: dict = None,
+) -> list:
+    """Build per-section line annotations. Uses AI-parsed structure when available,
+    falls back to raw section text so every section always has content."""
+    matched_evidence_set = {
+        normalize_phrase(item.get("evidence", ""))
+        for item in (responsibility_result.get("matched_responsibilities") or [])
+        if item.get("evidence")
+    }
+    pr = parsed_resume or {}
+    raw = raw_sections_raw or {}
+
+    def _score(text: str) -> dict:
+        norm = normalize_phrase(text)
+        if len(text.split()) < 5:
+            return {"text": text, "quality": "neutral", "reason": None}
+        if norm in matched_evidence_set:
+            return {"text": text, "quality": "strong", "reason": "Directly evidences a job requirement."}
+        has_verb = count_action_verbs(norm) > 0
+        has_num = has_metrics(text)
+        if has_verb and has_num:
+            return {"text": text, "quality": "strong", "reason": "Action verb with measurable impact."}
+        if has_verb or has_num:
+            return {"text": text, "quality": "good", "reason": "Has action verb." if has_verb else "Includes a metric."}
+        return {"text": text, "quality": "weak", "reason": "No action verb or quantified result — consider strengthening."}
+
+    def _neutral(text: str) -> dict:
+        return {"text": text, "quality": "neutral", "reason": None}
+
+    def _raw_lines(section_key: str, scored: bool = False) -> list:
+        """Split a raw section string into annotated line dicts."""
+        text = raw.get(section_key, "") or ""
+        out = []
+        seen: set = set()
+        for raw_line in text.splitlines():
+            line = raw_line.strip().lstrip("-•* ").strip()
+            norm = normalize_phrase(line)
+            if line and norm and norm not in seen:
+                seen.add(norm)
+                out.append(_score(line) if scored else _neutral(line))
+        return out
+
+    annotated = []
+
+    # ── Summary ──────────────────────────────────────────
+    summary_text = (pr.get("summary") or "").strip()
+    lines_out: list = []
+    if summary_text:
+        seen: set = set()
+        for sentence in re.split(r"(?<=[.!?])\s+", summary_text):
+            s = sentence.strip()
+            norm = normalize_phrase(s)
+            if s and norm and norm not in seen:
+                seen.add(norm)
+                lines_out.append(_score(s))
+    if not lines_out:
+        lines_out = _raw_lines("summary", scored=True)
+    if lines_out:
+        annotated.append({"section": "summary", "section_label": "Summary", "lines": lines_out})
+
+    # ── Experience ───────────────────────────────────────
+    work_exp = pr.get("work_experience") or []
+    lines_out = []
+    if work_exp:
+        for role in work_exp:
+            title   = (role.get("title")      or "").strip()
+            company = (role.get("company")    or "").strip()
+            start   = (role.get("start_date") or "").strip()
+            end     = (role.get("end_date")   or "").strip()
+            dates   = f"{start} – {end}".strip(" –") if (start or end) else ""
+            header  = "  ·  ".join(filter(None, [title, company]))
+            if dates:
+                header += f"  ({dates})"
+            if header:
+                lines_out.append(_neutral(header))
+            for bullet in (role.get("bullets") or []):
+                b = bullet.strip().lstrip("-•* ").strip()
+                if b:
+                    lines_out.append(_score(b))
+    if not lines_out:
+        lines_out = _raw_lines("experience", scored=True)
+    if lines_out:
+        annotated.append({"section": "experience", "section_label": "Experience", "lines": lines_out})
+
+    # ── Projects ─────────────────────────────────────────
+    projects = pr.get("projects") or []
+    lines_out = []
+    if projects:
+        for proj in projects:
+            name = (proj.get("name") or "Project").strip()
+            tech = proj.get("tech_stack") or []
+            header = name + ("  ·  " + ", ".join(tech[:6]) if tech else "")
+            lines_out.append(_neutral(header))
+            for bullet in (proj.get("bullets") or []):
+                b = bullet.strip().lstrip("-•* ").strip()
+                if b:
+                    lines_out.append(_score(b))
+    if not lines_out:
+        lines_out = _raw_lines("projects", scored=True)
+    if lines_out:
+        annotated.append({"section": "projects", "section_label": "Projects", "lines": lines_out})
+
+    # ── Skills ───────────────────────────────────────────
+    skills_raw = raw.get("skills", "") or ""
+    if not skills_raw.strip():
+        skill_list = pr.get("skills") or []
+        if skill_list:
+            skills_raw = "\n".join(skill_list)
+    lines_out = []
+    seen = set()
+    for raw_line in skills_raw.splitlines():
+        line = raw_line.strip()
+        norm = normalize_phrase(line)
+        if line and norm and norm not in seen:
+            seen.add(norm)
+            lines_out.append(_neutral(line))
+    if lines_out:
+        annotated.append({"section": "skills", "section_label": "Skills", "lines": lines_out})
+
+    # ── Education + Certifications ───────────────────────
+    edu_lines = []
+    seen = set()
+    for entry in (pr.get("education") or []):
+        degree      = (entry.get("degree")           or "").strip()
+        institution = (entry.get("institution")      or "").strip()
+        year        = (entry.get("graduation_year")  or "").strip()
+        gpa         = (entry.get("gpa")              or "").strip()
+        line = "  ·  ".join(filter(None, [degree, institution]))
+        if year:
+            line += f" ({year})"
+        if gpa:
+            line += f"  ·  GPA {gpa}"
+        norm = normalize_phrase(line)
+        if line and norm not in seen:
+            seen.add(norm)
+            edu_lines.append(_neutral(line))
+    for cert in (pr.get("certifications") or []):
+        c = cert.strip()
+        norm = normalize_phrase(c)
+        if c and norm not in seen:
+            seen.add(norm)
+            edu_lines.append(_neutral(c))
+    if not edu_lines:
+        edu_lines = _raw_lines("education")
+    if edu_lines:
+        annotated.append({"section": "education", "section_label": "Education", "lines": edu_lines})
+
+    return annotated
+
+
+@app.post("/auth/login")
+async def auth_login(payload: dict):
+    email = str((payload or {}).get("email") or "").strip().lower()
+    password = str((payload or {}).get("password") or "").strip()
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required.")
+    account = ACCOUNTS.get(email)
+    if not account or account["password"] != password:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    token = str(uuid.uuid4())
+    _sessions[token] = {"email": email, "created_at": datetime.now(timezone.utc).isoformat()}
+    limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
+    used = get_scans_today(email)
+    return {
+        "token": token,
+        "email": email,
+        "daily_limit": limit,
+        "scans_today": used,
+        "scans_remaining": max(0, limit - used),
+    }
+
+
+@app.post("/auth/status")
+async def auth_status(payload: dict):
+    email = require_auth(payload)
+    account = ACCOUNTS.get(email, {})
+    limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
+    used = get_scans_today(email)
+    return {
+        "email": email,
+        "daily_limit": limit,
+        "scans_today": used,
+        "scans_remaining": max(0, limit - used),
+    }
+
+
+@app.post("/feedback")
+async def submit_feedback(payload: dict):
+    rating  = str((payload or {}).get("rating") or "").strip()
+    issues  = (payload or {}).get("issues") or []
+    note    = str((payload or {}).get("note") or "").strip()[:500]
+    score   = (payload or {}).get("match_score")
+    email   = str((payload or {}).get("email") or "").strip()
+    if rating not in ("accurate", "inaccurate"):
+        raise HTTPException(status_code=400, detail="Invalid rating.")
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "rating": rating,
+        "issues": issues if isinstance(issues, list) else [],
+        "note": note,
+        "match_score": score,
+        "email": email,
+    }
+    try:
+        existing = json.loads(FEEDBACK_FILE.read_text()) if FEEDBACK_FILE.exists() else []
+        existing.append(entry)
+        FEEDBACK_FILE.write_text(json.dumps(existing, indent=2))
+    except Exception as exc:
+        logger.warning("Could not save feedback: %s", exc)
+    return {"ok": True}
+
+
+@app.get("/admin/feedback")
+async def admin_feedback(token: str = ""):
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token.")
+    try:
+        entries = json.loads(FEEDBACK_FILE.read_text()) if FEEDBACK_FILE.exists() else []
+    except Exception:
+        entries = []
+    total      = len(entries)
+    accurate   = sum(1 for e in entries if e.get("rating") == "accurate")
+    inaccurate = sum(1 for e in entries if e.get("rating") == "inaccurate")
+    issue_counts: dict = {}
+    for e in entries:
+        for issue in (e.get("issues") or []):
+            issue_counts[issue] = issue_counts.get(issue, 0) + 1
+    return {
+        "total_feedback": total,
+        "accurate": accurate,
+        "inaccurate": inaccurate,
+        "accuracy_rate": f"{round(accurate/total*100)}%" if total else "n/a",
+        "top_issues": sorted(issue_counts.items(), key=lambda x: -x[1]),
+        "recent": list(reversed(entries))[:20],
+    }
+
+
+@app.get("/admin/usage")
+async def admin_usage(token: str = ""):
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token.")
+    today = _today()
+    rows = []
+    for email, account in ACCOUNTS.items():
+        limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
+        used_today = _scan_counts.get(email, {}).get(today, 0)
+        total_all_time = sum(_scan_counts.get(email, {}).values())
+        rows.append({
+            "email": email,
+            "daily_limit": limit,
+            "scans_today": used_today,
+            "scans_remaining": max(0, limit - used_today),
+            "total_all_time": total_all_time,
+            "history": _scan_counts.get(email, {}),
+        })
+    rows.sort(key=lambda r: r["scans_today"], reverse=True)
+    return {"date": today, "users": rows}
+
+
+@app.get("/status")
+async def status():
+    return {
+        "gemini_key_set": bool(GEMINI_API_KEY),
+        "gemini_client_ready": GENAI_CLIENT is not None,
+        "genai_import_error": GENAI_IMPORT_ERROR,
+        "models": {
+            "parse": GEMINI_PARSE_MODEL,
+            "embed": GEMINI_EMBED_MODEL,
+            "rewrite": GEMINI_REWRITE_MODEL,
+        },
+    }
+
+
+def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
+    """Use Gemini to extract skills from JD and semantically match against CV."""
+    cv_bullets = []
+    for job in (parsed_resume.get("work_experience") or []):
+        title = job.get("title", "")
+        company = job.get("company", "")
+        for bullet in (job.get("bullets") or []):
+            if isinstance(bullet, str) and bullet.strip():
+                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
+    skills_list = [str(s) for s in (parsed_resume.get("skills") or [])[:40]]
+    summary = (parsed_resume.get("summary") or "").strip()
+
+    cv_parts = []
+    if summary:
+        cv_parts.append(f"SUMMARY: {summary}")
+    if skills_list:
+        cv_parts.append("SKILLS LISTED: " + ", ".join(skills_list))
+    if cv_bullets:
+        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
+    cv_section = "\n\n".join(cv_parts)
+
+    if GENAI_CLIENT and cv_section:
+        try:
+            prompt = (
+                "You are matching a candidate's CV against a job description.\n\n"
+                "Step 1: Extract ALL skills, tools, technologies, and competencies from the job description. "
+                "Classify each as 'must_have' (explicitly required, essential) or 'nice_to_have' (preferred, bonus, or desirable).\n\n"
+                "Step 2: For each skill, check whether the candidate's CV demonstrates it — using semantic understanding "
+                "(e.g. 'AWS Lambda' counts for 'serverless', 'led a team of 5' counts for 'team leadership').\n\n"
+                "Return ONLY valid JSON:\n"
+                "{\n"
+                '  "must_have": [\n'
+                '    {"skill": "Python", "present": true, "cv_where": "[Data Engineer @ Acme] Built Python ETL pipelines..."}\n'
+                "  ],\n"
+                '  "nice_to_have": [\n'
+                '    {"skill": "Kubernetes", "present": false, "cv_where": null}\n'
+                "  ]\n"
+                "}\n\n"
+                "Rules:\n"
+                "- Use semantic matching, not keyword matching.\n"
+                "- cv_where: quote the specific CV bullet (keeping [Title @ Company] prefix) that proves the skill. null if not found.\n"
+                "- If a skill appears in both must_have and nice_to_have sections of the JD, put it in must_have only.\n"
+                "- Don't duplicate skills across the two lists.\n"
+                "- Return ONLY the JSON object, no markdown fences.\n"
+            )
+            contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description[:3000]}\n\nCANDIDATE CV:\n{cv_section}"
+            response = GENAI_CLIENT.models.generate_content(
+                model=GEMINI_REWRITE_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(temperature=0),
+            )
+            raw = getattr(response, "text", "") or ""
+            parsed = parse_json_response(raw)
+            if isinstance(parsed, dict):
+                def _clean_items(lst):
+                    out = []
+                    seen = set()
+                    for item in (lst or []):
+                        if not isinstance(item, dict):
+                            continue
+                        skill = str(item.get("skill") or "").strip()
+                        if not skill or skill.lower() in seen:
+                            continue
+                        seen.add(skill.lower())
+                        out.append({
+                            "skill": skill,
+                            "present": bool(item.get("present")),
+                            "cv_where": str(item.get("cv_where") or "").strip() or None,
+                        })
+                    return out
+                return {
+                    "must_have": _clean_items(parsed.get("must_have")),
+                    "nice_to_have": _clean_items(parsed.get("nice_to_have")),
+                }
+        except Exception as exc:
+            logger.warning("Gemini skills match failed, using fallback: %s", exc)
+
+    # Fallback: text-based
+    must_have_skills = extract_must_have_skills(job_description)
+    resume_text = parsed_resume.get("_resume_text", "")
+    resume_text_norm = normalize_phrase(resume_text)
+    resume_token_set = set(resume_text_norm.split())
+    resume_compact = resume_text_norm.replace(" ", "")
+
+    def _text_present(skill):
+        norm = normalize_phrase(skill)
+        return phrase_in_resume(norm, resume_text_norm, resume_token_set, resume_compact)
+
+    must_items = [{"skill": s, "present": _text_present(s), "cv_where": None} for s in must_have_skills]
+    combined = merge_unique(extract_keyphrases(job_description, limit=30) + extract_skill_tokens(job_description, limit=30))
+    must_norms = {normalize_phrase(s) for s in must_have_skills}
+    nice_items = [
+        {"skill": s, "present": _text_present(s), "cv_where": None}
+        for s in combined if normalize_phrase(s) not in must_norms
+    ]
+    return {"must_have": must_items, "nice_to_have": nice_items}
+
+
 @app.post("/analyze")
 async def analyze(
     resume: UploadFile = File(...),
     job_description: str = Form(...),
+    job_source: str = Form("paste"),
+    session_token: str = Form(""),
     debug: bool = False,
 ):
+    # Auth & rate limit (only enforced when accounts are configured)
+    if ACCOUNTS:
+        if not session_token:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        email = get_email_from_token(session_token)
+        if not email:
+            raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+        check_scan_limit(email)
+        increment_scan(email)
+
     file_bytes = await resume.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded resume file is empty.")
+
     resume_text = extract_pdf_text(file_bytes)
     job_description = clean_text(job_description)
+    if not resume_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract any text from the uploaded PDF.",
+        )
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Job description is empty.")
 
     debug_info = {} if debug else None
     parsed_resume = parse_resume(resume_text, debug_info)
+    parsed_resume["_resume_text"] = resume_text
+    cv_sections_analysis = analyze_cv_sections(resume_text, parsed_resume, job_description)
     parsed_skills = parsed_resume.get("skills") or []
     parsed_tools = parsed_resume.get("tools") or []
-    parsed_text_blob = " ".join([*parsed_skills, *parsed_tools]).strip()
-    # Use raw resume text for missing-skill detection to avoid LLM hallucinations.
-    resume_text_for_embeddings = (
-        f"{resume_text}\n{parsed_text_blob}" if parsed_text_blob else resume_text
-    )
-
     resume_text_norm = normalize_phrase(resume_text)
     resume_token_set = set(resume_text_norm.split())
     resume_compact = resume_text_norm.replace(" ", "")
-    must_have_skills = extract_must_have_skills(job_description)
-    missing_must_have: List[str] = []
-    for skill in must_have_skills:
-        skill_norm = normalize_phrase(skill)
-        if not skill_norm:
-            continue
-        if phrase_in_resume(skill_norm, resume_text_norm, resume_token_set, resume_compact):
-            continue
-        missing_must_have.append(skill)
 
+    resume_sections = split_resume_sections(resume_text)
+    resume_sections_raw = split_resume_sections_raw(resume_text)
     textrazor_terms = textrazor_extract_phrases(job_description, debug_info if debug else None)
     tfidf_terms = extract_tfidf_terms(job_description, limit=40)
     combined_terms = merge_unique(textrazor_terms + tfidf_terms)
-    if debug and textrazor_terms:
-        presence_sample = []
-        present_count = 0
-        for skill in textrazor_terms:
-            skill_norm = normalize_phrase(skill)
-            if not skill_norm:
-                continue
-            present = phrase_in_resume(
-                skill_norm,
-                resume_text_norm,
-                resume_token_set,
-                resume_compact,
-            )
-            if present:
-                present_count += 1
-            if len(presence_sample) < 30:
-                presence_sample.append({"skill": skill, "present": present})
-        debug_info["textrazor_present_count"] = present_count
-        debug_info["textrazor_missing_count"] = max(
-            0, len(textrazor_terms) - present_count
-        )
-        debug_info["textrazor_presence_sample"] = presence_sample
-        debug_info["textrazor_terms"] = len(textrazor_terms)
-        debug_info["tfidf_terms"] = len(tfidf_terms)
-        debug_info["combined_terms_sample"] = combined_terms[:20]
-    missing_keywords = merge_unique(
-        missing_must_have
-        + infer_missing_keywords(
-            resume_text,
-            job_description,
-            prefetched_phrases=combined_terms,
-        )
-    )
 
-    job_skill_candidates = merge_unique(
-        (combined_terms or [])
-        + extract_keyphrases(job_description, limit=30)
-        + extract_skill_tokens(job_description, limit=30)
-    )
-    must_norms = {normalize_phrase(item) for item in must_have_skills if item}
-    nice_to_have = [
-        skill for skill in job_skill_candidates if normalize_phrase(skill) not in must_norms
-    ]
-    resume_sections = split_resume_sections(resume_text)
-    resume_sections_raw = split_resume_sections_raw(resume_text)
-    must_coverage = compute_coverage(must_have_skills, resume_sections)
-    nice_coverage = compute_coverage(nice_to_have, resume_sections)
+    skills_result = gemini_skills_match(job_description, parsed_resume)
+    must_have_items   = skills_result["must_have"]
+    nice_to_have_items = skills_result["nice_to_have"]
+    present_must_have  = [s["skill"] for s in must_have_items   if s["present"]]
+    missing_must_have  = [s["skill"] for s in must_have_items   if not s["present"]]
+    present_nice_to_have = [s["skill"] for s in nice_to_have_items if s["present"]]
+    missing_nice_to_have = [s["skill"] for s in nice_to_have_items if not s["present"]]
+    must_coverage  = len(present_must_have)  / max(1, len(must_have_items))
+    nice_coverage  = len(present_nice_to_have) / max(1, len(nice_to_have_items)) if nice_to_have_items else 0.0
 
     required_years = extract_required_years(job_description)
-    resume_years = parsed_resume.get("years_experience") or extract_resume_years(resume_text)
-    experience_gap = (
-        required_years is not None
-        and (resume_years is None or resume_years < required_years)
+    resume_years = (
+        years_from_work_experience(parsed_resume.get("work_experience") or [])
+        or parsed_resume.get("years_experience")
+        or extract_resume_years(resume_text)
     )
-    if experience_gap:
-        missing_keywords = merge_unique(
-            missing_keywords + [f"{required_years}+ years experience"]
-        )
-
-    semantic_score = compute_semantic_score(
-        resume_text_for_embeddings,
-        job_description,
-        debug_info,
+    responsibility_candidates = extract_job_responsibilities(job_description)
+    responsibility_result = gemini_responsibility_match(
+        responsibility_candidates,
+        parsed_resume,
     )
-    weight_total = SEMANTIC_WEIGHT + MUST_COVERAGE_WEIGHT + NICE_COVERAGE_WEIGHT
-    combined_score = (
-        semantic_score * SEMANTIC_WEIGHT
-        + must_coverage * 100 * MUST_COVERAGE_WEIGHT
-        + nice_coverage * 100 * NICE_COVERAGE_WEIGHT
-    )
-    base_score = combined_score / weight_total if weight_total else semantic_score
-    other_missing = max(0, len(missing_keywords) - len(missing_must_have))
-    penalty = len(missing_must_have) * PENALTY_MUST_HAVE + other_missing * PENALTY_OTHER
-    base_score = max(0.0, round(base_score - penalty, 2))
-
-    ats_result = compute_ats_score(
-        resume_sections=resume_sections,
+    experience_result = compute_experience_match(
+        raw_sections=resume_sections_raw,
+        resume_text=resume_text,
         job_description=job_description,
-        semantic_score=semantic_score,
+        responsibilities=responsibility_candidates,
+        responsibility_result=responsibility_result,
+        required_years=required_years,
+        resume_years=resume_years,
     )
-    if ats_result["profile"] == "swe":
-        match_score = round(
-            (1 - ATS_BLEND_WEIGHT) * base_score
-            + ATS_BLEND_WEIGHT * ats_result["score"],
-            2,
-        )
-    else:
-        match_score = base_score
+    skills_match_score = round(
+        ((must_coverage * 0.7) + (nice_coverage * 0.3)) * 100,
+        2,
+    )
+
+    inferred_missing = infer_missing_keywords(
+        resume_text,
+        job_description,
+        prefetched_phrases=combined_terms,
+    )
+    skills_present = merge_unique(present_must_have + present_nice_to_have)
+    skills_missing = merge_unique(missing_must_have + missing_nice_to_have)
+
+    semantic_score = compute_semantic_score(resume_text, job_description, debug_info)
+    match_score = round(
+        (
+            responsibility_result["score"] * RESPONSIBILITY_MATCH_WEIGHT
+            + experience_result["score"] * EXPERIENCE_MATCH_WEIGHT
+            + skills_match_score * SKILLS_MATCH_WEIGHT
+            + semantic_score * SEMANTIC_MATCH_WEIGHT
+        ),
+        2,
+    )
     match_score = max(0.0, min(100.0, match_score))
+    cv_highlights = annotate_cv_lines(resume_sections_raw, responsibility_result, parsed_resume)
+
+    role_fit_breakdown = {
+        "responsibility_match_score": responsibility_result["score"],
+        "experience_match_score": experience_result["score"],
+        "skills_match_score": skills_match_score,
+        "semantic_score": round(semantic_score, 2),
+        "final_match_score": match_score,
+        "matched_responsibilities": responsibility_result["matched_responsibilities"],
+        "missing_responsibilities": responsibility_result["missing_responsibilities"],
+        "matched_action_phrases": responsibility_result["matched_action_phrases"],
+        "missing_action_phrases": responsibility_result["missing_action_phrases"],
+        "experience_evidence": experience_result["experience_evidence"],
+        "experience_gaps": experience_result["experience_gaps"],
+        "skills_present": skills_present,
+        "skills_missing": skills_missing,
+        "weights": {
+            "responsibility": RESPONSIBILITY_MATCH_WEIGHT,
+            "experience": EXPERIENCE_MATCH_WEIGHT,
+            "skills": SKILLS_MATCH_WEIGHT,
+            "semantic": SEMANTIC_MATCH_WEIGHT,
+        },
+        "responsibility_detail": {
+            "total_responsibilities": len(responsibility_candidates),
+            "matched_count": len(responsibility_result["matched_responsibilities"]),
+            "missing_count": len(responsibility_result["missing_responsibilities"]),
+            "evidence_by_section": responsibility_result["evidence_by_section"],
+            "similarity_threshold": RESPONSIBILITY_SIMILARITY_THRESHOLD,
+        },
+        "experience_detail": {
+            "required_years": experience_result["required_years"],
+            "resume_years": experience_result["resume_years"],
+            "years_score": experience_result["years_score"],
+            "date_coverage_score": experience_result["date_coverage_score"],
+            "responsibility_evidence_score": experience_result["responsibility_evidence_score"],
+            "title_alignment_score": experience_result["title_alignment_score"],
+            "title_alignment": experience_result["title_alignment"],
+        },
+        "skills_detail": {
+            "must_have": must_have_items,
+            "nice_to_have": nice_to_have_items,
+            "must_have_present": merge_unique(present_must_have),
+            "must_have_missing": merge_unique(missing_must_have),
+            "nice_to_have_present": merge_unique(present_nice_to_have),
+            "nice_to_have_missing": merge_unique(missing_nice_to_have),
+            "must_coverage": round(must_coverage * 100, 2),
+            "nice_coverage": round(nice_coverage * 100, 2),
+        },
+        "job_description": {
+            "source": job_source if job_source in {"paste", "url"} else "paste",
+            "char_count": len(job_description),
+        },
+    }
 
     response = {
         "match_score": match_score,
-        "missing_keywords": missing_keywords,
+        "missing_keywords": skills_missing,
         "resume_text": resume_text,
+        "cv_highlights": cv_highlights,
+        "role_fit_breakdown": role_fit_breakdown,
         "section_feedback": build_section_feedback(
             resume_sections_raw,
             resume_sections,
             job_description,
+            parsed_resume,
         ),
+        "candidate_profile": {
+            "seniority_level": parsed_resume.get("seniority_level"),
+            "industry_domains": parsed_resume.get("industry_domains") or [],
+            "location": parsed_resume.get("location"),
+            "management_experience": parsed_resume.get("management_experience") or {},
+            "employment_gaps": parsed_resume.get("employment_gaps") or [],
+            "languages": parsed_resume.get("languages") or [],
+            "links": parsed_resume.get("links") or {},
+            "quantified_achievements": parsed_resume.get("quantified_achievements") or [],
+            "achievements": parsed_resume.get("achievements") or [],
+        },
+        "cv_sections_analysis": cv_sections_analysis,
+        "ats_keywords": gemini_ats_keywords(job_description, resume_text),
     }
     if debug:
         response["debug"] = {
             **(debug_info or {}),
-            "missing_keywords_count": len(missing_keywords),
-            "missing_keywords_sample": missing_keywords[:20],
+            "missing_keywords_count": len(skills_missing),
+            "missing_keywords_sample": skills_missing[:20],
             "coverage_must": round(must_coverage * 100, 2),
             "coverage_nice": round(nice_coverage * 100, 2),
+            "responsibility_match_score": responsibility_result["score"],
+            "experience_match_score": experience_result["score"],
+            "skills_match_score": skills_match_score,
             "semantic_score": round(semantic_score, 2),
-            "combined_score": round(combined_score / weight_total, 2)
-            if weight_total
-            else round(semantic_score, 2),
-            "base_score": base_score,
-            "penalty": penalty,
-            "ats_score": ats_result["score"],
-            "ats_profile": ats_result["profile"],
-            "ats_breakdown": ats_result["breakdown"],
             "weights": {
-                "semantic": SEMANTIC_WEIGHT,
-                "must_coverage": MUST_COVERAGE_WEIGHT,
-                "nice_coverage": NICE_COVERAGE_WEIGHT,
-                "ats_blend": ATS_BLEND_WEIGHT,
+                "responsibility": RESPONSIBILITY_MATCH_WEIGHT,
+                "experience": EXPERIENCE_MATCH_WEIGHT,
+                "skills": SKILLS_MATCH_WEIGHT,
+                "semantic": SEMANTIC_MATCH_WEIGHT,
             },
             "skills_loaded": len(SKILLS_SET),
             "skills_path": SKILLS_PATH,
             "resume_excerpt": resume_text[:1200],
+            "responsibilities_detected": len(responsibility_candidates),
+            "evidence_units": len(evidence_units),
         }
     return response
+
+
+@app.post("/rewrite-cv")
+async def rewrite_cv(payload: dict):
+    resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    role_fit_breakdown = (payload or {}).get("role_fit_breakdown") or {}
+
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Missing resume_text.")
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+
+    rewrite = generate_cv_rewrite(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown if isinstance(role_fit_breakdown, dict) else {},
+    )
+    return {"rewrite": rewrite}
 
 
 @app.post("/scrape-job")
@@ -1531,7 +3525,9 @@ async def scrape_job(payload: dict):
         tag.decompose()
 
     body = soup.body or soup
-    text = body.get_text(separator="\n", strip=True)
+    text = clean_text(body.get_text(separator="\n", strip=True))
+    if not text:
+        raise HTTPException(status_code=400, detail="No readable job description text found at that URL.")
 
     return {"job_text": text}
 
@@ -1541,3 +3537,506 @@ async def extract_resume(resume: UploadFile = File(...)):
     file_bytes = await resume.read()
     resume_text = extract_pdf_text(file_bytes)
     return {"resume_text": resume_text}
+
+
+def gemini_business_fit(resume_text: str, job_description: str) -> dict:
+    if not GENAI_CLIENT:
+        raise HTTPException(
+            status_code=500,
+            detail="GEMINI_API_KEY is required for business fit analysis.",
+        )
+    _model = GEMINI_LITE_MODEL
+    prompt = (
+        "You are a senior business analyst and career strategist. Analyse how well this specific candidate's background maps "
+        "to the real business problems behind this job description. Every field must reference what is actually in the CV — never generalise.\n\n"
+        "Return ONLY valid JSON with exactly this structure:\n\n"
+        "{\n"
+        '  "company_problems": [\n'
+        '    {"title": "short problem title", "description": "1-2 sentences: the real underlying business need — infer the actual pain this hire is meant to fix, not the job ad copy"}\n'
+        "  ],\n"
+        '  "how_cv_solves": [\n'
+        '    {"problem": "matching title from company_problems", "cv_evidence": "quote or closely paraphrase the specific CV bullet, role, or achievement that addresses this problem — name the company and title it came from", "strength": "strong|partial|missing"}\n'
+        "  ],\n"
+        '  "cv_strengths": ["name the specific role, achievement, or CV line and explain exactly why it is an asset for this company and problem — e.g. \'Led 0-to-1 product launch at X, directly relevant to the company\'s current scaling challenge\'"],\n'
+        '  "cv_gaps": ["name the exact missing experience and which business problem it leaves unaddressed — e.g. \'No enterprise sales experience: CV shows only SMB deals, but this role requires closing 6-figure contracts\'"],\n'
+        '  "positioning_note": "one paragraph: what story this CV currently tells, how a recruiter or hiring manager would read it, and specifically what needs to change in framing or content to land this role"\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Do NOT use vague language. Every sentence must name something specific from the CV or JD.\n"
+        "- company_problems: 3-5 items. Infer the real business need behind the job posting.\n"
+        "- how_cv_solves: one entry per company_problem. If the CV is silent on a problem, use 'missing' and say so explicitly.\n"
+        "- cv_strengths: 3-5 items. Each must cite a named role, company, or line. No generic compliments.\n"
+        "- cv_gaps: 3-5 items. Name the exact gap, not a watered-down version of it.\n"
+        "- positioning_note: be honest and specific. This is the most valuable field for the candidate.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description}\n\nCANDIDATE CV:\n{resume_text}"
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=_model,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected response shape")
+    except Exception as exc:
+        logger.warning("Business fit analysis failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Business fit analysis could not be completed. Please try again.")
+
+    def clean_list(val, limit):
+        if not isinstance(val, list):
+            return []
+        return [str(item).strip() for item in val if str(item).strip()][:limit]
+
+    def clean_obj_list(val, required_keys, limit):
+        if not isinstance(val, list):
+            return []
+        out = []
+        for item in val:
+            if not isinstance(item, dict):
+                continue
+            cleaned = {k: str(item.get(k) or "").strip() for k in required_keys}
+            if any(cleaned.values()):
+                out.append(cleaned)
+        return out[:limit]
+
+    return {
+        "company_problems": clean_obj_list(
+            parsed.get("company_problems"), ["title", "description"], 5
+        ),
+        "how_cv_solves": clean_obj_list(
+            parsed.get("how_cv_solves"), ["problem", "cv_evidence", "strength"], 5
+        ),
+        "cv_strengths": clean_list(parsed.get("cv_strengths"), 5),
+        "cv_gaps": clean_list(parsed.get("cv_gaps"), 5),
+        "positioning_note": str(parsed.get("positioning_note") or "").strip(),
+    }
+
+
+def gemini_ats_keywords(job_description: str, resume_text: str) -> dict:
+    """Extract all role-relevant keywords from the JD and check exact-match presence in CV."""
+    if not GENAI_CLIENT:
+        return {"hard_skills": [], "soft_skills": []}
+    prompt = (
+        "You are an ATS (Applicant Tracking System) expert. Your job is to extract EVERY keyword "
+        "from the job description that a recruiter or ATS system would use to rank candidates.\n\n"
+        "For each keyword:\n"
+        "1. Count exactly how many times it appears in the JD (jd_count). Include all forms — singular/plural, "
+        "capitalised/lowercase — but use the most prominent spelling from the JD as the keyword.\n"
+        "2. Check whether the EXACT same spelling (case-insensitive) appears in the CV (cv_count).\n\n"
+        "Categorise keywords into two groups:\n"
+        "- hard_skills: ALL technical, domain-specific, and role-specific keywords — tools, languages, "
+        "frameworks, platforms, cloud services, databases, methodologies (e.g. Agile, Scrum), certifications, "
+        "industry terms, domain knowledge, qualifications, role titles used as skills, compliance standards, "
+        "sector-specific terminology, and any noun or noun phrase that describes a concrete skill or knowledge area.\n"
+        "- soft_skills: Behavioural, interpersonal, and leadership qualities — communication styles, "
+        "management approaches, collaboration patterns (e.g. 'stakeholder management', 'cross-functional', "
+        "'people management', 'strategic thinking').\n\n"
+        "Be EXHAUSTIVE for hard_skills — include every meaningful keyword, not just the obvious ones. "
+        "If a term appears in the JD and relates to what the role requires, include it.\n\n"
+        "Return ONLY valid JSON:\n"
+        "{\n"
+        '  "hard_skills": [{"skill": "exact spelling from JD", "jd_count": 3, "cv_count": 1}],\n'
+        '  "soft_skills": [{"skill": "exact spelling from JD", "jd_count": 2, "cv_count": 0}]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Use the EXACT spelling and casing as it appears most often in the job description.\n"
+        "- Sort each list by jd_count descending, then alphabetically for ties.\n"
+        "- No artificial limit on quantity — include every relevant keyword.\n"
+        "- Exclude: company name, job title of the post itself, generic filler words, salary/benefits text.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description[:4000]}\n\nCANDIDATE CV:\n{resume_text[:3000]}"
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_REWRITE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected shape")
+    except Exception as exc:
+        logger.warning("ATS keyword extraction failed: %s", exc)
+        return {"hard_skills": [], "soft_skills": []}
+
+    def clean_skills(val):
+        if not isinstance(val, list):
+            return []
+        out = []
+        seen = set()
+        for item in val:
+            if not isinstance(item, dict):
+                continue
+            skill = str(item.get("skill") or "").strip()
+            if not skill or skill.lower() in seen:
+                continue
+            seen.add(skill.lower())
+            jd_count = max(1, int(item.get("jd_count") or 1))
+            cv_count = max(0, int(item.get("cv_count") or 0))
+            if cv_count == 0:
+                status = "missing"
+            elif cv_count < max(1, jd_count // 2):
+                status = "low"
+            else:
+                status = "present"
+            out.append({"skill": skill, "jd_count": jd_count, "cv_count": cv_count, "status": status})
+        return out
+
+    return {
+        "hard_skills": clean_skills(parsed.get("hard_skills")),
+        "soft_skills": clean_skills(parsed.get("soft_skills")),
+    }
+
+
+def gemini_recruiter_view(resume_text: str, job_description: str, role_fit_breakdown: dict | None = None) -> dict:
+    if not GENAI_CLIENT:
+        raise HTTPException(
+            status_code=500,
+            detail="GEMINI_API_KEY is required for recruiter view.",
+        )
+    _model = GEMINI_LITE_MODEL
+
+    # Build concrete match summary from computed data
+    breakdown = role_fit_breakdown or {}
+    matched = breakdown.get("matched_responsibilities") or []
+    missing = breakdown.get("missing_responsibilities") or []
+
+    essential_matched = [r for r in matched if r.get("category") != "nice_to_have"]
+    essential_missing = [r for r in missing if r.get("category") != "nice_to_have"]
+    nice_matched = [r for r in matched if r.get("category") == "nice_to_have"]
+    nice_missing = [r for r in missing if r.get("category") == "nice_to_have"]
+
+    match_summary_lines = [
+        f"Essential requirements matched: {len(essential_matched)}, missing: {len(essential_missing)}",
+        f"Nice-to-have requirements matched: {len(nice_matched)}, missing: {len(nice_missing)}",
+    ]
+    if essential_missing:
+        match_summary_lines.append("Missing essential requirements: " + "; ".join(r.get("responsibility", "") for r in essential_missing[:8]))
+    if nice_missing:
+        match_summary_lines.append("Missing nice-to-have requirements: " + "; ".join(r.get("responsibility", "") for r in nice_missing[:6]))
+    if essential_matched:
+        match_summary_lines.append("Matched essential requirements: " + "; ".join(r.get("responsibility", "") for r in essential_matched[:8]))
+
+    match_summary = "\n".join(match_summary_lines)
+
+    # Hard rule: determine the maximum allowed verdict from the data
+    if essential_missing:
+        forced_cap = "pass"  # missing essentials → cannot be shortlist or maybe
+    elif nice_missing:
+        forced_cap = "maybe"  # all essentials met but some nice-to-haves missing
+    else:
+        forced_cap = "shortlist"  # all essentials AND all nice-to-haves met
+
+    prompt = (
+        "You are a senior recruiter with 15 years of experience placing candidates into competitive roles. "
+        "Assess whether this specific candidate is genuinely the right person for this specific company and role. "
+        "Every sentence must be grounded in what is actually written in the CV — never speak in generalities.\n\n"
+        "You have been given a computed requirements match summary. Use this as the factual basis for your verdict — "
+        "do not override it with your own impression.\n\n"
+        "Return ONLY valid JSON with exactly this structure:\n\n"
+        "{\n"
+        '  "verdict": {\n'
+        f'    "decision": "shortlist|maybe|pass",\n'
+        '    "reasoning": "2-3 sentences citing specific CV evidence and the matched/missing requirements above. Name actual roles, companies, or achievements."\n'
+        '  },\n'
+        '  "first_impression": "one sentence naming who this person actually is based on their CV — their current/most recent role, their industry, and whether that profile matches what this company is hiring for",\n'
+        '  "company_fit": "2-3 sentences grounded in the CV. Reference specific industries, company types, or team sizes from their history and compare to what this company is. Do not generalise.",\n'
+        '  "role_fit": "3-5 sentences of deep, personalised analysis. Name specific roles and achievements from the CV. For each key requirement in the JD, say explicitly whether the CV demonstrates it and cite the evidence — or name the gap. End with one honest verdict sentence on overall depth of fit.",\n'
+        '  "quick_wins": [\n'
+        '    {"action": "specific CV edit: name the exact section and what to change or add", "why": "one sentence on why this specific change increases chances with this specific company and role", "cv_section": "the exact job title, section name, or bullet this applies to"}\n'
+        '  ],\n'
+        '  "screening_keywords": ["keyword or phrase that a recruiter or ATS for this role would search for that is absent or buried in this CV — only include if genuinely missing"],\n'
+        '  "green_flags": ["cite a specific CV line, role, or achievement that is a genuine strength for this company and role — never generic praise"],\n'
+        '  "red_flags": ["a genuine fit concern grounded in what is absent or mismatched — name the exact gap vs the exact JD requirement. Empty array is fine."]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Do NOT use vague language like 'likely', 'possibly', 'may', 'could suggest', or 'appears to'. Be direct and specific.\n"
+        "- Do NOT mention employment gaps, dates, or tenure. Focus only on skill and experience fit.\n"
+        f"- verdict.decision MUST be '{forced_cap}' or lower — this is enforced by the match data above. "
+        "'shortlist' = ALL essential AND ALL nice-to-have requirements met. "
+        "'maybe' = all essentials met but at least one nice-to-have missing. "
+        "'pass' = one or more essential requirements missing.\n"
+        "- role_fit: this is the most important field. Go deep. Every sentence must name something specific from the CV or JD.\n"
+        "- quick_wins: 3-5 items. Each must name the exact CV section or bullet to change. Not generic advice — specific surgical edits.\n"
+        "- screening_keywords: 5-8 terms, only those genuinely absent from the CV.\n"
+        "- green_flags: 3-5 items, each tied to a named role, achievement, or line from the CV.\n"
+        "- red_flags: 0-3 items, only genuine blockers. Empty array is fine and preferred over nitpicks.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = (
+        f"{prompt}\n\n"
+        f"COMPUTED MATCH SUMMARY:\n{match_summary}\n\n"
+        f"JOB DESCRIPTION:\n{job_description}\n\n"
+        f"CANDIDATE CV:\n{resume_text}"
+    )
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=_model,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected response shape")
+    except Exception as exc:
+        logger.warning("Recruiter view failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Recruiter view could not be completed. Please try again.")
+
+    def clean_list(val, limit):
+        if not isinstance(val, list):
+            return []
+        return [str(item).strip() for item in val if str(item).strip()][:limit]
+
+    def clean_obj_list(val, required_keys, limit):
+        if not isinstance(val, list):
+            return []
+        out = []
+        for item in val:
+            if not isinstance(item, dict):
+                continue
+            cleaned = {k: str(item.get(k) or "").strip() for k in required_keys}
+            if any(cleaned.values()):
+                out.append(cleaned)
+        return out[:limit]
+
+    verdict_raw = parsed.get("verdict") or {}
+    if not isinstance(verdict_raw, dict):
+        verdict_raw = {}
+    decision = str(verdict_raw.get("decision") or "maybe").lower().strip()
+    if decision not in ("shortlist", "maybe", "pass"):
+        decision = "maybe"
+
+    # Hard override: never allow a higher verdict than the data supports
+    cap_order = {"pass": 0, "maybe": 1, "shortlist": 2}
+    if cap_order.get(decision, 1) > cap_order.get(forced_cap, 1):
+        decision = forced_cap
+
+    return {
+        "verdict": {
+            "decision": decision,
+            "reasoning": str(verdict_raw.get("reasoning") or "").strip(),
+        },
+        "first_impression": str(parsed.get("first_impression") or "").strip(),
+        "company_fit": str(parsed.get("company_fit") or "").strip(),
+        "role_fit": str(parsed.get("role_fit") or "").strip(),
+        "quick_wins": clean_obj_list(parsed.get("quick_wins"), ["action", "why", "cv_section"], 5),
+        "screening_keywords": clean_list(parsed.get("screening_keywords"), 8),
+        "green_flags": clean_list(parsed.get("green_flags"), 5),
+        "red_flags": clean_list(parsed.get("red_flags"), 3),
+    }
+
+
+@app.post("/business-fit")
+async def business_fit(payload: dict):
+    resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Missing resume_text.")
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+    result = gemini_business_fit(resume_text, job_description)
+    return {"business_fit": result}
+
+
+@app.post("/recruiter-view")
+async def recruiter_view(payload: dict):
+    resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    role_fit_breakdown = (payload or {}).get("role_fit_breakdown") or {}
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Missing resume_text.")
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+    result = gemini_recruiter_view(resume_text, job_description, role_fit_breakdown)
+    return {"recruiter_view": result}
+
+
+def fetch_company_news(company_name: str, max_articles: int = 6) -> list:
+    url = f"https://news.google.com/rss/search?q={quote_plus(company_name)}&hl=en-US&gl=US&ceid=US:en"
+    try:
+        resp = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        articles = []
+        for item in root.findall(".//item")[:max_articles]:
+            raw_title = item.findtext("title") or ""
+            source_el = item.find("source")
+            source = source_el.text.strip() if source_el is not None and source_el.text else ""
+            title = re.sub(r"\s*[-–]\s*" + re.escape(source) + r"\s*$", "", raw_title).strip() if source else raw_title.strip()
+            articles.append({
+                "title": title,
+                "url": (item.findtext("link") or "").strip(),
+                "source": source,
+                "pub_date": (item.findtext("pubDate") or "").strip(),
+            })
+        return articles
+    except Exception as exc:
+        logger.warning("News fetch failed for %s: %s", company_name, exc)
+        return []
+
+
+def extract_company_name(job_description: str) -> str:
+    if not GENAI_CLIENT:
+        m = re.search(r'\bAbout\s+([A-Z][A-Za-z0-9\s&\.,]+?)(?:\n|\.)', job_description)
+        return m.group(1).strip()[:80] if m else ""
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_PARSE_MODEL,
+            contents=(
+                "Extract only the company name from this job description. "
+                "Return just the company name as a plain string, nothing else. "
+                "If you cannot determine it, return an empty string.\n\n"
+                f"{job_description[:2000]}"
+            ),
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        return (getattr(response, "text", "") or "").strip().strip('"\'')[:80]
+    except Exception:
+        return ""
+
+
+def gemini_company_insights(company_name: str, job_description: str) -> dict:
+    if not GENAI_CLIENT:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is required for company insights.")
+
+    def clean_list(val, limit):
+        if not isinstance(val, list):
+            return []
+        cleaned = [re.sub(r'\s*\[cite:[^\]]*\]|\s*\[\d+\]', '', str(item)).strip() for item in val]
+        return [s for s in cleaned if s][:limit]
+
+    prompt = (
+        f"You are helping a job candidate prepare their application for a role at {company_name}. "
+        f"Search the web for '{company_name}' — check their official site, LinkedIn, Crunchbase, press releases, "
+        "recent news, and funding announcements.\n\n"
+        "Use what you find to return ONLY valid JSON with exactly this structure:\n\n"
+        "{\n"
+        '  "why_hiring_now": {\n'
+        '    "reason": "1-2 sentences: what specific business event or need is driving this hire — '
+        'e.g. Series B in Jan 2025 to scale engineering, launched new product in Q1 requiring support, expanding into EU market. '
+        'If you found a concrete news event, lead with it. If you can only infer from the JD, say so explicitly.",\n'
+        '    "confidence": "high | medium | low",\n'
+        '    "source": "what you based this on — e.g. \'TechCrunch funding article March 2025\', \'LinkedIn headcount growth\', '
+        '\'inferred from JD language only\'"\n'
+        "  },\n"
+        '  "company_momentum": [\n'
+        "    {\n"
+        '      "fact": "the specific event — include real numbers, names, or metrics where possible. e.g. \'Raised $40M Series B led by Accel, March 2025\' or \'Headcount grew from 120 to 340 employees over 12 months\'",\n'
+        '      "date": "when this happened — e.g. \'March 2025\', \'Q1 2025\', \'2024\'. Leave empty string if unknown.",\n'
+        '      "source": "where you found this — e.g. \'TechCrunch\', \'LinkedIn\', \'company blog\', \'Crunchbase\'. Leave empty string if unclear.",\n'
+        '      "candidate_relevance": "one sentence: why this matters to someone applying for this role right now"\n'
+        "    }\n"
+        "  ],\n"
+        '  "current_focus": ["specific real thing this company is actively working on that is directly relevant to this role — '
+        'e.g. \'Rebuilding their data pipeline after migrating from Snowflake to BigQuery\', '
+        '\'Rolling out a new B2B product to enterprise clients in the UK\', '
+        '\'Scaling their ML infrastructure to support real-time recommendations\'. '
+        'Find these from job postings, engineering blogs, product announcements, LinkedIn updates, or press releases. '
+        'Each bullet should be concrete enough that a candidate could reference it in a cover letter."],\n'
+        '  "watch_outs": ["honest signals a candidate should know — leadership changes, layoffs, press coverage concerns, '
+        'high turnover signals, recent pivots. Omit if nothing found."],\n'
+        '  "apply_intel": ["specific actionable insight for tailoring this application or acing an interview at this company"]\n'
+        "}\n\n"
+        "Rules:\n"
+        f"- Everything must be specific to {company_name} — no generic advice.\n"
+        "- why_hiring_now.confidence: 'high' only if you found a concrete news event. 'medium' if you found signals. 'low' if JD inference only.\n"
+        "- company_momentum: 2-4 items, each a real verifiable event. Prioritise the most recent and most relevant to this role. Do NOT include items you cannot verify.\n"
+        "- current_focus: 3-5 bullets, each specific enough to reference in a cover letter. Prioritise things tied to the role's function. No generic statements like 'growing fast' or 'scaling the team'.\n"
+        "- watch_outs: 1-3 items if genuinely found. Return empty array otherwise.\n"
+        "- apply_intel: 2-4 items specific to this company and role.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = f"{prompt}\n\nCOMPANY: {company_name}\n\nJOB DESCRIPTION:\n{job_description}"
+
+    grounded_ok = False
+    raw = ""
+    if types is not None:
+        try:
+            grounded_response = GENAI_CLIENT.models.generate_content(
+                model=GEMINI_REWRITE_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                    temperature=0.2,
+                ),
+            )
+            raw = getattr(grounded_response, "text", "") or ""
+            if raw.strip():
+                grounded_ok = True
+        except Exception as exc:
+            logger.warning("Grounded company insights failed, falling back: %s", exc)
+
+    if not grounded_ok:
+        try:
+            fallback_response = GENAI_CLIENT.models.generate_content(
+                model=GEMINI_REWRITE_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(temperature=0.2),
+            )
+            raw = getattr(fallback_response, "text", "") or ""
+        except Exception as exc:
+            logger.warning("Company insights fallback also failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Company insights could not be completed.")
+
+    parsed = parse_json_response(raw)
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=500, detail="Company insights returned unexpected output.")
+
+    def strip_citations(text: str) -> str:
+        # Remove Gemini grounding citation markers like [cite: JD], [1], [cite: 2], etc.
+        return re.sub(r'\s*\[cite:[^\]]*\]|\s*\[\d+\]', '', str(text)).strip()
+
+    raw_why = parsed.get("why_hiring_now") or {}
+    if isinstance(raw_why, str):
+        raw_why = {"reason": raw_why, "confidence": "low", "source": ""}
+    why_hiring_now = {
+        "reason": strip_citations(raw_why.get("reason") or ""),
+        "confidence": str(raw_why.get("confidence") or "low").strip().lower(),
+    }
+
+    raw_momentum = parsed.get("company_momentum") or []
+    if not isinstance(raw_momentum, list):
+        raw_momentum = []
+    company_momentum = []
+    for item in raw_momentum[:4]:
+        if isinstance(item, str):
+            fact = strip_citations(item)
+            if fact:
+                company_momentum.append({"fact": fact, "date": "", "candidate_relevance": ""})
+        elif isinstance(item, dict):
+            fact = strip_citations(item.get("fact") or "")
+            if fact:
+                company_momentum.append({
+                    "fact": fact,
+                    "date": strip_citations(item.get("date") or ""),
+                    "candidate_relevance": strip_citations(item.get("candidate_relevance") or ""),
+                })
+
+    return {
+        "company_name": company_name,
+        "why_hiring_now": why_hiring_now,
+        "company_momentum": company_momentum,
+        "current_focus": clean_list(parsed.get("current_focus"), 5),
+        "watch_outs": clean_list(parsed.get("watch_outs"), 3),
+        "apply_intel": clean_list(parsed.get("apply_intel"), 4),
+        "grounded": grounded_ok,
+    }
+
+
+@app.post("/company-insights")
+async def company_insights(payload: dict):
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+    if not GENAI_CLIENT:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is required for company insights.")
+    company_name = extract_company_name(job_description)
+    if not company_name:
+        raise HTTPException(status_code=422, detail="Could not identify company name from job description.")
+    result = gemini_company_insights(company_name, job_description)
+    return {"company_insights": result}

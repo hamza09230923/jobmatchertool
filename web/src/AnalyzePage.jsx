@@ -99,6 +99,7 @@ export default function AnalyzePage() {
 
   useEffect(() => {
     refreshLimits().then(d => { if (d) setScanLimits(d); });
+    fetch(`${API_BASE_URL}/status`).catch(() => {});
   }, []);
 
   const loadingSteps = [
