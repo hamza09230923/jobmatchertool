@@ -1,81 +1,31 @@
-const TOKEN_KEY  = "shortlistly.session.token";
-const EMAIL_KEY  = "shortlistly.session.email";
-const LIMITS_KEY = "shortlistly.session.limits";
+const EMAIL_KEY = "shortlistly.session.email";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const ALLOWED_EMAIL    = (import.meta.env.VITE_ALLOWED_LOGIN_EMAIL    || "").trim().toLowerCase();
+const ALLOWED_PASSWORD = (import.meta.env.VITE_ALLOWED_LOGIN_PASSWORD || "").trim();
 
-export function getStoredToken() {
-  return localStorage.getItem(TOKEN_KEY) || "";
+export function isAuthConfigured() {
+  return Boolean(ALLOWED_EMAIL && ALLOWED_PASSWORD);
+}
+
+export function isAuthenticated() {
+  return Boolean(localStorage.getItem(EMAIL_KEY));
+}
+
+export async function signIn(email, password) {
+  if (!isAuthConfigured()) {
+    return { ok: false, error: "Auth not configured. Set VITE_ALLOWED_LOGIN_EMAIL and VITE_ALLOWED_LOGIN_PASSWORD in web/.env.local." };
+  }
+  if (email.trim().toLowerCase() !== ALLOWED_EMAIL || password !== ALLOWED_PASSWORD) {
+    return { ok: false, error: "Invalid email or password." };
+  }
+  localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+  return { ok: true };
+}
+
+export function signOut() {
+  localStorage.removeItem(EMAIL_KEY);
 }
 
 export function getStoredEmail() {
   return localStorage.getItem(EMAIL_KEY) || "";
-}
-
-export function getStoredLimits() {
-  try {
-    return JSON.parse(localStorage.getItem(LIMITS_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-export function isAuthenticated() {
-  return Boolean(getStoredToken() && getStoredEmail());
-}
-
-export function isAuthConfigured() {
-  return true;
-}
-
-export async function signIn(email, password) {
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      return { ok: false, error: data?.detail || "Invalid email or password." };
-    }
-    localStorage.setItem(TOKEN_KEY, data.token);
-    localStorage.setItem(EMAIL_KEY, data.email);
-    localStorage.setItem(LIMITS_KEY, JSON.stringify({
-      daily_limit: data.daily_limit,
-      scans_today: data.scans_today,
-      scans_remaining: data.scans_remaining,
-    }));
-    return { ok: true, ...data };
-  } catch {
-    return { ok: false, error: "Could not reach the server. Is the backend running?" };
-  }
-}
-
-export async function refreshLimits() {
-  const token = getStoredToken();
-  if (!token) return null;
-  try {
-    const res = await fetch(`${API_BASE}/auth/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _token: token }),
-    });
-    if (!res.ok) { signOut(); return null; }
-    const data = await res.json();
-    localStorage.setItem(LIMITS_KEY, JSON.stringify({
-      daily_limit: data.daily_limit,
-      scans_today: data.scans_today,
-      scans_remaining: data.scans_remaining,
-    }));
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-export function signOut() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(EMAIL_KEY);
-  localStorage.removeItem(LIMITS_KEY);
 }
