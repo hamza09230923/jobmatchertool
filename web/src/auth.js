@@ -29,3 +29,11 @@ export function signOut() {
 export function getStoredEmail() {
   return localStorage.getItem(EMAIL_KEY) || "";
 }
+
+export function getStoredToken() {
+  return "";
+}
+
+export async function refreshLimits() {
+  return null;
+}
