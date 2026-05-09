@@ -1,0 +1,507 @@
+/* ═══════════════════════════════════════════════════════════════
+   CV Rewrite Page
+   ═══════════════════════════════════════════════════════════════ */
+
+.cvr-root {
+  min-height: 100vh;
+  background: var(--bg, #0f1115);
+  padding: 28px 24px 80px;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────── */
+.cvr-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1120px;
+  margin: 0 auto 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cvr-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.84rem;
+  cursor: pointer;
+  padding: 6px 0;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.cvr-back-btn:hover { color: rgba(255, 255, 255, 0.85); }
+
+.cvr-topbar-center {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.cvr-tailored-for {
+  display: block;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.38);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cvr-tailored-for strong { color: rgba(255, 255, 255, 0.6); }
+
+.cvr-edit-hint {
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.cvr-hint-metric {
+  background: rgba(251, 191, 36, 0.18);
+  color: #d97706;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.68rem;
+}
+
+.cvr-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  border: none;
+  border-radius: 9999px;
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 8px 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.35);
+  transition: opacity 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.cvr-save-btn:hover {
+  opacity: 0.88;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+.cvr-save-btn:active { transform: translateY(0); }
+
+.cvr-print-tip {
+  max-width: 1120px;
+  margin: -6px auto 18px;
+  text-align: right;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.22);
+}
+.cvr-print-tip strong { color: rgba(255, 255, 255, 0.38); }
+
+/* ── Two-column layout ────────────────────────────────────────── */
+.cvr-layout {
+  display: grid;
+  grid-template-columns: 1fr 276px;
+  gap: 28px;
+  max-width: 1120px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+/* ── CV Paper ─────────────────────────────────────────────────── */
+.cvr-paper {
+  background: #fff;
+  color: #1a1a1a;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.45;
+  padding: 52px 64px;
+  border-radius: 4px;
+  box-shadow: 0 6px 48px rgba(0, 0, 0, 0.5);
+  animation: cvrFadeUp 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes cvrFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Header */
+.cvr-header-block {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+/* Name: 16–20pt → 22px = ~16.5pt ✓ */
+.cvr-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111;
+  margin: 0 0 6px;
+  line-height: 1.25;
+  min-height: 1.3em;
+}
+
+.cvr-contact-line {
+  font-size: 13.5px;
+  color: #444;
+  line-height: 1.5;
+}
+
+/* Section structure */
+.cvr-section { margin-bottom: 22px; }
+
+.cvr-section-rule {
+  border-bottom: 1.5px solid #222;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+
+/* Section headings: 12–16pt → 17px = ~12.75pt ✓ */
+.cvr-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #111;
+}
+
+/* Body: 10–12pt → 14.5px ≈ 10.9pt ✓  line-height 1.45 ✓ */
+.cvr-section-text {
+  font-size: 14.5px;
+  color: #222;
+  line-height: 1.45;
+}
+
+/* Skills */
+.cvr-skills-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cvr-skills-row {
+  font-size: 14.5px;
+  color: #222;
+  line-height: 1.45;
+}
+
+/* Experience / Projects */
+.cvr-role-block { margin-bottom: 15px; }
+
+/* Role sub-headings: 12–16pt → 16px = 12pt ✓ */
+.cvr-role-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+  margin-bottom: 5px;
+  line-height: 1.3;
+}
+
+.cvr-bullets-block { padding-left: 2px; }
+
+/* Bullets: 10–12pt → 14px ≈ 10.5pt ✓ */
+.cvr-bullet {
+  font-size: 14px;
+  color: #222;
+  line-height: 1.4;
+  padding-left: 16px;
+  position: relative;
+  margin-bottom: 3px;
+}
+.cvr-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 2px;
+  color: #555;
+}
+
+/* Education */
+.cvr-edu-block { margin-bottom: 10px; }
+.cvr-edu-details {
+  font-size: 14px;
+  color: #555;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* ── Inline metric prompt (inside bullet) ─────────────────────── */
+.cvr-metric-prompt {
+  display: inline-block;
+  background: rgba(251, 191, 36, 0.18);
+  color: #b45309;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 3px;
+  font-size: 0.82em;
+  font-style: italic;
+  font-weight: 500;
+  padding: 0 5px;
+  margin-left: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+  user-select: none;
+}
+.cvr-metric-prompt:hover {
+  background: rgba(251, 191, 36, 0.3);
+}
+
+/* ── contentEditable interaction ─────────────────────────────── */
+[contenteditable]:hover {
+  outline: 1.5px dashed rgba(99, 102, 241, 0.28);
+  border-radius: 2px;
+  cursor: text;
+}
+[contenteditable]:focus {
+  outline: 1.5px solid rgba(99, 102, 241, 0.52);
+  border-radius: 2px;
+}
+
+/* ── Right-side sidebar ───────────────────────────────────────── */
+.cvr-sidebar {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  animation: cvrSlideIn 0.38s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+.cvr-sidebar::-webkit-scrollbar { width: 3px; }
+.cvr-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+@keyframes cvrSlideIn {
+  from { opacity: 0; transform: translateX(22px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+/* Sidebar blocks */
+.cvr-sb-block {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 14px 15px;
+}
+
+.cvr-sb-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(255, 255, 255, 0.38);
+  margin-bottom: 11px;
+}
+
+/* Diagnosis rows */
+.cvr-diag-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 9px;
+}
+.cvr-diag-row:last-child { margin-bottom: 0; }
+
+.cvr-diag-pill {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.cvr-diag-pill--before {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+}
+.cvr-diag-pill--after {
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.22);
+}
+.cvr-diag-text {
+  font-size: 0.77rem;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Section change cards */
+.cvr-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cvr-change-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid var(--cc, rgba(99,102,241,0.55));
+  border-radius: 0 7px 7px 0;
+  padding: 9px 11px;
+  transition: background 0.15s;
+}
+.cvr-change-card:hover { background: rgba(255, 255, 255, 0.055); }
+
+.cvr-change-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.cvr-change-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cvr-change-type {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cc, #818cf8);
+  flex-shrink: 0;
+}
+.cvr-change-text {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.52);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Metrics sidebar block */
+.cvr-metrics-sb {
+  border-top: 2px solid rgba(251, 191, 36, 0.18);
+}
+.cvr-metrics-intro {
+  font-size: 0.71rem;
+  color: rgba(255, 255, 255, 0.32);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+.cvr-metric-row {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cvr-metric-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.cvr-metric-role-lbl {
+  display: block;
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cvr-metric-q {
+  font-size: 0.74rem;
+  color: rgba(251, 191, 36, 0.72);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* ── Missing info block ───────────────────────────────────────── */
+.cvr-missing-block {
+  max-width: 1120px;
+  margin: 20px auto 0;
+  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+.cvr-missing-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.79rem;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 8px;
+}
+.cvr-missing-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.79rem;
+  color: rgba(255, 255, 255, 0.52);
+  line-height: 1.75;
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 1020px) {
+  .cvr-layout {
+    grid-template-columns: 1fr;
+    max-width: 794px;
+  }
+  .cvr-sidebar {
+    position: static;
+    max-height: none;
+    order: -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+    overflow: visible;
+  }
+  .cvr-sb-block { flex: 1 1 260px; }
+}
+
+/* ── Print / PDF ──────────────────────────────────────────────── */
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+
+  body { background: #fff !important; }
+
+  .no-print { display: none !important; }
+
+  .cvr-root {
+    padding: 0 !important;
+    background: #fff !important;
+    min-height: 0 !important;
+  }
+
+  .cvr-layout {
+    display: block !important;
+  }
+
+  .cvr-paper {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 14mm 20mm !important;
+    animation: none !important;
+  }
+
+  /* Metric prompts print as subtle grey hint */
+  .cvr-metric-prompt {
+    background: none !important;
+    border: none !important;
+    color: #aaa !important;
+    font-style: italic !important;
+    font-size: 0.8em !important;
+  }
+
+  .cvr-name          { font-size: 18pt !important; }
+  .cvr-contact-line  { font-size: 10pt !important; }
+  .cvr-section-title { font-size: 13pt !important; }
+  .cvr-role-heading  { font-size: 12pt !important; }
+  .cvr-section-text,
+  .cvr-skills-row    { font-size: 11pt !important; line-height: 1.35 !important; }
+  .cvr-bullet        { font-size: 10.5pt !important; line-height: 1.35 !important; }
+  .cvr-edu-details   { font-size: 10.5pt !important; }
+
+  [contenteditable]:hover,
+  [contenteditable]:focus { outline: none !important; }
+}

@@ -7,7 +7,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  cursor: none;
 }
 
 /* ── Background layer ── */

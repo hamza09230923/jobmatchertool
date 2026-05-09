@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import shortlistlyLogo from "./assets/logos/short.png";
+import { isAuthenticated, isAuthConfigured, signIn } from "./auth";
 import "./LoginPage.css";
 
 const PARTICLES = Array.from({ length: 22 }, (_, i) => ({
@@ -15,7 +16,6 @@ const PARTICLES = Array.from({ length: 22 }, (_, i) => ({
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const cursorRef = useRef(null);
   const cardRef = useRef(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,15 +26,18 @@ export default function LoginPage() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    const cursor = cursorRef.current;
-    if (!cursor) return;
     const move = (e) => {
-      cursor.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
       setMousePos({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
     };
     window.addEventListener("mousemove", move);
     return () => window.removeEventListener("mousemove", move);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      navigate("/analyze", { replace: true });
+    }
+  }, [navigate]);
 
   const handleCardMouseMove = (e) => {
     const card = cardRef.current;
@@ -51,18 +54,22 @@ export default function LoginPage() {
     card.style.transform = `perspective(900px) rotateY(0deg) rotateX(0deg) translateZ(0px)`;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) { setError("Please fill in all fields."); return; }
-    setError("");
     setLoading(true);
-    setTimeout(() => { setLoading(false); navigate("/analyze"); }, 1400);
+    setError("");
+    const result = await signIn(email, password);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error || "Sign in failed. Check your credentials.");
+      return;
+    }
+    navigate("/analyze", { replace: true });
   };
 
   return (
     <div className="login-page">
-      <div className="cursor" ref={cursorRef} />
-
       {/* Animated background */}
       <div className="login-bg">
         <div className="login-bg-orb login-bg-orb-a" style={{
@@ -97,8 +104,8 @@ export default function LoginPage() {
         <Link to="/" className="login-logo-link">
           <img src={shortlistlyLogo} alt="SHORTLISTLY." className="login-logo-img" />
         </Link>
-        <Link to="/analyze" className="login-try-btn">
-          Try free <span className="login-try-arrow">→</span>
+        <Link to="/" className="login-try-btn">
+          Back home <span className="login-try-arrow">→</span>
         </Link>
       </nav>
 
@@ -230,7 +237,9 @@ export default function LoginPage() {
             </form>
 
             <p className="login-signup-hint">
-              No account yet? <Link to="/analyze" className="login-signup-link">Analyze free →</Link>
+              {isAuthConfigured()
+                ? "Access is invite-only. Use the credentials you were given."
+                : "Access is locked until you configure the allowed account in web/.env.local."}
             </p>
           </div>
         </div>
