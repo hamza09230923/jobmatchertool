@@ -14,7 +14,7 @@ const PARTICLES = Array.from({ length: 22 }, (_, i) => ({
   opacity: Math.random() * 0.5 + 0.15,
 }));
 
-export default function LoginPage() {
+export default function LoginPage({ onLogin }) {
   const navigate = useNavigate();
   const cardRef = useRef(null);
   const [email, setEmail] = useState("");
@@ -65,6 +65,7 @@ export default function LoginPage() {
       setError(result.error || "Sign in failed. Check your credentials.");
       return;
     }
+    onLogin?.();
     navigate("/analyze", { replace: true });
   };
 

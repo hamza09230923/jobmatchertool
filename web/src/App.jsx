@@ -449,14 +449,26 @@ function LandingPage() {
   );
 }
 
+function RequireAuth({ children }) {
+  return isAuthenticated() ? children : <Navigate to="/login" replace />;
+}
+
 function App() {
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    const onStorage = () => forceUpdate(n => n + 1);
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={isAuthenticated() ? <Navigate to="/analyze" replace /> : <LoginPage />} />
-      <Route path="/analyze" element={isAuthenticated() ? <AnalyzePage /> : <Navigate to="/login" replace />} />
-      <Route path="/results" element={isAuthenticated() ? <ResultsPage /> : <Navigate to="/login" replace />} />
-      <Route path="/cv-rewrite" element={isAuthenticated() ? <CVRewritePage /> : <Navigate to="/login" replace />} />
+      <Route path="/login" element={isAuthenticated() ? <Navigate to="/analyze" replace /> : <LoginPage onLogin={() => forceUpdate(n => n + 1)} />} />
+      <Route path="/analyze" element={<RequireAuth><AnalyzePage /></RequireAuth>} />
+      <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
+      <Route path="/cv-rewrite" element={<RequireAuth><CVRewritePage /></RequireAuth>} />
     </Routes>
   );
 }
