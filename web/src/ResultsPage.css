@@ -17,36 +17,43 @@
 /* ── Tab bar ── */
 .results-tab-bar {
   display: flex;
-  gap: 6px;
-  padding: 4px;
+  gap: 4px;
+  padding: 5px;
   background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
   width: fit-content;
+  margin: 4px auto 8px;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 .results-tab {
-  padding: 9px 22px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: rgba(255,255,255,0.5);
+  padding: 12px 36px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.38);
   background: transparent;
   border: none;
-  border-radius: 9px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: color 0.18s, background 0.18s;
-  letter-spacing: 0.01em;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .results-tab:hover {
-  color: rgba(255,255,255,0.85);
+  color: rgba(255,255,255,0.75);
   background: rgba(255,255,255,0.06);
 }
 
 .results-tab.active {
   color: #fff;
-  background: rgba(94,228,255,0.12);
-  box-shadow: 0 0 0 1px rgba(94,228,255,0.25);
+  background: linear-gradient(135deg, rgba(94,228,255,0.18) 0%, rgba(94,228,255,0.08) 100%);
+  box-shadow:
+    0 0 0 1px rgba(94,228,255,0.35),
+    0 4px 16px rgba(94,228,255,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+  text-shadow: 0 0 18px rgba(94,228,255,0.5);
 }
 
 /* ── Page intro ── */
@@ -138,7 +145,6 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
   flex-shrink: 0;
   z-index: 1;
 }
@@ -153,18 +159,20 @@
 }
 
 .score-ring-svg {
-  width: 160px;
-  height: 160px;
+  width: 172px;
+  height: 172px;
 }
 
 .score-ring-center {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -56%);
+  transform: translate(-50%, -50%);
   display: flex;
-  align-items: baseline;
-  gap: 2px;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
 }
 
 .score-ring-value {
@@ -176,16 +184,20 @@
 }
 
 .score-ring-denom {
-  font-size: 0.9rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  color: rgba(244, 246, 251, 0.38);
+  color: rgba(244, 246, 251, 0.35);
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .score-ring-label {
-  font-size: 0.72rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  margin-top: 3px;
+  line-height: 1;
 }
 
 /* ── Hero summary ── */

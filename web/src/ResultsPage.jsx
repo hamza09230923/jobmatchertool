@@ -24,6 +24,11 @@ async function readErrorMessage(res) {
   }
 }
 
+function scoreColor(n) {
+  const hue = Math.round(Math.max(0, Math.min(100, n)) * 1.2);
+  return `hsl(${hue}, 88%, 62%)`;
+}
+
 function ScoreRing({ score }) {
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
@@ -31,45 +36,51 @@ function ScoreRing({ score }) {
 
   useEffect(() => {
     let start = null;
-    const duration = 1400;
-    const target = score;
+    let raf;
     const step = (timestamp) => {
       if (!start) start = timestamp;
-      const progress = Math.min((timestamp - start) / duration, 1);
+      const progress = Math.min((timestamp - start) / 1500, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setAnimatedScore(Math.round(eased * target));
-      if (progress < 1) requestAnimationFrame(step);
+      setAnimatedScore(Math.round(eased * score));
+      if (progress < 1) raf = requestAnimationFrame(step);
     };
-    requestAnimationFrame(step);
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
   }, [score]);
 
+  const color = scoreColor(animatedScore);
+  const trackColor = scoreColor(score);
   const strokeOffset = circumference - (animatedScore / 100) * circumference;
-  const color = animatedScore >= 70 ? "#4ade80" : animatedScore >= 45 ? "#ffd166" : "#ff7070";
-  const label = animatedScore >= 70 ? "Strong role fit" : animatedScore >= 45 ? "Partial role fit" : "Weak role fit";
+  const label = score >= 70 ? "Strong role fit" : score >= 45 ? "Partial role fit" : "Weak role fit";
 
   return (
     <div className="score-ring-wrap">
-      <div className="score-ring-glow" style={{ background: `radial-gradient(circle, ${color}22, transparent 68%)` }} />
+      <div className="score-ring-glow" style={{ background: `radial-gradient(circle, ${trackColor}30, transparent 65%)` }} />
       <svg className="score-ring-svg" viewBox="0 0 128 128" fill="none">
-        <circle cx="64" cy="64" r={radius} stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+        <defs>
+          <linearGradient id="ringGrad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stopColor="#ff5555" />
+            <stop offset="40%" stopColor="#ffd166" />
+            <stop offset="100%" stopColor="#4ade80" />
+          </linearGradient>
+        </defs>
+        <circle cx="64" cy="64" r={radius} stroke="rgba(255,255,255,0.05)" strokeWidth="9" />
         <circle
-          cx="64"
-          cy="64"
-          r={radius}
-          stroke={color}
-          strokeWidth="8"
+          cx="64" cy="64" r={radius}
+          stroke="url(#ringGrad)"
+          strokeWidth="9"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={strokeOffset}
           transform="rotate(-90 64 64)"
-          style={{ filter: `drop-shadow(0 0 10px ${color}88)`, transition: "stroke 0.5s ease" }}
+          style={{ filter: `drop-shadow(0 0 12px ${color}66)`, transition: "stroke-dashoffset 0.04s linear" }}
         />
       </svg>
       <div className="score-ring-center">
         <span className="score-ring-value" style={{ color }}>{animatedScore}</span>
-        <span className="score-ring-denom">/100</span>
+        <span className="score-ring-denom">/ 100</span>
+        <span className="score-ring-label" style={{ color }}>{label}</span>
       </div>
-      <div className="score-ring-label" style={{ color }}>{label}</div>
     </div>
   );
 }
@@ -516,8 +527,8 @@ function CombinedFitPanel({ fit, recruiterData }) {
           </svg>
         </div>
         <div>
-          <h2 className="results-block-title">Fit Analysis</h2>
-          <p className="results-block-sub">How your background maps to this company, role, and recruiter perspective.</p>
+          <h2 className="results-block-title">Recruiter Analysis</h2>
+          <p className="results-block-sub">How a recruiter reads your CV against this company and role.</p>
         </div>
       </div>
 
@@ -556,36 +567,6 @@ function CombinedFitPanel({ fit, recruiterData }) {
         </div>
       )}
 
-      {(green_flags.length > 0 || red_flags.length > 0) && (
-        <div className="rv-flags-row">
-          {green_flags.length > 0 && (
-            <div className="rv-flags-col">
-              <div className="rv-flags-header rv-flags-header--green">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-                Works in your favour
-              </div>
-              <div className="rv-flags-list">
-                {green_flags.map((f, i) => (
-                  <div key={i} className="rv-flag rv-flag--green">{f}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {red_flags.length > 0 && (
-            <div className="rv-flags-col">
-              <div className="rv-flags-header rv-flags-header--red">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                Gives pause
-              </div>
-              <div className="rv-flags-list">
-                {red_flags.map((f, i) => (
-                  <div key={i} className="rv-flag rv-flag--red">{f}</div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {how_cv_solves.length > 0 && (
         <div className="results-subsection">
@@ -1239,7 +1220,7 @@ export default function ResultsPage() {
     const resumeText = result.resume_text;
     const controller = new AbortController();
     const { signal } = controller;
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 150000);
 
     const stepTimer = setInterval(() => {
       setLoadingStep((s) => (s < loadingSteps.length - 1 ? s + 1 : s));
@@ -1430,10 +1411,13 @@ export default function ResultsPage() {
           <div className="results-hero-summary">
             {(() => {
               const s = Math.round(matchScore);
-              const verdict = s >= 80 ? { label: "Strong match", color: "#4ade80", bg: "rgba(74,222,128,0.1)", border: "rgba(74,222,128,0.25)" }
-                : s >= 60   ? { label: "Competitive", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.25)" }
-                : s >= 40   ? { label: "Developing", color: "#fb923c", bg: "rgba(251,146,60,0.1)", border: "rgba(251,146,60,0.25)" }
-                :              { label: "Needs work", color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)" };
+              const sc = scoreColor(s);
+              const scBg = `${sc.replace("hsl(", "hsla(").replace(")", ", 0.12)")}`;
+              const scBorder = `${sc.replace("hsl(", "hsla(").replace(")", ", 0.3)")}`;
+              const verdict = s >= 80 ? { label: "Strong match" }
+                : s >= 60   ? { label: "Competitive" }
+                : s >= 40   ? { label: "Developing" }
+                :              { label: "Needs work" };
               const tagline = s >= 80 ? "Your CV is a strong fit — sharpen the detail and apply with confidence."
                 : s >= 60   ? "A solid foundation. Targeted improvements could make this competitive."
                 : s >= 40   ? "Relevant experience exists but gaps need addressing before applying."
@@ -1446,18 +1430,18 @@ export default function ResultsPage() {
               return (
                 <>
                   <div className="hero-verdict-row">
-                    <span className="hero-verdict-badge" style={{ color: verdict.color, background: verdict.bg, border: `1px solid ${verdict.border}` }}>
+                    <span className="hero-verdict-badge" style={{ color: sc, background: scBg, border: `1px solid ${scBorder}` }}>
                       {verdict.label}
                     </span>
                   </div>
                   <h1 className="results-title">
-                    Your CV scored <span className="accent-copy">{s}</span> for this role.
+                    Your CV scored <span style={{ color: sc, textShadow: `0 0 28px ${sc}55` }}>{s}</span> for this role.
                   </h1>
                   <p className="results-desc">{tagline}</p>
 
                   <div className="hero-stats">
                     <div className="hero-stat">
-                      <span className="hero-stat-val" style={{ color: respPct >= 70 ? "#4ade80" : respPct >= 45 ? "#fbbf24" : "#f87171" }}>{respMatched}<span className="hero-stat-of">/{respTotal}</span></span>
+                      <span className="hero-stat-val" style={{ color: scoreColor(respPct) }}>{respMatched}<span className="hero-stat-of">/{respTotal}</span></span>
                       <span className="hero-stat-label">Responsibilities matched</span>
                     </div>
                   </div>
@@ -1537,28 +1521,28 @@ export default function ResultsPage() {
                 desc: "How well your CV proves the essential and desirable requirements from the JD — the biggest driver of your score.",
                 raw: respScore,
                 weight: weights.responsibility || 0.65,
-                color: respScore >= 70 ? "#4ade80" : respScore >= 45 ? "#fbbf24" : "#f87171",
+                color: scoreColor(respScore),
               },
               {
                 label: "Language & context fit",
                 desc: "How closely your CV's overall language, terminology, and framing mirrors the job description — catches relevant experience even when exact words differ.",
                 raw: semScore,
                 weight: weights.semantic || 0.20,
-                color: semScore >= 70 ? "#4ade80" : semScore >= 45 ? "#fbbf24" : "#f87171",
+                color: scoreColor(semScore),
               },
               {
                 label: "Experience level",
                 desc: "Whether your seniority, years of experience, and job title history align with what the role requires.",
                 raw: expScore,
                 weight: weights.experience || 0.10,
-                color: expScore >= 70 ? "#4ade80" : expScore >= 45 ? "#fbbf24" : "#f87171",
+                color: scoreColor(expScore),
               },
               {
                 label: "Skills coverage",
                 desc: "Technical and soft skill overlap between your CV and the JD — a small contributing signal.",
                 raw: skillScore,
                 weight: weights.skills || 0.05,
-                color: skillScore >= 70 ? "#4ade80" : skillScore >= 45 ? "#fbbf24" : "#f87171",
+                color: scoreColor(skillScore),
               },
             ];
 
@@ -1589,7 +1573,7 @@ export default function ResultsPage() {
                 })}
                 <div className="sbd-total-row">
                   <span className="sbd-total-label">Total</span>
-                  <span className="sbd-total-score" style={{ color: Math.round(matchScore) >= 70 ? "#4ade80" : Math.round(matchScore) >= 45 ? "#fbbf24" : "#f87171" }}>
+                  <span className="sbd-total-score" style={{ color: scoreColor(Math.round(matchScore)) }}>
                     {Math.round(matchScore)}<span className="sbd-total-denom">/100</span>
                   </span>
                 </div>
