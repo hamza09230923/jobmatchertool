@@ -1491,8 +1491,6 @@ export default function ResultsPage() {
               </section>
             ) : null}
 
-            <CvIntelligencePanel analysis={cvSectionsAnalysis} profile={candidateProfile} />
-
             <section className="results-block rfd-block">
               <div className="results-block-header">
                 <div className="results-block-icon keyword-icon">
