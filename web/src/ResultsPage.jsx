@@ -49,37 +49,34 @@ function ScoreRing({ score }) {
   }, [score]);
 
   const color = scoreColor(animatedScore);
-  const trackColor = scoreColor(score);
+  const finalColor = scoreColor(score);
   const strokeOffset = circumference - (animatedScore / 100) * circumference;
-  const label = score >= 70 ? "Strong role fit" : score >= 45 ? "Partial role fit" : "Weak role fit";
+  const label = score >= 70 ? "Strong fit" : score >= 45 ? "Partial fit" : "Weak fit";
 
   return (
     <div className="score-ring-wrap">
-      <div className="score-ring-glow" style={{ background: `radial-gradient(circle, ${trackColor}30, transparent 65%)` }} />
-      <svg className="score-ring-svg" viewBox="0 0 128 128" fill="none">
-        <defs>
-          <linearGradient id="ringGrad" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0%" stopColor="#ff5555" />
-            <stop offset="40%" stopColor="#ffd166" />
-            <stop offset="100%" stopColor="#4ade80" />
-          </linearGradient>
-        </defs>
-        <circle cx="64" cy="64" r={radius} stroke="rgba(255,255,255,0.05)" strokeWidth="9" />
-        <circle
-          cx="64" cy="64" r={radius}
-          stroke="url(#ringGrad)"
-          strokeWidth="9"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeOffset}
-          transform="rotate(-90 64 64)"
-          style={{ filter: `drop-shadow(0 0 12px ${color}66)`, transition: "stroke-dashoffset 0.04s linear" }}
-        />
-      </svg>
-      <div className="score-ring-center">
-        <span className="score-ring-value" style={{ color }}>{animatedScore}</span>
-        <span className="score-ring-denom">/ 100</span>
+      <div className="score-ring-glow" style={{ background: `radial-gradient(circle at 50% 50%, ${finalColor}28, transparent 68%)` }} />
+      <div className="score-ring-svg-wrap">
+        <svg className="score-ring-svg" viewBox="0 0 128 128" fill="none">
+          <circle cx="64" cy="64" r={radius} stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle
+            cx="64" cy="64" r={radius}
+            stroke={color}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeOffset}
+            transform="rotate(-90 64 64)"
+            style={{ filter: `drop-shadow(0 0 16px ${color}70)`, transition: "stroke-dashoffset 0.04s linear, stroke 0.25s ease" }}
+          />
+        </svg>
+        <div className="score-ring-center">
+          <span className="score-ring-value" style={{ color }}>{animatedScore}</span>
+        </div>
+      </div>
+      <div className="score-ring-footer">
         <span className="score-ring-label" style={{ color }}>{label}</span>
+        <span className="score-ring-out-of">out of 100</span>
       </div>
     </div>
   );

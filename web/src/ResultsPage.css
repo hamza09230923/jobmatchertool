@@ -141,62 +141,73 @@
 
 /* ── Score ring ── */
 .score-ring-wrap {
-  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
   z-index: 1;
+  gap: 14px;
 }
 
 .score-ring-glow {
   position: absolute;
-  inset: -24px;
+  inset: -32px;
   border-radius: 50%;
-  filter: blur(32px);
-  opacity: 0.8;
+  filter: blur(40px);
+  opacity: 0.6;
   pointer-events: none;
+  z-index: 0;
+}
+
+.score-ring-svg-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
 }
 
 .score-ring-svg {
-  width: 172px;
-  height: 172px;
+  width: 180px;
+  height: 180px;
+  display: block;
 }
 
 .score-ring-center {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
+  justify-content: center;
   pointer-events: none;
 }
 
 .score-ring-value {
   font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-  font-size: 2.8rem;
+  font-size: 3.6rem;
   font-weight: 800;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.06em;
   line-height: 1;
 }
 
-.score-ring-denom {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: rgba(244, 246, 251, 0.35);
-  letter-spacing: 0.04em;
-  line-height: 1;
+.score-ring-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .score-ring-label {
-  font-size: 0.6rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  margin-top: 3px;
+  line-height: 1;
+}
+
+.score-ring-out-of {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.06em;
   line-height: 1;
 }
 
