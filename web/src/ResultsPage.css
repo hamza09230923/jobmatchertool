@@ -14,6 +14,41 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Tab bar ── */
+.results-tab-bar {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  width: fit-content;
+}
+
+.results-tab {
+  padding: 9px 22px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 0.18s, background 0.18s;
+  letter-spacing: 0.01em;
+}
+
+.results-tab:hover {
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.06);
+}
+
+.results-tab.active {
+  color: #fff;
+  background: rgba(94,228,255,0.12);
+  box-shadow: 0 0 0 1px rgba(94,228,255,0.25);
+}
+
 /* ── Page intro ── */
 .results-intro {
   padding-bottom: 4px;

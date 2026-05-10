@@ -161,7 +161,7 @@ function ScoreSignalCard({ label, value, description, icon }) {
   );
 }
 
-function ResponsibilityMatchPanel({ matched = [], missing = [] }) {
+function CombinedMatchPanel({ matched = [], missing = [], atsKeywords = {}, responsibilityDetail = {} }) {
   const parseEvidence = (evidence) => {
     if (!evidence) return { label: null, text: "" };
     const m = evidence.match(/^\[([^\]]+)\]\s*(.*)/s);
@@ -173,152 +173,168 @@ function ResponsibilityMatchPanel({ matched = [], missing = [] }) {
   const partial = matched.filter(r => r.confidence === "partial");
   const sorted = [...strong, ...partial];
 
-  return (
-    <div className="rm-two-col">
-      <div className="rm-col">
-        <div className="rm-col-header rm-col-header--have">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-          What you have
-          <span className="rm-col-count rm-col-count--have">{matched.length}</span>
-        </div>
-        {sorted.length === 0
-          ? <p className="rm-col-empty">No matches found.</p>
-          : sorted.map((item, i) => {
-              const { label, text } = parseEvidence(item.evidence);
-              const isPartial = item.confidence === "partial";
-              const isEssential = item.category !== "nice_to_have";
-              return (
-                <div key={i} className={`rm-row rm-row--have${isPartial ? " partial" : ""}`}>
-                  <span className={`rm-dot rm-dot--${item.confidence}`} />
-                  <div className="rm-row-body">
-                    <div className="rm-row-top">
-                      <span className="rm-row-resp">{item.responsibility}</span>
-                      <span className={`rm-cat-tag${isEssential ? " rm-cat-tag--essential" : " rm-cat-tag--nice"}`}>
-                        {isEssential ? "Essential" : "Nice to have"}
-                      </span>
-                      {isPartial && <span className="rm-partial-tag">Partial</span>}
-                    </div>
-                    {text && (
-                      <p className="rm-row-evidence">
-                        {label && <span className="rm-row-label">{label} · </span>}
-                        {text}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-        }
-      </div>
+  const total = responsibilityDetail.total_responsibilities || (matched.length + missing.length);
+  const strongCount = strong.length;
+  const partialCount = partial.length;
+  const missingCount = missing.length;
+  const strongPct = total ? (strongCount / total) * 100 : 0;
+  const partialPct = total ? (partialCount / total) * 100 : 0;
+  const missingPct = total ? (missingCount / total) * 100 : 0;
 
-      <div className="rm-col">
-        <div className="rm-col-header rm-col-header--missing">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          What you&apos;re missing
-          <span className="rm-col-count rm-col-count--missing">{missing.length}</span>
-        </div>
-        {missing.length === 0
-          ? <p className="rm-col-empty">Full coverage — no gaps.</p>
-          : missing.map((item, i) => {
-              const isEssential = item.category !== "nice_to_have";
-              return (
-                <div key={i} className="rm-row rm-row--missing">
-                  <span className="rm-dot rm-dot--missing" />
-                  <div className="rm-row-body">
-                    <div className="rm-row-top">
-                      <span className="rm-row-resp rm-row-resp--missing">{typeof item === "string" ? item : item.responsibility}</span>
-                      <span className={`rm-cat-tag${isEssential ? " rm-cat-tag--essential" : " rm-cat-tag--nice"}`}>
-                        {isEssential ? "Essential" : "Nice to have"}
-                      </span>
-                    </div>
-                    {item.gap && <p className="rm-row-gap">{item.gap}</p>}
-                  </div>
-                </div>
-              );
-            })
-        }
-      </div>
-    </div>
-  );
-}
-
-function ATSKeywordsPanel({ atsKeywords = {} }) {
   const hardSkills = atsKeywords.hard_skills || [];
   const softSkills = atsKeywords.soft_skills || [];
-  if (!hardSkills.length && !softSkills.length) return null;
-
   const allSkills = [...hardSkills, ...softSkills];
   const presentCount = allSkills.filter(s => s.status === "present").length;
-  const lowCount     = allSkills.filter(s => s.status === "low").length;
-  const missingCount = allSkills.filter(s => s.status === "missing").length;
-  const total        = allSkills.length;
-  const coveragePct  = total ? Math.round((presentCount / total) * 100) : 0;
-
+  const lowCount = allSkills.filter(s => s.status === "low").length;
+  const atsMissingCount = allSkills.filter(s => s.status === "missing").length;
+  const atsTotal = allSkills.length;
+  const atsCoveragePct = atsTotal ? Math.round((presentCount / atsTotal) * 100) : 0;
   const maxJd = Math.max(...allSkills.map(s => s.jd_count), 1);
-
-  function Chip({ item }) {
-    const freq = item.jd_count;
-    const weight = freq / maxJd;
-    const fontSize = 0.72 + weight * 0.28; // 0.72rem → 1rem
-    const cls = item.status === "present" ? "ats-chip ats-chip--present"
-              : item.status === "low"     ? "ats-chip ats-chip--low"
-              :                             "ats-chip ats-chip--missing";
-    return (
-      <span className={cls} style={{ fontSize: `${fontSize.toFixed(2)}rem` }}>
-        {item.skill}
-        <span className="ats-chip-freq">×{freq}</span>
-      </span>
-    );
-  }
-
-  function SkillCloud({ skills, label }) {
-    if (!skills.length) return null;
-    return (
-      <div className="ats-cloud-section">
-        <div className="ats-cloud-label">{label}</div>
-        <div className="ats-cloud">
-          {skills.map((s, i) => <Chip key={i} item={s} />)}
-        </div>
-      </div>
-    );
-  }
+  const hasAts = hardSkills.length > 0 || softSkills.length > 0;
 
   return (
-    <section className="results-block ats-block">
+    <section className="results-block rm-block">
       <div className="results-block-header">
         <div className="results-block-icon keyword-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
           </svg>
         </div>
         <div>
-          <h2 className="results-block-title">ATS Keyword Match</h2>
-          <p className="results-block-sub">Exact-spelling keywords from the JD — sized by how often they appear. ATS ranks CVs that mirror the JD's own language.</p>
+          <h2 className="results-block-title">Responsibility & Keyword Match</h2>
+          <p className="results-block-sub">How well your CV proves each stated requirement, and how closely it mirrors the job&apos;s exact language.</p>
         </div>
       </div>
 
-      <div className="ats-summary-row">
-        <div className="ats-coverage-bar-wrap">
-          <div className="ats-coverage-bar">
-            <div className="ats-coverage-fill" style={{ width: `${coveragePct}%` }} />
+      <div className="rm-coverage">
+        <div className="rm-coverage-stats">
+          <span className="rm-cov-strong">{strongCount} strong</span>
+          <span className="rm-cov-sep">·</span>
+          <span className="rm-cov-partial">{partialCount} partial</span>
+          <span className="rm-cov-sep">·</span>
+          <span className="rm-cov-missing">{missingCount} missing</span>
+          <span className="rm-cov-total">of {total} responsibilities</span>
+          <span className="rm-score-note">Partial counts as 55% — add explicit evidence to upgrade</span>
+        </div>
+        <div className="rm-cov-bar rm-cov-bar--segmented">
+          <div className="rm-cov-seg rm-cov-seg--strong" style={{ width: `${strongPct}%` }} />
+          <div className="rm-cov-seg rm-cov-seg--partial" style={{ width: `${partialPct}%` }} />
+          <div className="rm-cov-seg rm-cov-seg--missing" style={{ width: `${missingPct}%` }} />
+        </div>
+      </div>
+
+      <div className="rm-two-col">
+        <div className="rm-col">
+          <div className="rm-col-header rm-col-header--have">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            What you have
+            <span className="rm-col-count rm-col-count--have">{matched.length}</span>
           </div>
-          <span className="ats-coverage-pct">{coveragePct}% keyword coverage</span>
+          {sorted.length === 0
+            ? <p className="rm-col-empty">No matches found.</p>
+            : sorted.map((item, i) => {
+                const { label, text } = parseEvidence(item.evidence);
+                const isPartial = item.confidence === "partial";
+                const isEssential = item.category !== "nice_to_have";
+                return (
+                  <div key={i} className={`rm-row rm-row--have${isPartial ? " partial" : ""}`}>
+                    <span className={`rm-dot rm-dot--${item.confidence}`} />
+                    <div className="rm-row-body">
+                      <div className="rm-row-top">
+                        <span className="rm-row-resp">{item.responsibility}</span>
+                        <span className={`rm-cat-tag${isEssential ? " rm-cat-tag--essential" : " rm-cat-tag--nice"}`}>
+                          {isEssential ? "Essential" : "Nice to have"}
+                        </span>
+                        {isPartial && <span className="rm-partial-tag">Partial</span>}
+                      </div>
+                      {text && (
+                        <p className="rm-row-evidence">
+                          {label && <span className="rm-row-label">{label} · </span>}
+                          {text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+          }
         </div>
-        <div className="ats-legend">
-          <span className="ats-legend-item ats-legend--present">
-            <span className="ats-legend-dot" />In your CV ({presentCount})
-          </span>
-          <span className="ats-legend-item ats-legend--low">
-            <span className="ats-legend-dot" />Add more ({lowCount})
-          </span>
-          <span className="ats-legend-item ats-legend--missing">
-            <span className="ats-legend-dot" />Missing ({missingCount})
-          </span>
+
+        <div className="rm-col">
+          <div className="rm-col-header rm-col-header--missing">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            What you&apos;re missing
+            <span className="rm-col-count rm-col-count--missing">{missing.length}</span>
+          </div>
+          {missing.length === 0
+            ? <p className="rm-col-empty">Full coverage — no gaps.</p>
+            : missing.map((item, i) => {
+                const isEssential = item.category !== "nice_to_have";
+                return (
+                  <div key={i} className="rm-row rm-row--missing">
+                    <span className="rm-dot rm-dot--missing" />
+                    <div className="rm-row-body">
+                      <div className="rm-row-top">
+                        <span className="rm-row-resp rm-row-resp--missing">{typeof item === "string" ? item : item.responsibility}</span>
+                        <span className={`rm-cat-tag${isEssential ? " rm-cat-tag--essential" : " rm-cat-tag--nice"}`}>
+                          {isEssential ? "Essential" : "Nice to have"}
+                        </span>
+                      </div>
+                      {item.gap && <p className="rm-row-gap">{item.gap}</p>}
+                    </div>
+                  </div>
+                );
+              })
+          }
         </div>
       </div>
 
-      <SkillCloud skills={hardSkills} label="Hard Skills" />
-      <SkillCloud skills={softSkills} label="Soft Skills" />
+      {hasAts && (
+        <div style={{ marginTop: "28px", paddingTop: "24px", borderTop: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+            <h3 style={{ margin: 0, fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", letterSpacing: "0.02em" }}>ATS Keyword Coverage</h3>
+            <div className="ats-legend">
+              <span className="ats-legend-item ats-legend--present"><span className="ats-legend-dot" />In your CV ({presentCount})</span>
+              <span className="ats-legend-item ats-legend--low"><span className="ats-legend-dot" />Add more ({lowCount})</span>
+              <span className="ats-legend-item ats-legend--missing"><span className="ats-legend-dot" />Missing ({atsMissingCount})</span>
+            </div>
+          </div>
+          <div className="ats-coverage-bar-wrap" style={{ marginBottom: "16px" }}>
+            <div className="ats-coverage-bar">
+              <div className="ats-coverage-fill" style={{ width: `${atsCoveragePct}%` }} />
+            </div>
+            <span className="ats-coverage-pct">{atsCoveragePct}% keyword coverage</span>
+          </div>
+          {hardSkills.length > 0 && (
+            <div className="ats-cloud-section">
+              <div className="ats-cloud-label">Hard Skills</div>
+              <div className="ats-cloud">
+                {hardSkills.map((s, i) => {
+                  const freq = s.jd_count;
+                  const weight = freq / maxJd;
+                  const fontSize = (0.72 + weight * 0.28).toFixed(2);
+                  const cls = s.status === "present" ? "ats-chip ats-chip--present" : s.status === "low" ? "ats-chip ats-chip--low" : "ats-chip ats-chip--missing";
+                  return <span key={i} className={cls} style={{ fontSize: `${fontSize}rem` }}>{s.skill}<span className="ats-chip-freq">×{freq}</span></span>;
+                })}
+              </div>
+            </div>
+          )}
+          {softSkills.length > 0 && (
+            <div className="ats-cloud-section">
+              <div className="ats-cloud-label">Soft Skills</div>
+              <div className="ats-cloud">
+                {softSkills.map((s, i) => {
+                  const freq = s.jd_count;
+                  const weight = freq / maxJd;
+                  const fontSize = (0.72 + weight * 0.28).toFixed(2);
+                  const cls = s.status === "present" ? "ats-chip ats-chip--present" : s.status === "low" ? "ats-chip ats-chip--low" : "ats-chip ats-chip--missing";
+                  return <span key={i} className={cls} style={{ fontSize: `${fontSize}rem` }}>{s.skill}<span className="ats-chip-freq">×{freq}</span></span>;
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -461,9 +477,34 @@ const STRENGTH_META = {
   missing: { label: "Not addressed",  cls: "bf-strength missing" },
 };
 
-function BusinessFitPanel({ fit }) {
-  if (!fit) return null;
-  const { company_problems = [], how_cv_solves = [], cv_strengths = [], cv_gaps = [], positioning_note = "" } = fit;
+const DECISION_META = {
+  shortlist: { label: "Strong candidate",    cls: "rv-verdict--shortlist", icon: "✓" },
+  maybe:     { label: "Improvements needed", cls: "rv-verdict--maybe",     icon: "∼" },
+  pass:      { label: "Improvements needed", cls: "rv-verdict--pass",      icon: "∼" },
+};
+
+function CombinedFitPanel({ fit, recruiterData }) {
+  if (!fit && !recruiterData) return null;
+
+  const {
+    how_cv_solves = [],
+    cv_strengths = [],
+    cv_gaps = [],
+    positioning_note = "",
+  } = fit || {};
+
+  const {
+    verdict = null,
+    company_fit = "",
+    role_fit = "",
+    quick_wins = [],
+    screening_keywords = [],
+    red_flags = [],
+    green_flags = [],
+  } = recruiterData || {};
+
+  const decision = verdict?.decision || "maybe";
+  const meta = DECISION_META[decision] || DECISION_META.maybe;
 
   return (
     <section className="results-block bf-panel">
@@ -475,42 +516,88 @@ function BusinessFitPanel({ fit }) {
           </svg>
         </div>
         <div>
-          <h2 className="results-block-title">Business Fit</h2>
-          <p className="results-block-sub">The real problems behind this role — and how your background maps to them.</p>
+          <h2 className="results-block-title">Fit Analysis</h2>
+          <p className="results-block-sub">How your background maps to this company, role, and recruiter perspective.</p>
         </div>
       </div>
 
-      {company_problems.length > 0 && (
-        <div className="results-subsection">
-          <h3>What they are actually hiring to solve</h3>
-          <div className="bf-problems">
-            {company_problems.map((p, i) => (
-              <div key={i} className="bf-problem-card">
-                <div className="bf-problem-num-col">
-                  <span className="bf-problem-num">{String(i + 1).padStart(2, "0")}</span>
-                  {i < company_problems.length - 1 && <span className="bf-problem-connector" />}
-                </div>
-                <div className="bf-problem-body">
-                  <span className="bf-problem-title">{p.title}</span>
-                  <p className="bf-problem-desc">{p.description}</p>
-                </div>
-              </div>
-            ))}
+      {verdict && (
+        <div className={`rv-verdict ${meta.cls}`}>
+          <div className="rv-verdict-top">
+            <span className="rv-verdict-icon">{meta.icon}</span>
+            <span className="rv-verdict-label">{meta.label}</span>
           </div>
+          {verdict.reasoning && (
+            <p className="rv-verdict-reasoning">{verdict.reasoning}</p>
+          )}
+        </div>
+      )}
+
+      {(company_fit || role_fit) && (
+        <div className="rv-fit-row">
+          {company_fit && (
+            <div className="rv-fit-card">
+              <div className="rv-fit-label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                Company fit
+              </div>
+              <p className="rv-fit-text">{company_fit}</p>
+            </div>
+          )}
+          {role_fit && (
+            <div className="rv-fit-card">
+              <div className="rv-fit-label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                Role fit
+              </div>
+              <p className="rv-fit-text">{role_fit}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(green_flags.length > 0 || red_flags.length > 0) && (
+        <div className="rv-flags-row">
+          {green_flags.length > 0 && (
+            <div className="rv-flags-col">
+              <div className="rv-flags-header rv-flags-header--green">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Works in your favour
+              </div>
+              <div className="rv-flags-list">
+                {green_flags.map((f, i) => (
+                  <div key={i} className="rv-flag rv-flag--green">{f}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {red_flags.length > 0 && (
+            <div className="rv-flags-col">
+              <div className="rv-flags-header rv-flags-header--red">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Gives pause
+              </div>
+              <div className="rv-flags-list">
+                {red_flags.map((f, i) => (
+                  <div key={i} className="rv-flag rv-flag--red">{f}</div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {how_cv_solves.length > 0 && (
         <div className="results-subsection">
-          <h3>Where your experience lands on each problem</h3>
+          <h3>Where your experience lands</h3>
           <div className="bf-mapping">
             {how_cv_solves.map((item, i) => {
-              const meta = STRENGTH_META[item.strength] || STRENGTH_META.partial;
+              const strengthMeta = STRENGTH_META[item.strength] || STRENGTH_META.partial;
               return (
                 <div key={i} className="bf-mapping-row">
                   <div className="bf-mapping-top">
                     <span className="bf-mapping-problem">{item.problem}</span>
-                    <span className={meta.cls}>{meta.label}</span>
+                    <span className={strengthMeta.cls}>{strengthMeta.label}</span>
                   </div>
                   {item.cv_evidence && (
                     <p className="bf-mapping-evidence">{item.cv_evidence}</p>
@@ -555,121 +642,6 @@ function BusinessFitPanel({ fit }) {
         )}
       </div>
 
-      {positioning_note && (
-        <div className="results-subsection">
-          <h3>Positioning gap</h3>
-          <div className="bf-positioning">{positioning_note}</div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-const DECISION_META = {
-  shortlist: { label: "Strong candidate",    cls: "rv-verdict--shortlist", icon: "✓" },
-  maybe:     { label: "Improvements needed", cls: "rv-verdict--maybe",     icon: "∼" },
-  pass:      { label: "Improvements needed", cls: "rv-verdict--pass",      icon: "∼" },
-};
-
-function RecruiterViewPanel({ data }) {
-  if (!data) return null;
-  const {
-    verdict = null,
-    first_impression = "",
-    company_fit = "",
-    role_fit = "",
-    quick_wins = [],
-    screening_keywords = [],
-    red_flags = [],
-    green_flags = [],
-  } = data;
-
-  const decision = verdict?.decision || "maybe";
-  const meta = DECISION_META[decision] || DECISION_META.maybe;
-
-  return (
-    <section className="results-block rv-panel">
-      <div className="results-block-header">
-        <div className="results-block-icon keyword-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="results-block-title">Recruiter View</h2>
-          <p className="results-block-sub">Are you the right person for this company and role?</p>
-        </div>
-      </div>
-
-      {verdict && (
-        <div className={`rv-verdict ${meta.cls}`}>
-          <div className="rv-verdict-top">
-            <span className="rv-verdict-icon">{meta.icon}</span>
-            <span className="rv-verdict-label">{meta.label}</span>
-          </div>
-          {first_impression && (
-            <p className="rv-first-impression">{first_impression}</p>
-          )}
-          {verdict.reasoning && (
-            <p className="rv-verdict-reasoning">{verdict.reasoning}</p>
-          )}
-        </div>
-      )}
-
-      {(company_fit || role_fit) && (
-        <div className="rv-fit-row">
-          {company_fit && (
-            <div className="rv-fit-card">
-              <div className="rv-fit-label">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                Company fit
-              </div>
-              <p className="rv-fit-text">{company_fit}</p>
-            </div>
-          )}
-          {role_fit && (
-            <div className="rv-fit-card">
-              <div className="rv-fit-label">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                Role fit
-              </div>
-              <p className="rv-fit-text">{role_fit}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="rv-flags-row">
-        {green_flags.length > 0 && (
-          <div className="rv-flags-col">
-            <div className="rv-flags-header rv-flags-header--green">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-              Works in your favour
-            </div>
-            <div className="rv-flags-list">
-              {green_flags.map((f, i) => (
-                <div key={i} className="rv-flag rv-flag--green">{f}</div>
-              ))}
-            </div>
-          </div>
-        )}
-        {red_flags.length > 0 && (
-          <div className="rv-flags-col">
-            <div className="rv-flags-header rv-flags-header--red">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              Gives pause
-            </div>
-            <div className="rv-flags-list">
-              {red_flags.map((f, i) => (
-                <div key={i} className="rv-flag rv-flag--red">{f}</div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       {quick_wins.length > 0 && (
         <div className="results-subsection">
           <h3>Changes to make before you apply</h3>
@@ -678,9 +650,7 @@ function RecruiterViewPanel({ data }) {
               <div key={i} className="rv-qw-item">
                 <span className="rv-qw-num">{i + 1}</span>
                 <div className="rv-qw-body">
-                  {w.cv_section && (
-                    <span className="rv-qw-section">{w.cv_section}</span>
-                  )}
+                  {w.cv_section && <span className="rv-qw-section">{w.cv_section}</span>}
                   <span className="rv-qw-action">{w.action}</span>
                   <span className="rv-qw-why">{w.why}</span>
                 </div>
@@ -690,15 +660,20 @@ function RecruiterViewPanel({ data }) {
         </div>
       )}
 
-      {screening_keywords.length > 0 && (
+      {(positioning_note || screening_keywords.length > 0) && (
         <div className="results-subsection">
-          <h3>Keywords missing from your CV</h3>
-          <p className="rv-keywords-note">Terms a recruiter or ATS would search for this role that are absent or buried in your CV.</p>
-          <div className="keyword-chips">
-            {screening_keywords.map((kw, i) => (
-              <span key={i} className="keyword-chip rv-keyword-chip">{kw}</span>
-            ))}
-          </div>
+          {positioning_note && <div className="bf-positioning">{positioning_note}</div>}
+          {screening_keywords.length > 0 && (
+            <>
+              <h3 style={{ marginTop: positioning_note ? "16px" : 0 }}>Keywords to add</h3>
+              <p className="rv-keywords-note">Terms a recruiter or ATS would search for this role that are absent or buried in your CV.</p>
+              <div className="keyword-chips">
+                {screening_keywords.map((kw, i) => (
+                  <span key={i} className="keyword-chip rv-keyword-chip">{kw}</span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </section>
@@ -1208,40 +1183,6 @@ function CvIntelligencePanel({ analysis, profile }) {
   );
 }
 
-function InterviewPrepCard({ questions }) {
-  const [open, setOpen] = useState(false);
-  if (!questions?.length) return null;
-  return (
-    <section className="results-block interview-prep">
-      <button className="section-card-header" onClick={() => setOpen((v) => !v)}>
-        <div className="results-block-header" style={{ marginBottom: 0, pointerEvents: "none" }}>
-          <div className="results-block-icon section-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-          </div>
-          <div style={{ flex: 1 }}>
-            <h2 className="results-block-title">Interview Prep</h2>
-            <p className="results-block-sub">Predicted questions a hiring manager would ask based on your CV gaps and claims.</p>
-          </div>
-          <span className={`section-card-chevron${open ? " open" : ""}`}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </span>
-        </div>
-      </button>
-      <div className={`interview-body-wrap${open ? " open" : ""}`}>
-        <ol className="interview-questions-list">
-          {questions.map((q, i) => <li key={i} className="interview-question">{q}</li>)}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
 function RewriteSection({ items, emptyLabel }) {
   if (!items?.length) {
     return <p className="results-empty-note">{emptyLabel}</p>;
@@ -1273,19 +1214,19 @@ export default function ResultsPage() {
   const [feedbackIssues, setFeedbackIssues] = useState([]);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   const [businessFit, setBusinessFit] = useState(null);
-  const [businessFitError, setBusinessFitError] = useState("");
+  const [fitError, setFitError] = useState("");
   const [companyInsights, setCompanyInsights] = useState(null);
   const [companyInsightsError, setCompanyInsightsError] = useState("");
   const [recruiterView, setRecruiterView] = useState(null);
-  const [recruiterViewError, setRecruiterViewError] = useState("");
   const [panelsLoaded, setPanelsLoaded] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
 
   const loadingSteps = [
     "Analysing business fit and role context…",
     "Researching company intelligence…",
-    "Building your recruiter perspective…",
+    "Building your fit analysis…",
     "Compiling your full report…",
   ];
 
@@ -1343,9 +1284,9 @@ export default function ResultsPage() {
     Promise.all([bfFetch, ciFetch, rvFetch]).then(([bf, ci, rv]) => {
       clearInterval(stepTimer);
       clearTimeout(timeoutId);
-      if (bf.ok) setBusinessFit(bf.data); else setBusinessFitError(bf.error);
+      if (bf.ok) setBusinessFit(bf.data); else setFitError(bf.error);
       if (ci.ok) setCompanyInsights(ci.data); else setCompanyInsightsError(ci.error);
-      if (rv.ok) setRecruiterView(rv.data); else setRecruiterViewError(rv.error);
+      if (rv.ok) setRecruiterView(rv.data); else { if (!bf.ok) setFitError(rv.error); }
       setPanelsLoaded(true);
     });
 
@@ -1527,7 +1468,7 @@ export default function ResultsPage() {
                     </button>
                   </div>
                   {rewriteError ? <p className="rewrite-error">{rewriteError}</p> : null}
-                  {businessFitError ? <p className="rewrite-error">{businessFitError}</p> : null}
+                  {fitError ? <p className="rewrite-error">{fitError}</p> : null}
                 </>
               );
             })()}
@@ -1536,45 +1477,53 @@ export default function ResultsPage() {
 
         <CandidateProfileBar profile={candidateProfile} />
 
-        {businessFit ? (
-          <BusinessFitPanel fit={businessFit} />
-        ) : businessFitError ? (
-          <section className="results-block bf-error-block">
-            <p className="rewrite-error" style={{ margin: 0 }}>{businessFitError}</p>
-          </section>
-        ) : null}
+        <div className="results-tab-bar">
+          <button
+            className={`results-tab${activeTab === "overview" ? " active" : ""}`}
+            onClick={() => setActiveTab("overview")}
+          >
+            Overview
+          </button>
+          <button
+            className={`results-tab${activeTab === "details" ? " active" : ""}`}
+            onClick={() => setActiveTab("details")}
+          >
+            Detailed Analysis
+          </button>
+        </div>
 
-        {companyInsights ? (
-          <CompanyInsightsPanel insights={companyInsights} />
-        ) : companyInsightsError ? (
-          <section className="results-block bf-error-block">
-            <p className="rewrite-error" style={{ margin: 0 }}>{companyInsightsError}</p>
-          </section>
-        ) : null}
+        {activeTab === "overview" && (
+          <>
+            {(businessFit || recruiterView) ? (
+              <CombinedFitPanel fit={businessFit} recruiterData={recruiterView} />
+            ) : fitError ? (
+              <section className="results-block bf-error-block">
+                <p className="rewrite-error" style={{ margin: 0 }}>{fitError}</p>
+              </section>
+            ) : null}
 
-        {recruiterView ? (
-          <RecruiterViewPanel data={recruiterView} />
-        ) : recruiterViewError ? (
-          <section className="results-block bf-error-block">
-            <p className="rewrite-error" style={{ margin: 0 }}>{recruiterViewError}</p>
-          </section>
-        ) : null}
+            {companyInsights ? (
+              <CompanyInsightsPanel insights={companyInsights} />
+            ) : companyInsightsError ? (
+              <section className="results-block bf-error-block">
+                <p className="rewrite-error" style={{ margin: 0 }}>{companyInsightsError}</p>
+              </section>
+            ) : null}
 
-        <CvIntelligencePanel analysis={cvSectionsAnalysis} profile={candidateProfile} />
-        <InterviewPrepCard questions={cvSectionsAnalysis?.interview_questions} />
+            <CvIntelligencePanel analysis={cvSectionsAnalysis} profile={candidateProfile} />
 
-        <section className="results-block rfd-block">
-          <div className="results-block-header">
-            <div className="results-block-icon keyword-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="results-block-title">How your score was calculated</h2>
-              <p className="results-block-sub">Each component is weighted and contributes a specific number of points to your total.</p>
-            </div>
-          </div>
+            <section className="results-block rfd-block">
+              <div className="results-block-header">
+                <div className="results-block-icon keyword-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="results-block-title">How your score was calculated</h2>
+                  <p className="results-block-sub">Each component is weighted and contributes a specific number of points to your total.</p>
+                </div>
+              </div>
           {(() => {
             const respScore  = breakdown.responsibility_match_score || 0;
             const semScore   = breakdown.semantic_score || 0;
@@ -1648,79 +1597,41 @@ export default function ResultsPage() {
             );
           })()}
         </section>
+          </>
+        )}
 
-        <div className="results-grid">
-          <section className="results-block rm-block">
-            <div className="results-block-header">
-              <div className="results-block-icon keyword-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="results-block-title">Responsibility Match</h2>
-                <p className="results-block-sub">How well your CV proves each stated responsibility from the job description.</p>
-              </div>
-            </div>
-
-            {(() => {
-              const total = responsibilityDetail.total_responsibilities || 0;
-              const strongCount = (breakdown.matched_responsibilities || []).filter(r => r.confidence === "strong").length;
-              const partialCount = (breakdown.matched_responsibilities || []).filter(r => r.confidence === "partial").length;
-              const missingCount = (breakdown.missing_responsibilities || []).length;
-              const strongPct = total ? (strongCount / total) * 100 : 0;
-              const partialPct = total ? (partialCount / total) * 100 : 0;
-              const missingPct = total ? (missingCount / total) * 100 : 0;
-              return (
-                <div className="rm-coverage">
-                  <div className="rm-coverage-stats">
-                    <span className="rm-cov-strong">{strongCount} strong</span>
-                    <span className="rm-cov-sep">·</span>
-                    <span className="rm-cov-partial">{partialCount} partial</span>
-                    <span className="rm-cov-sep">·</span>
-                    <span className="rm-cov-missing">{missingCount} missing</span>
-                    <span className="rm-cov-total">of {total} responsibilities</span>
-                    <span className="rm-score-note">Partial counts as 55% — add explicit evidence to upgrade</span>
-                  </div>
-                  <div className="rm-cov-bar rm-cov-bar--segmented">
-                    <div className="rm-cov-seg rm-cov-seg--strong" style={{ width: `${strongPct}%` }} />
-                    <div className="rm-cov-seg rm-cov-seg--partial" style={{ width: `${partialPct}%` }} />
-                    <div className="rm-cov-seg rm-cov-seg--missing" style={{ width: `${missingPct}%` }} />
-                  </div>
-                </div>
-              );
-            })()}
-
-            <ResponsibilityMatchPanel
+        {activeTab === "details" && (
+          <>
+            <CombinedMatchPanel
               matched={breakdown.matched_responsibilities || []}
               missing={breakdown.missing_responsibilities || []}
+              atsKeywords={atsKeywords}
+              responsibilityDetail={responsibilityDetail}
             />
-          </section>
 
-          <ATSKeywordsPanel atsKeywords={atsKeywords} />
-
-          <section className="results-block">
-            <div className="results-block-header">
-              <div className="results-block-icon section-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
+            <section className="results-block">
+              <div className="results-block-header">
+                <div className="results-block-icon section-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="results-block-title">Section Feedback</h2>
+                  <p className="results-block-sub">Section-level quality feedback across each part of your CV.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="results-block-title">Section Feedback</h2>
-                <p className="results-block-sub">Section-level feedback remains available as a secondary review.</p>
+              <div className="section-cards">
+                {sortedSectionKeys.map((key) => (
+                  <SectionCard key={key} name={key} feedback={sectionFeedback[key]} />
+                ))}
               </div>
-            </div>
-            <div className="section-cards">
-              {sortedSectionKeys.map((key) => (
-                <SectionCard key={key} name={key} feedback={sectionFeedback[key]} />
-              ))}
-            </div>
-          </section>
-        </div>
+            </section>
 
-        <CvHighlightPanel highlights={cvHighlights} />
+            <CvHighlightPanel highlights={cvHighlights} />
+          </>
+        )}
 
         {/* ── Feedback widget ── */}
         <section className="results-block fb-block">
