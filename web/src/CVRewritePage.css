@@ -1,4 +1,4 @@
-/* ═══════════════════════════════════════════════════════════════
+﻿/* ═══════════════════════════════════════════════════════════════
    CV Rewrite Page
    ═══════════════════════════════════════════════════════════════ */
 
@@ -27,7 +27,7 @@
   gap: 6px;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.73);
   font-size: 0.84rem;
   cursor: pointer;
   padding: 6px 0;
@@ -45,7 +45,7 @@
 .cvr-tailored-for {
   display: block;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.66);
   margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
@@ -293,7 +293,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.66);
   margin-bottom: 11px;
 }
 
@@ -375,7 +375,7 @@
 }
 .cvr-change-text {
   font-size: 0.74rem;
-  color: rgba(255, 255, 255, 0.52);
+  color: rgba(255, 255, 255, 0.76);
   line-height: 1.5;
   margin: 0;
 }
@@ -401,7 +401,7 @@
   display: block;
   font-size: 0.67rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.65);
   margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
@@ -417,7 +417,7 @@
 /* ── Suggested skills sidebar block ─────────────────────────── */
 .cvr-suggested-intro {
   font-size: 0.74rem;
-  color: rgba(184, 192, 212, 0.55);
+  color: rgba(184, 192, 212, 0.78);
   margin: 0 0 10px;
   line-height: 1.5;
 }
@@ -458,7 +458,7 @@
   margin: 0;
   padding-left: 18px;
   font-size: 0.79rem;
-  color: rgba(255, 255, 255, 0.52);
+  color: rgba(255, 255, 255, 0.76);
   line-height: 1.75;
 }
 
