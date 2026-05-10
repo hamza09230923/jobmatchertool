@@ -7,6 +7,7 @@ import math
 import os
 import re
 import secrets
+import threading
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
@@ -127,6 +128,7 @@ def _save_scan_counts(counts: dict) -> None:
         logger.warning("Could not save scan counts: %s", exc)
 
 _scan_counts: dict = _load_scan_counts()
+_scan_counts_lock = threading.Lock()
 
 def _today() -> str:
     return date.today().isoformat()
@@ -135,12 +137,13 @@ def get_scans_today(email: str) -> int:
     return _scan_counts.get(email, {}).get(_today(), 0)
 
 def increment_scan(email: str) -> int:
-    today = _today()
-    if email not in _scan_counts:
-        _scan_counts[email] = {}
-    _scan_counts[email][today] = _scan_counts[email].get(today, 0) + 1
-    _save_scan_counts(_scan_counts)
-    return _scan_counts[email][today]
+    with _scan_counts_lock:
+        today = _today()
+        if email not in _scan_counts:
+            _scan_counts[email] = {}
+        _scan_counts[email][today] = _scan_counts[email].get(today, 0) + 1
+        _save_scan_counts(_scan_counts)
+        return _scan_counts[email][today]
 
 def get_email_from_token(token: str) -> str | None:
     session = _sessions.get(token)
@@ -173,6 +176,24 @@ def check_scan_limit(email: str) -> None:
             status_code=429,
             detail=f"Daily scan limit of {limit} reached. Resets at midnight."
         )
+
+def check_and_increment_scan(email: str) -> int:
+    """Atomically check the daily limit and increment. Raises 429 if at limit."""
+    with _scan_counts_lock:
+        account = ACCOUNTS.get(email, {})
+        limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
+        today = _today()
+        used = _scan_counts.get(email, {}).get(today, 0)
+        if used >= limit:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily scan limit of {limit} reached. Resets at midnight."
+            )
+        if email not in _scan_counts:
+            _scan_counts[email] = {}
+        _scan_counts[email][today] = used + 1
+        _save_scan_counts(_scan_counts)
+        return _scan_counts[email][today]
 # ─────────────────────────────────────────────────────────────────────────────
 TEXTRAZOR_API_KEY = os.getenv("TEXTRAZOR_API_KEY")
 TEXTRAZOR_ENDPOINT = os.getenv("TEXTRAZOR_ENDPOINT", "https://api.textrazor.com")
@@ -3279,8 +3300,7 @@ async def analyze(
         email = get_email_from_token(session_token)
         if not email:
             raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
-        check_scan_limit(email)
-        increment_scan(email)
+        check_and_increment_scan(email)
 
     file_bytes = await resume.read()
     if not file_bytes:

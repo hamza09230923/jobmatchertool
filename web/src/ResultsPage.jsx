@@ -1296,6 +1296,9 @@ export default function ResultsPage() {
   useEffect(() => {
     if (!result || !jobDescription) { setPanelsLoaded(true); return; }
     const resumeText = result.resume_text;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const stepTimer = setInterval(() => {
       setLoadingStep((s) => (s < loadingSteps.length - 1 ? s + 1 : s));
@@ -1304,36 +1307,60 @@ export default function ResultsPage() {
     const safeJson = (res) =>
       res.ok ? res.json() : res.json().then((d) => Promise.reject(d?.detail || `Error ${res.status}`));
 
-    const bfFetch = fetch(`${API_BASE_URL}/business-fit`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }),
-    }).then(safeJson).then((d) => ({ ok: true, data: d.business_fit || null }))
-      .catch((e) => ({ ok: false, error: typeof e === "string" ? e : "Could not run business fit analysis." }));
+    const wrapFetch = (promise, fallback) =>
+      promise.catch((e) => ({
+        ok: false,
+        error: e?.name === "AbortError" ? "Request timed out." : (typeof e === "string" ? e : fallback),
+      }));
 
-    const ciFetch = fetch(`${API_BASE_URL}/company-insights`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job_description: jobDescription }),
-    }).then(safeJson).then((d) => ({ ok: true, data: d.company_insights || null }))
-      .catch((e) => ({ ok: false, error: typeof e === "string" ? e : "Could not load company insights." }));
+    const bfFetch = wrapFetch(
+      fetch(`${API_BASE_URL}/business-fit`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }),
+        signal,
+      }).then(safeJson).then((d) => ({ ok: true, data: d.business_fit || null })),
+      "Could not run business fit analysis."
+    );
 
-    const rvFetch = fetch(`${API_BASE_URL}/recruiter-view`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription, role_fit_breakdown: result.role_fit_breakdown || {} }),
-    }).then(safeJson).then((d) => ({ ok: true, data: d.recruiter_view || null }))
-      .catch((e) => ({ ok: false, error: typeof e === "string" ? e : "Could not load recruiter view." }));
+    const ciFetch = wrapFetch(
+      fetch(`${API_BASE_URL}/company-insights`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_description: jobDescription }),
+        signal,
+      }).then(safeJson).then((d) => ({ ok: true, data: d.company_insights || null })),
+      "Could not load company insights."
+    );
+
+    const rvFetch = wrapFetch(
+      fetch(`${API_BASE_URL}/recruiter-view`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription, role_fit_breakdown: result.role_fit_breakdown || {} }),
+        signal,
+      }).then(safeJson).then((d) => ({ ok: true, data: d.recruiter_view || null })),
+      "Could not load recruiter view."
+    );
 
     Promise.all([bfFetch, ciFetch, rvFetch]).then(([bf, ci, rv]) => {
       clearInterval(stepTimer);
+      clearTimeout(timeoutId);
       if (bf.ok) setBusinessFit(bf.data); else setBusinessFitError(bf.error);
       if (ci.ok) setCompanyInsights(ci.data); else setCompanyInsightsError(ci.error);
       if (rv.ok) setRecruiterView(rv.data); else setRecruiterViewError(rv.error);
       setPanelsLoaded(true);
     });
 
-    return () => clearInterval(stepTimer);
+    return () => {
+      clearInterval(stepTimer);
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!result) return null;
+  if (!result) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)" }}>
+      <div className="az-loading-ring az-ring-1" />
+    </div>
+  );
 
   if (!panelsLoaded) {
     return (

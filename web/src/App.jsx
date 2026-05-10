@@ -453,19 +453,28 @@ function RequireAuth({ children }) {
   return isAuthenticated() ? children : <Navigate to="/login" replace />;
 }
 
+function LoginGuard({ onLogin }) {
+  return isAuthenticated() ? <Navigate to="/analyze" replace /> : <LoginPage onLogin={onLogin} />;
+}
+
 function App() {
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
     const onStorage = () => forceUpdate(n => n + 1);
+    const onSignOut = () => forceUpdate(n => n + 1);
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("shortlistly:signout", onSignOut);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("shortlistly:signout", onSignOut);
+    };
   }, []);
 
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={isAuthenticated() ? <Navigate to="/analyze" replace /> : <LoginPage onLogin={() => forceUpdate(n => n + 1)} />} />
+      <Route path="/login" element={<LoginGuard onLogin={() => forceUpdate(n => n + 1)} />} />
       <Route path="/analyze" element={<RequireAuth><AnalyzePage /></RequireAuth>} />
       <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
       <Route path="/cv-rewrite" element={<RequireAuth><CVRewritePage /></RequireAuth>} />

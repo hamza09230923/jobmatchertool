@@ -78,4 +78,5 @@ export function signOut() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EMAIL_KEY);
   localStorage.removeItem(LIMITS_KEY);
+  window.dispatchEvent(new Event("shortlistly:signout"));
 }

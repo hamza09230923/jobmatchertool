@@ -2,6 +2,8 @@
    CV Rewrite Page
    ═══════════════════════════════════════════════════════════════ */
 
+@keyframes cvrSpin { to { transform: rotate(360deg); } }
+
 .cvr-root {
   min-height: 100vh;
   background: var(--bg, #0f1115);

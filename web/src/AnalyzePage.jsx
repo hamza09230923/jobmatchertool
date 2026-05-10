@@ -96,10 +96,51 @@ export default function AnalyzePage() {
   const [scanLimits, setScanLimits] = useState(() => {
     try { return JSON.parse(localStorage.getItem("shortlistly.session.limits") || "{}"); } catch { return {}; }
   });
+  // "checking" → backend ping in flight; "waking" → slow response, show banner; "ready" → responded
+  const [backendStatus, setBackendStatus] = useState("checking");
+  const backendReadyRef = useRef(false);
 
   useEffect(() => {
     refreshLimits().then(d => { if (d) setScanLimits(d); });
-    fetch(`${API_BASE_URL}/status`).catch(() => {});
+
+    let cancelled = false;
+    let pollTimer = null;
+    let wakeTimer = null;
+
+    const ping = () => {
+      fetch(`${API_BASE_URL}/status`, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(() => {
+          if (cancelled) return;
+          clearTimeout(wakeTimer);
+          clearTimeout(pollTimer);
+          backendReadyRef.current = true;
+          setBackendStatus("ready");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          pollTimer = setTimeout(ping, 4000);
+        });
+    };
+
+    // Show the "waking up" banner only if the first ping takes > 2 s
+    wakeTimer = setTimeout(() => {
+      if (!backendReadyRef.current && !cancelled) setBackendStatus("waking");
+    }, 2000);
+
+    ping();
+
+    // Keep-alive: re-ping every 12 min so Render doesn't spin down while user fills the form
+    const keepAlive = setInterval(() => {
+      if (!cancelled) fetch(`${API_BASE_URL}/status`).catch(() => {});
+    }, 12 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(pollTimer);
+      clearTimeout(wakeTimer);
+      clearInterval(keepAlive);
+    };
   }, []);
 
   const loadingSteps = [
@@ -181,6 +222,9 @@ export default function AnalyzePage() {
       setLoadingStep((step) => (step < loadingSteps.length - 1 ? step + 1 : step));
     }, 1000);
 
+    const analyzeController = new AbortController();
+    const analyzeTimeout = setTimeout(() => analyzeController.abort(), 90000);
+
     try {
       const form = new FormData();
       form.append("resume", file);
@@ -188,14 +232,17 @@ export default function AnalyzePage() {
       form.append("job_source", jobInputMode);
       const token = getStoredToken();
       if (token) form.append("session_token", token);
-      const res = await fetch(`${API_BASE_URL}/analyze`, { method: "POST", body: form });
+      const res = await fetch(`${API_BASE_URL}/analyze`, { method: "POST", body: form, signal: analyzeController.signal });
+      clearTimeout(analyzeTimeout);
       if (res.status === 429) {
         const d = await res.json();
         throw new Error(d?.detail || "Daily scan limit reached. Try again tomorrow.");
       }
       if (res.status === 401) {
+        clearInterval(stepInterval);
+        setLoading(false);
         signOut();
-        navigate("/login");
+        navigate("/login", { replace: true });
         return;
       }
       await refreshLimits();
@@ -214,9 +261,14 @@ export default function AnalyzePage() {
         },
       });
     } catch (err) {
+      clearTimeout(analyzeTimeout);
       clearInterval(stepInterval);
       setLoading(false);
-      setError(err.message || "Something went wrong. Is the backend running?");
+      setError(
+        err?.name === "AbortError"
+          ? "The server is taking too long to respond. It may be starting up — please wait a moment and try again."
+          : err.message || "Something went wrong. Please try again."
+      );
     }
   };
 
@@ -476,6 +528,15 @@ export default function AnalyzePage() {
                 </div>
               </div>
             </div>
+
+            {backendStatus === "waking" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", background: "rgba(255,209,102,0.07)", border: "1px solid rgba(255,209,102,0.2)", borderRadius: "10px", marginBottom: "4px" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid rgba(255,209,102,0.4)", borderTopColor: "#ffd166", flexShrink: 0, animation: "azOrbit 0.9s linear infinite", display: "inline-block" }} />
+                <span style={{ fontSize: "0.8rem", color: "#ffd166", lineHeight: 1.4 }}>
+                  Server is starting up — this takes ~30 s on the first visit. You can submit and it will connect automatically.
+                </span>
+              </div>
+            )}
 
             <div className="az-submit-area">
               <button type="submit" className="az-submit-btn">

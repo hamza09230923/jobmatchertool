@@ -154,7 +154,11 @@ export default function CVRewritePage() {
     if (!rewrite) navigate("/analyze", { replace: true });
   }, [rewrite, navigate]);
 
-  if (!rewrite) return null;
+  if (!rewrite) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#0f1115" }}>
+      <div style={{ width: 40, height: 40, border: "2px solid rgba(94,228,255,0.15)", borderTopColor: "#5ee4ff", borderRadius: "50%", animation: "cvrSpin 0.8s linear infinite" }} />
+    </div>
+  );
 
   const {
     name,
