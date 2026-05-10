@@ -412,6 +412,28 @@
   line-height: 1.45;
 }
 
+/* ── Suggested skills sidebar block ─────────────────────────── */
+.cvr-suggested-intro {
+  font-size: 0.74rem;
+  color: rgba(184, 192, 212, 0.55);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+.cvr-suggested-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cvr-suggested-chip {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(94, 228, 255, 0.08);
+  border: 1px solid rgba(94, 228, 255, 0.2);
+  color: rgba(94, 228, 255, 0.8);
+  white-space: nowrap;
+}
+
 /* ── Missing info block ───────────────────────────────────────── */
 .cvr-missing-block {
   max-width: 1120px;

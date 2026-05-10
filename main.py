@@ -1478,7 +1478,7 @@ Return ONLY valid JSON with this exact schema:
   "missing_information": ["string"]
 }}
 
-Use concise UK CV style — action verb + outcome, no first-person pronouns. Optimize for role fit. Group skills into Technical Skills and Soft Skills. Preserve education as-is. Do not invent facts. For bullets missing a quantitative metric that would strengthen them, append [METRIC: short question] at the end. Add section_changes entries explaining what changed and why for each major rewrite.
+Use concise UK CV style — action verb + outcome, no first-person pronouns. Optimize for role fit. For skills_section, include ALL skills evidenced in the CV plus every plausible JD skill to maximise ATS coverage. Preserve education as-is. Do not invent facts. For bullets missing a quantitative metric that would strengthen them, append [METRIC: short question] at the end. Add section_changes entries explaining what changed and why for each major rewrite. The rewritten_summary MUST end with a formal closing sentence explicitly naming the exact role title and company from the JD (e.g. "Eager to bring this expertise to the [Role Title] role at [Company]."). For additional_keywords_to_include, list every JD skill/keyword NOT already evidenced in the CV — these are skills the candidate should review and add if accurate.
 
 Source CV:
 {resume_text}
@@ -1566,10 +1566,12 @@ Your job:
 6. If a metric is missing, write a strong factual bullet without inventing the number, and list the missing metric in missing_information.
 7. Use concise UK CV style bullet points — action verb + outcome, no first-person pronouns.
 8. Optimize for role fit: responsibilities, ownership, governance, stakeholder communication.
-9. For skills_section, group into Technical Skills and Soft Skills (or other logical groups). Include only skills evidenced in the CV or clearly relevant to the JD.
+9. For skills_section, include ALL skills evidenced in the CV plus every relevant skill from the JD that is plausible given the candidate's background. Maximise ATS keyword coverage — do not limit to only what is explicitly mentioned in the CV. Group into Technical Skills and Soft Skills (or other logical groups).
 10. For education_section, extract as-is from the CV — do not rewrite or omit.
 11. For every bullet where a specific quantitative metric (%, £/$, number, timeframe) is absent but would materially change how a recruiter reads it, append exactly [METRIC: <short question>] at the end of the bullet. E.g. "Reduced churn [METRIC: by what %? over what period?]". Only add [METRIC:] where a real number would noticeably strengthen the line.
 12. For section_changes, write one concise entry per major rewrite — what changed and why it improves the candidate's positioning for this role. Be specific, not generic.
+13. The rewritten_summary MUST end with a formal closing sentence that explicitly names the exact role title and company from the JD. E.g. "Eager to bring this expertise to the Senior Data Engineer role at Currys." Extract the company name and role title directly from the job description — do not use placeholders.
+14. For additional_keywords_to_include, list every skill and keyword from the JD that is NOT already evidenced in the CV. These are skills the candidate should review and add if accurate — do not include skills already in the CV.
 
 Return ONLY valid JSON with this exact schema:
 {{

@@ -53,12 +53,13 @@ function ChangeCard({ change }) {
   );
 }
 
-function Sidebar({ diagnosis = {}, sectionChanges = [], metricItems = [] }) {
+function Sidebar({ diagnosis = {}, sectionChanges = [], metricItems = [], suggestedSkills = [] }) {
   const hasContent =
     diagnosis.current_positioning ||
     diagnosis.target_positioning ||
     sectionChanges.length > 0 ||
-    metricItems.length > 0;
+    metricItems.length > 0 ||
+    suggestedSkills.length > 0;
   if (!hasContent) return null;
 
   return (
@@ -122,6 +123,24 @@ function Sidebar({ diagnosis = {}, sectionChanges = [], metricItems = [] }) {
           ))}
         </div>
       )}
+      {suggestedSkills.length > 0 && (
+        <div className="cvr-sb-block cvr-suggested-sb">
+          <div className="cvr-sb-heading">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Consider adding these skills
+          </div>
+          <p className="cvr-suggested-intro">
+            These skills appear in the job description but aren't in your CV. Review the list — add any you genuinely have to improve your ATS score.
+          </p>
+          <div className="cvr-suggested-chips">
+            {suggestedSkills.map((skill, i) => (
+              <span key={i} className="cvr-suggested-chip">{skill}</span>
+            ))}
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -149,6 +168,7 @@ export default function CVRewritePage() {
     projects_section = [],
     missing_information = [],
     section_changes = [],
+    additional_keywords_to_include = [],
   } = rewrite;
 
   const contactParts = [contact.email, contact.phone, contact.linkedin, contact.location].filter(Boolean);
@@ -266,6 +286,7 @@ export default function CVRewritePage() {
           diagnosis={diagnosis}
           sectionChanges={section_changes}
           metricItems={metricItems}
+          suggestedSkills={additional_keywords_to_include}
         />
       </div>
 
