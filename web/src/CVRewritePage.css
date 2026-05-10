@@ -458,7 +458,7 @@
 
 /* ── Print / PDF ──────────────────────────────────────────────── */
 @media print {
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 portrait; margin: 16mm 20mm; }
 
   body { background: #fff !important; }
 
@@ -480,9 +480,14 @@
     max-width: 100% !important;
     width: 100% !important;
     margin: 0 !important;
-    padding: 14mm 20mm !important;
+    padding: 0 !important;
     animation: none !important;
   }
+
+  .cvr-role-block  { page-break-inside: avoid; }
+  .cvr-section     { page-break-inside: avoid; }
+  .cvr-edu-block   { page-break-inside: avoid; }
+  .cvr-header-block { page-break-after: avoid; }
 
   /* Metric prompts print as subtle grey hint */
   .cvr-metric-prompt {
