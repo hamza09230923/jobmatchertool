@@ -7,7 +7,7 @@ services:
     plan: free
     envVars:
       - key: ALLOWED_ORIGINS
-        value: https://hamza09230923.github.io,http://localhost:5173,http://localhost:5175
+        value: https://shortlistly.co.uk,http://localhost:5173,http://localhost:5175
       - key: GEMINI_API_KEY
         sync: false
       - key: TEXTRAZOR_API_KEY
@@ -18,3 +18,21 @@ services:
         value: gemini-embedding-001
       - key: GEMINI_REWRITE_MODEL
         value: gemini-2.0-flash
+      - key: GEMINI_LITE_MODEL
+        value: gemini-2.0-flash-lite
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: OPENAI_REWRITE_MODEL
+        value: gpt-4o-mini
+      - key: ACCOUNTS
+        sync: false
+      - key: DEFAULT_DAILY_LIMIT
+        value: "10"
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: SCAN_COUNTS_FILE
+        value: scan_counts.json
+      - key: FEEDBACK_FILE
+        value: feedback.json
