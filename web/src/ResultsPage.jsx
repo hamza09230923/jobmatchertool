@@ -298,49 +298,59 @@ function CombinedMatchPanel({ matched = [], missing = [], atsKeywords = {}, resp
       </div>
 
       {hasAts && (
-        <div style={{ marginTop: "28px", paddingTop: "24px", borderTop: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-            <h3 style={{ margin: 0, fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", letterSpacing: "0.02em" }}>ATS Keyword Coverage</h3>
-            <div className="ats-legend">
-              <span className="ats-legend-item ats-legend--present"><span className="ats-legend-dot" />In your CV ({presentCount})</span>
-              <span className="ats-legend-item ats-legend--low"><span className="ats-legend-dot" />Add more ({lowCount})</span>
-              <span className="ats-legend-item ats-legend--missing"><span className="ats-legend-dot" />Missing ({atsMissingCount})</span>
+        <div className="ats-panel">
+          <div className="ats-panel-header">
+            <div>
+              <h3 className="ats-panel-title">ATS Keyword Coverage</h3>
+              <p className="ats-panel-sub">Keywords the ATS scans for in this role</p>
+            </div>
+            <div className="ats-score-badge">
+              <span className="ats-score-num">{atsCoveragePct}%</span>
+              <span className="ats-score-label">covered</span>
             </div>
           </div>
-          <div className="ats-coverage-bar-wrap" style={{ marginBottom: "16px" }}>
-            <div className="ats-coverage-bar">
-              <div className="ats-coverage-fill" style={{ width: `${atsCoveragePct}%` }} />
-            </div>
-            <span className="ats-coverage-pct">{atsCoveragePct}% keyword coverage</span>
+          <div className="ats-bar">
+            <div className="ats-bar-fill ats-bar-fill--present" style={{ width: `${atsTotal ? (presentCount / atsTotal) * 100 : 0}%` }} />
+            <div className="ats-bar-fill ats-bar-fill--low" style={{ width: `${atsTotal ? (lowCount / atsTotal) * 100 : 0}%` }} />
           </div>
-          {hardSkills.length > 0 && (
-            <div className="ats-cloud-section">
-              <div className="ats-cloud-label">Hard Skills</div>
-              <div className="ats-cloud">
-                {hardSkills.map((s, i) => {
-                  const freq = s.jd_count;
-                  const weight = freq / maxJd;
-                  const fontSize = (0.72 + weight * 0.28).toFixed(2);
-                  const cls = s.status === "present" ? "ats-chip ats-chip--present" : s.status === "low" ? "ats-chip ats-chip--low" : "ats-chip ats-chip--missing";
-                  return <span key={i} className={cls} style={{ fontSize: `${fontSize}rem` }}>{s.skill}<span className="ats-chip-freq">×{freq}</span></span>;
-                })}
+          <div className="ats-groups">
+            {presentCount > 0 && (
+              <div className="ats-group ats-group--present">
+                <div className="ats-group-header">
+                  <span className="ats-group-dot" />In your CV<span className="ats-group-count">{presentCount}</span>
+                </div>
+                <div className="ats-chips">
+                  {allSkills.filter(s => s.status === "present").map((s, i) => (
+                    <span key={i} className="ats-chip ats-chip--present">{s.skill}</span>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {softSkills.length > 0 && (
-            <div className="ats-cloud-section">
-              <div className="ats-cloud-label">Soft Skills</div>
-              <div className="ats-cloud">
-                {softSkills.map((s, i) => {
-                  const freq = s.jd_count;
-                  const weight = freq / maxJd;
-                  const fontSize = (0.72 + weight * 0.28).toFixed(2);
-                  const cls = s.status === "present" ? "ats-chip ats-chip--present" : s.status === "low" ? "ats-chip ats-chip--low" : "ats-chip ats-chip--missing";
-                  return <span key={i} className={cls} style={{ fontSize: `${fontSize}rem` }}>{s.skill}<span className="ats-chip-freq">×{freq}</span></span>;
-                })}
+            )}
+            {lowCount > 0 && (
+              <div className="ats-group ats-group--low">
+                <div className="ats-group-header">
+                  <span className="ats-group-dot" />Needs more<span className="ats-group-count">{lowCount}</span>
+                </div>
+                <div className="ats-chips">
+                  {allSkills.filter(s => s.status === "low").map((s, i) => (
+                    <span key={i} className="ats-chip ats-chip--low">{s.skill}</span>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {atsMissingCount > 0 && (
+              <div className="ats-group ats-group--missing">
+                <div className="ats-group-header">
+                  <span className="ats-group-dot" />Missing<span className="ats-group-count">{atsMissingCount}</span>
+                </div>
+                <div className="ats-chips">
+                  {allSkills.filter(s => s.status === "missing").map((s, i) => (
+                    <span key={i} className="ats-chip ats-chip--missing">{s.skill}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>
