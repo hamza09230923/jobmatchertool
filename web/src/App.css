@@ -1644,117 +1644,38 @@ a {
 .process-card-top {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 
 .process-card-index {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  color: rgba(244, 246, 251, 0.36);
+  color: rgba(244, 246, 251, 0.3);
   letter-spacing: 0.06em;
 }
 
 .process-card-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: rgba(244, 246, 251, 0.7);
+  letter-spacing: 0.13em;
+  color: rgba(244, 246, 251, 0.55);
 }
 
-.process-card-headline {
-  flex: 1;
-}
-
-.process-card-cue {
-  display: inline-block;
-  margin-bottom: 10px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: rgba(244, 246, 251, 0.38);
-}
-
-.process-card h3 {
-  margin: 0 0 12px;
-  font-size: clamp(1.22rem, 2.2vw, 1.48rem);
+.process-card-title {
+  margin: 0 0 10px;
+  font-size: clamp(1.18rem, 2vw, 1.38rem);
   line-height: 1.15;
   letter-spacing: -0.02em;
 }
 
-.process-card p {
+.process-card-sub {
   margin: 0;
   color: var(--muted);
-  font-size: 0.93rem;
-  line-height: 1.7;
-}
-
-.process-points {
-  display: grid;
-  gap: 9px;
-  margin: 20px 0 0;
-  padding: 20px 0 0;
-  list-style: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.process-points li {
-  position: relative;
-  padding-left: 16px;
-  color: rgba(244, 246, 251, 0.78);
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.process-card--cyan .process-points li::before {
-  background: #5ee4ff;
-  box-shadow: 0 0 8px rgba(94, 228, 255, 0.5);
-}
-
-.process-card--green .process-points li::before {
-  background: #4ade80;
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
-}
-
-.process-card--amber .process-points li::before {
-  background: #ffd166;
-  box-shadow: 0 0 8px rgba(255, 209, 102, 0.5);
-}
-
-.process-points li::before {
-  content: "";
-  position: absolute;
-  top: 0.56rem;
-  left: 0;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-
-.process-card-footer {
-  margin-top: auto;
-  padding: 18px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.process-card-outcome-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: rgba(244, 246, 251, 0.38);
-}
-
-.process-card-outcome-value {
-  font-size: 0.97rem;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.65;
 }
 
 @media (max-width: 760px) {
@@ -2326,10 +2247,10 @@ a {
 .is-visible .workflow-summary span:nth-child(2) { opacity: 1; transform: scale(1); transition-delay: 0.62s; }
 .is-visible .workflow-summary span:nth-child(3) { opacity: 1; transform: scale(1); transition-delay: 0.74s; }
 
-/* ── Outcome value highlight on card hover ── */
-.process-card--cyan:hover .process-card-outcome-value { color: #5ee4ff; transition: color 0.25s; }
-.process-card--green:hover .process-card-outcome-value { color: #4ade80; transition: color 0.25s; }
-.process-card--amber:hover .process-card-outcome-value { color: #ffd166; transition: color 0.25s; }
+/* ── Feature card title accent on hover ── */
+.process-card--cyan:hover .process-card-title { color: #5ee4ff; transition: color 0.25s; }
+.process-card--green:hover .process-card-title { color: #4ade80; transition: color 0.25s; }
+.process-card--amber:hover .process-card-title { color: #ffd166; transition: color 0.25s; }
 
 /* ghost-button — no hover effects */
 

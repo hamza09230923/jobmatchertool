@@ -37,11 +37,8 @@ const STEPS = [
         <circle cx="12" cy="12" r="3" />
       </svg>
     ),
-    cue: "See it through their eyes",
-    title: "How a recruiter reads your CV",
-    body: "Understand your fit from the hiring side — company context, role alignment, and the gaps a recruiter would flag.",
-    points: ["Company & culture fit breakdown.", "Flags recruiters notice first."],
-    result: "Hiring-side clarity.",
+    title: "Through hiring eyes",
+    sub: "Company fit, role alignment, recruiter red flags.",
   },
   {
     index: "02",
@@ -53,11 +50,8 @@ const STEPS = [
         <polyline points="22 4 12 14.01 9 11.01" />
       </svg>
     ),
-    cue: "Pass the filter",
-    title: "Keywords that get you through",
-    body: "See exactly which hard and soft skills are present, weak, or missing — before the scan decides for you.",
-    points: ["Hard & soft skill gap map.", "Weighted by role frequency."],
-    result: "Higher pass rate.",
+    title: "Beat the filter",
+    sub: "Skill gaps mapped before the scan decides.",
   },
   {
     index: "03",
@@ -71,11 +65,8 @@ const STEPS = [
         <line x1="16" y1="17" x2="8" y2="17" />
       </svg>
     ),
-    cue: "Know what's holding you back",
-    title: "Deep analysis of your document",
-    body: "Quality score, ATS compatibility, red flags, and section-by-section feedback — all in one view.",
-    points: ["ATS compatibility score.", "Red flag detection."],
-    result: "A stronger CV.",
+    title: "Know your CV",
+    sub: "Score, red flags, ATS compatibility — one view.",
   },
 ];
 
@@ -407,27 +398,13 @@ function LandingPage() {
           <div className={`process-grid${stepsVisible ? " is-visible" : ""}`} ref={stepsRef}>
             {STEPS.map((item, i) => (
               <article className={`process-card process-card--${item.color} step-card-anim step-card-anim-${i}`} key={item.index}>
-                <div className="process-card-icon">
-                  {item.icon}
-                </div>
+                <div className="process-card-icon">{item.icon}</div>
                 <div className="process-card-top">
                   <span className="process-card-index">{item.index}</span>
                   <span className="process-card-label">{item.label}</span>
                 </div>
-                <div className="process-card-headline">
-                  <div className="process-card-cue">{item.cue}</div>
-                  <h3>{item.title}</h3>
-                  <p>{item.body}</p>
-                </div>
-                <ul className="process-points">
-                  {item.points.map((point) => (
-                    <li key={point}>{point}</li>
-                  ))}
-                </ul>
-                <div className="process-card-footer">
-                  <span className="process-card-outcome-label">Outcome</span>
-                  <strong className="process-card-outcome-value">{item.result}</strong>
-                </div>
+                <h3 className="process-card-title">{item.title}</h3>
+                <p className="process-card-sub">{item.sub}</p>
               </article>
             ))}
           </div>
