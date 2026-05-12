@@ -1535,147 +1535,151 @@ a {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 32px 28px 28px;
-  background: rgba(255, 255, 255, 0.044);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px;
+  padding: 36px 32px 32px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 24px;
   border: none;
-  box-shadow:
-    0 4px 32px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   overflow: hidden;
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, background 0.28s ease;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, background 0.3s ease;
 }
 
+/* ambient top-glow always visible, stronger on hover */
 .process-card::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 20px;
   pointer-events: none;
-  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(94, 228, 255, 0.07), transparent 70%);
-  opacity: 0;
+  background: radial-gradient(ellipse 100% 55% at 50% 0%, rgba(94, 228, 255, 0.09), transparent 65%);
   transition: opacity 0.3s ease;
 }
 
 .process-card--green::before {
-  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(74, 222, 128, 0.07), transparent 70%);
+  background: radial-gradient(ellipse 100% 55% at 50% 0%, rgba(74, 222, 128, 0.09), transparent 65%);
 }
 
 .process-card--amber::before {
-  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255, 209, 102, 0.07), transparent 70%);
+  background: radial-gradient(ellipse 100% 55% at 50% 0%, rgba(255, 209, 102, 0.09), transparent 65%);
 }
 
+/* top shimmer line */
 .process-card::after {
   content: "";
   position: absolute;
   top: 0;
-  left: 10%;
-  right: 10%;
+  left: 8%;
+  right: 8%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(94, 228, 255, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(94, 228, 255, 0.7), transparent);
   pointer-events: none;
 }
 
 .process-card--green::after {
-  background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.7), transparent);
 }
 
 .process-card--amber::after {
-  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.7), transparent);
 }
 
 .process-card:hover {
-  transform: translateY(-8px);
-  background: rgba(255, 255, 255, 0.062);
-}
-
-.process-card:hover::before {
-  opacity: 1;
+  transform: translateY(-10px);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .process-card--cyan:hover {
-  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(94,228,255,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 28px 72px rgba(0,0,0,0.42), 0 0 80px rgba(94,228,255,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 .process-card--green:hover {
-  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(74,222,128,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 28px 72px rgba(0,0,0,0.42), 0 0 80px rgba(74,222,128,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 .process-card--amber:hover {
-  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(255,209,102,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 28px 72px rgba(0,0,0,0.42), 0 0 80px rgba(255,209,102,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* faint watermark number */
+.process-card-watermark {
+  position: absolute;
+  bottom: -16px;
+  right: 20px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 7rem;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+  user-select: none;
 }
 
 .process-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 13px;
+  width: 54px;
+  height: 54px;
+  border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 22px;
+  margin-bottom: 28px;
   flex-shrink: 0;
 }
 
 .process-card-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .process-card--cyan .process-card-icon {
-  background: rgba(94, 228, 255, 0.12);
+  background: rgba(94, 228, 255, 0.13);
   color: #5ee4ff;
-  box-shadow: 0 0 22px rgba(94, 228, 255, 0.18);
+  box-shadow: 0 0 28px rgba(94, 228, 255, 0.22);
 }
 
 .process-card--green .process-card-icon {
-  background: rgba(74, 222, 128, 0.12);
+  background: rgba(74, 222, 128, 0.13);
   color: #4ade80;
-  box-shadow: 0 0 22px rgba(74, 222, 128, 0.18);
+  box-shadow: 0 0 28px rgba(74, 222, 128, 0.22);
 }
 
 .process-card--amber .process-card-icon {
-  background: rgba(255, 209, 102, 0.12);
+  background: rgba(255, 209, 102, 0.13);
   color: #ffd166;
-  box-shadow: 0 0 22px rgba(255, 209, 102, 0.18);
-}
-
-.process-card-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.process-card-index {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: rgba(244, 246, 251, 0.3);
-  letter-spacing: 0.06em;
+  box-shadow: 0 0 28px rgba(255, 209, 102, 0.22);
 }
 
 .process-card-label {
-  font-size: 0.82rem;
+  display: inline-block;
+  margin-bottom: 14px;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: rgba(244, 246, 251, 0.85);
+  letter-spacing: 0.14em;
 }
 
+.process-card--cyan .process-card-label  { color: #5ee4ff; }
+.process-card--green .process-card-label { color: #4ade80; }
+.process-card--amber .process-card-label { color: #ffd166; }
+
 .process-card-title {
-  margin: 0 0 10px;
-  font-size: clamp(1.18rem, 2vw, 1.38rem);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  font-size: clamp(1.32rem, 2.2vw, 1.62rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  transition: color 0.25s;
 }
+
+.process-card--cyan:hover  .process-card-title { color: #5ee4ff; }
+.process-card--green:hover .process-card-title { color: #4ade80; }
+.process-card--amber:hover .process-card-title { color: #ffd166; }
 
 .process-card-sub {
   margin: 0;
   color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.65;
+  font-size: 0.91rem;
+  line-height: 1.7;
 }
 
 @media (max-width: 760px) {
@@ -2247,10 +2251,6 @@ a {
 .is-visible .workflow-summary span:nth-child(2) { opacity: 1; transform: scale(1); transition-delay: 0.62s; }
 .is-visible .workflow-summary span:nth-child(3) { opacity: 1; transform: scale(1); transition-delay: 0.74s; }
 
-/* ── Feature card title accent on hover ── */
-.process-card--cyan:hover .process-card-title { color: #5ee4ff; transition: color 0.25s; }
-.process-card--green:hover .process-card-title { color: #4ade80; transition: color 0.25s; }
-.process-card--amber:hover .process-card-title { color: #ffd166; transition: color 0.25s; }
 
 /* ghost-button — no hover effects */
 

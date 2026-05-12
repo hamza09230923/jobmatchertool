@@ -37,8 +37,8 @@ const STEPS = [
         <circle cx="12" cy="12" r="3" />
       </svg>
     ),
-    title: "Through hiring eyes",
-    sub: "Company fit, role alignment, recruiter red flags.",
+    title: "See yourself through their eyes",
+    sub: "Know exactly what a hiring manager thinks — before you ever hit apply.",
   },
   {
     index: "02",
@@ -50,8 +50,8 @@ const STEPS = [
         <polyline points="22 4 12 14.01 9 11.01" />
       </svg>
     ),
-    title: "Beat the filter",
-    sub: "Skill gaps mapped before the scan decides.",
+    title: "Never get filtered out again",
+    sub: "Every missing keyword, mapped and fixed before the system decides your fate.",
   },
   {
     index: "03",
@@ -65,8 +65,8 @@ const STEPS = [
         <line x1="16" y1="17" x2="8" y2="17" />
       </svg>
     ),
-    title: "Know your CV",
-    sub: "Score, red flags, ATS compatibility — one view.",
+    title: "Your CV, brutally honest",
+    sub: "Quality score, red flags, ATS rating. Everything your CV has been hiding.",
   },
 ];
 
@@ -398,11 +398,9 @@ function LandingPage() {
           <div className={`process-grid${stepsVisible ? " is-visible" : ""}`} ref={stepsRef}>
             {STEPS.map((item, i) => (
               <article className={`process-card process-card--${item.color} step-card-anim step-card-anim-${i}`} key={item.index}>
+                <span className="process-card-watermark" aria-hidden="true">{item.index}</span>
                 <div className="process-card-icon">{item.icon}</div>
-                <div className="process-card-top">
-                  <span className="process-card-index">{item.index}</span>
-                  <span className="process-card-label">{item.label}</span>
-                </div>
+                <span className="process-card-label">{item.label}</span>
                 <h3 className="process-card-title">{item.title}</h3>
                 <p className="process-card-sub">{item.sub}</p>
               </article>
