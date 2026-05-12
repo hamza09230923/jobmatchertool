@@ -1528,176 +1528,175 @@ a {
   position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.process-grid::before {
-  content: none;
-}
-
-.process-grid::after {
-  content: none;
+  gap: 20px;
 }
 
 .process-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 360px;
-  padding: 0 10px 10px 0;
-  background: none;
-  border: 0;
-  box-shadow: none;
-  overflow: visible;
-  transition: transform 0.24s ease, opacity 0.24s ease;
+  padding: 32px 28px 28px;
+  background: rgba(255, 255, 255, 0.044);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  border: none;
+  box-shadow:
+    0 4px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, background 0.28s ease;
 }
 
 .process-card::before {
-  content: none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  pointer-events: none;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(94, 228, 255, 0.07), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.process-card--green::before {
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(74, 222, 128, 0.07), transparent 70%);
+}
+
+.process-card--amber::before {
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255, 209, 102, 0.07), transparent 70%);
 }
 
 .process-card::after {
   content: "";
   position: absolute;
-  top: -18px;
-  left: -12px;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  filter: blur(44px);
-  opacity: 0.42;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(94, 228, 255, 0.5), transparent);
   pointer-events: none;
 }
 
-.process-card:nth-child(1)::after {
-  background: radial-gradient(circle, rgba(94, 228, 255, 0.18), transparent 72%);
+.process-card--green::after {
+  background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.5), transparent);
 }
 
-.process-card:nth-child(2)::after {
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12), transparent 72%);
-}
-
-.process-card:nth-child(3)::after {
-  background: radial-gradient(circle, rgba(255, 209, 102, 0.16), transparent 72%);
+.process-card--amber::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.5), transparent);
 }
 
 .process-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-8px);
+  background: rgba(255, 255, 255, 0.062);
 }
 
-.process-card-top,
-.process-card-footer {
-  position: relative;
-  z-index: 1;
+.process-card:hover::before {
+  opacity: 1;
+}
+
+.process-card--cyan:hover {
+  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(94,228,255,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.process-card--green:hover {
+  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(74,222,128,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.process-card--amber:hover {
+  box-shadow: 0 24px 64px rgba(0,0,0,0.38), 0 0 60px rgba(255,209,102,0.09), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.process-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  justify-content: center;
+  margin-bottom: 22px;
+  flex-shrink: 0;
+}
+
+.process-card-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.process-card--cyan .process-card-icon {
+  background: rgba(94, 228, 255, 0.12);
+  color: #5ee4ff;
+  box-shadow: 0 0 22px rgba(94, 228, 255, 0.18);
+}
+
+.process-card--green .process-card-icon {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  box-shadow: 0 0 22px rgba(74, 222, 128, 0.18);
+}
+
+.process-card--amber .process-card-icon {
+  background: rgba(255, 209, 102, 0.12);
+  color: #ffd166;
+  box-shadow: 0 0 22px rgba(255, 209, 102, 0.18);
 }
 
 .process-card-top {
-  padding: 14px 0 14px;
-}
-
-.process-card-label,
-.process-card-cue,
-.process-card-outcome span,
-.process-card-metric span {
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-}
-
-.process-card-label,
-.process-card-index,
-.process-card-cue,
-.process-card-outcome span,
-.process-card-metric span {
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.process-card-label {
-  color: rgba(244, 246, 251, 0.94);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .process-card-index {
-  color: rgba(244, 246, 251, 0.52);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(244, 246, 251, 0.36);
+  letter-spacing: 0.06em;
+}
+
+.process-card-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(244, 246, 251, 0.7);
 }
 
 .process-card-headline {
-  position: relative;
-  z-index: 1;
-  padding: 0;
-  min-height: 144px;
+  flex: 1;
 }
 
 .process-card-cue {
   display: inline-block;
-  margin-bottom: 12px;
-  color: rgba(244, 246, 251, 0.52);
+  margin-bottom: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(244, 246, 251, 0.38);
 }
 
 .process-card h3 {
-  margin: 0 0 10px;
-  max-width: 12ch;
-  font-size: clamp(1.48rem, 2.8vw, 1.85rem);
-  line-height: 1.02;
+  margin: 0 0 12px;
+  font-size: clamp(1.22rem, 2.2vw, 1.48rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .process-card p {
   margin: 0;
   color: var(--muted);
+  font-size: 0.93rem;
   line-height: 1.7;
 }
 
-.process-card-live {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding-right: 0;
-  margin-bottom: 16px;
-}
-
-.process-live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: rgba(250, 250, 250, 0.9);
-  box-shadow:
-    0 0 0 5px rgba(250, 250, 250, 0.04),
-    0 0 18px rgba(250, 250, 250, 0.18);
-  animation: liveDotPulse 3.6s ease-in-out infinite;
-}
-
-.process-live-line {
-  position: relative;
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03));
-  overflow: hidden;
-}
-
-.process-live-line::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 -35%;
-  width: 35%;
-  background: linear-gradient(90deg, transparent, rgba(94, 228, 255, 0.95), rgba(255, 209, 102, 0.85), transparent);
-  filter: blur(0.5px);
-  animation: liveSweep 4.8s ease-in-out infinite;
-}
-
 .process-points {
-  position: relative;
-  z-index: 1;
   display: grid;
-  gap: 10px;
-  margin: 22px 0 0;
-  padding: 18px 0 18px;
+  gap: 9px;
+  margin: 20px 0 0;
+  padding: 20px 0 0;
   list-style: none;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -1705,54 +1704,57 @@ a {
 .process-points li {
   position: relative;
   padding-left: 16px;
-  color: rgba(244, 246, 251, 0.88);
-  font-size: 0.94rem;
+  color: rgba(244, 246, 251, 0.78);
+  font-size: 0.9rem;
   line-height: 1.55;
+}
+
+.process-card--cyan .process-points li::before {
+  background: #5ee4ff;
+  box-shadow: 0 0 8px rgba(94, 228, 255, 0.5);
+}
+
+.process-card--green .process-points li::before {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+.process-card--amber .process-points li::before {
+  background: #ffd166;
+  box-shadow: 0 0 8px rgba(255, 209, 102, 0.5);
 }
 
 .process-points li::before {
   content: "";
   position: absolute;
-  top: 0.58rem;
+  top: 0.56rem;
   left: 0;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
-  box-shadow: 0 0 12px rgba(94, 228, 255, 0.28);
 }
 
 .process-card-footer {
   margin-top: auto;
-  padding: 20px 0 0;
+  padding: 18px 0 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.process-card-outcome,
-.process-card-metric {
-  display: grid;
-  gap: 6px;
+.process-card-outcome-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(244, 246, 251, 0.38);
 }
 
-.process-card-outcome span,
-.process-card-metric span {
-  color: rgba(244, 246, 251, 0.5);
-}
-
-.process-card-outcome strong {
-  font-size: 0.98rem;
-  line-height: 1.4;
-}
-
-.process-card-metric {
-  min-width: 92px;
-  justify-items: end;
-}
-
-.process-card-metric strong {
-  font-size: 1.55rem;
-  letter-spacing: -0.04em;
+.process-card-outcome-value {
+  font-size: 0.97rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 @media (max-width: 760px) {
@@ -1887,23 +1889,7 @@ a {
 
   .process-card {
     min-height: auto;
-    padding-right: 0;
-  }
-
-  .process-card-footer {
-    align-items: start;
-  }
-
-  .process-card-metric {
-    justify-items: start;
-  }
-
-  .process-card-top,
-  .process-card-headline,
-  .process-card-live,
-  .process-points,
-  .process-card-footer {
-    padding-left: 0;
+    padding: 24px 20px 20px;
   }
 
   .closing-actions {
@@ -2294,15 +2280,6 @@ a {
 .process-grid.is-visible .step-card-anim-2 { opacity: 1; transform: none; transition-delay: 0.28s; }
 
 /* ── Process card hover lift ── */
-.process-card {
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
-}
-
-.process-card:hover {
-  transform: translateY(-6px) scale(1.012);
-  box-shadow: 0 24px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(94,228,255,0.12), 0 0 40px rgba(94,228,255,0.06);
-  border-color: rgba(94, 228, 255, 0.18);
-}
 
 /* ── Process live dot pulse ── */
 .process-live-dot {
@@ -2349,14 +2326,10 @@ a {
 .is-visible .workflow-summary span:nth-child(2) { opacity: 1; transform: scale(1); transition-delay: 0.62s; }
 .is-visible .workflow-summary span:nth-child(3) { opacity: 1; transform: scale(1); transition-delay: 0.74s; }
 
-/* ── Metric numbers highlight on card hover ── */
-.process-card:hover .process-card-metric strong {
-  background: linear-gradient(135deg, #5ee4ff, #ffd166);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  transition: color 0.3s, background 0.3s;
-}
+/* ── Outcome value highlight on card hover ── */
+.process-card--cyan:hover .process-card-outcome-value { color: #5ee4ff; transition: color 0.25s; }
+.process-card--green:hover .process-card-outcome-value { color: #4ade80; transition: color 0.25s; }
+.process-card--amber:hover .process-card-outcome-value { color: #ffd166; transition: color 0.25s; }
 
 /* ghost-button — no hover effects */
 

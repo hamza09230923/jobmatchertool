@@ -30,35 +30,52 @@ const STEPS = [
   {
     index: "01",
     label: "Recruiter Analysis",
+    color: "cyan",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
     cue: "See it through their eyes",
     title: "How a recruiter reads your CV",
     body: "Understand your fit from the hiring side — company context, role alignment, and the gaps a recruiter would flag.",
     points: ["Company & culture fit breakdown.", "Flags recruiters notice first."],
     result: "Hiring-side clarity.",
-    metricLabel: "Perspective",
-    metricValue: "Recruiter",
   },
   {
     index: "02",
     label: "ATS Coverage",
+    color: "green",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
+    ),
     cue: "Pass the filter",
     title: "Keywords that get you through",
     body: "See exactly which hard and soft skills are present, weak, or missing — before the scan decides for you.",
     points: ["Hard & soft skill gap map.", "Weighted by role frequency."],
     result: "Higher pass rate.",
-    metricLabel: "Coverage",
-    metricValue: "ATS",
   },
   {
     index: "03",
     label: "CV Intelligence",
+    color: "amber",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+      </svg>
+    ),
     cue: "Know what's holding you back",
     title: "Deep analysis of your document",
     body: "Quality score, ATS compatibility, red flags, and section-by-section feedback — all in one view.",
     points: ["ATS compatibility score.", "Red flag detection."],
     result: "A stronger CV.",
-    metricLabel: "Analysis",
-    metricValue: "Full CV",
   },
 ];
 
@@ -389,14 +406,13 @@ function LandingPage() {
           </div>
           <div className={`process-grid${stepsVisible ? " is-visible" : ""}`} ref={stepsRef}>
             {STEPS.map((item, i) => (
-              <article className={`process-card step-card-anim step-card-anim-${i}`} key={item.index}>
-                <div className="process-card-live" aria-hidden="true">
-                  <span className="process-live-dot"></span>
-                  <span className="process-live-line"></span>
+              <article className={`process-card process-card--${item.color} step-card-anim step-card-anim-${i}`} key={item.index}>
+                <div className="process-card-icon">
+                  {item.icon}
                 </div>
                 <div className="process-card-top">
-                  <span className="process-card-label">{item.label}</span>
                   <span className="process-card-index">{item.index}</span>
+                  <span className="process-card-label">{item.label}</span>
                 </div>
                 <div className="process-card-headline">
                   <div className="process-card-cue">{item.cue}</div>
@@ -409,14 +425,8 @@ function LandingPage() {
                   ))}
                 </ul>
                 <div className="process-card-footer">
-                  <div className="process-card-outcome">
-                    <span>Outcome</span>
-                    <strong>{item.result}</strong>
-                  </div>
-                  <div className="process-card-metric">
-                    <span>{item.metricLabel}</span>
-                    <strong>{item.metricValue}</strong>
-                  </div>
+                  <span className="process-card-outcome-label">Outcome</span>
+                  <strong className="process-card-outcome-value">{item.result}</strong>
                 </div>
               </article>
             ))}
