@@ -3592,3 +3592,79 @@
 }
 
 .az-step-label { line-height: 1.4; }
+
+/* ── Interview Prep Panel ── */
+.ip-sections { display: flex; flex-direction: column; gap: 20px; }
+
+.ip-section { border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; overflow: hidden; }
+
+.ip-section-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid;
+}
+
+.ip-section-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: grid; place-items: center; flex-shrink: 0;
+}
+
+.ip-section-label { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; flex: 1; }
+
+.ip-section-count {
+  font-size: 0.72rem; font-weight: 600;
+  color: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.06);
+  padding: 2px 8px; border-radius: 20px;
+}
+
+.ip-questions { display: flex; flex-direction: column; }
+
+.ip-q { border-bottom: 1px solid rgba(255,255,255,0.05); }
+.ip-q:last-child { border-bottom: none; }
+
+.ip-q-head {
+  width: 100%; display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 18px; background: none; border: none; cursor: pointer;
+  text-align: left; transition: background 0.15s;
+}
+.ip-q-head:hover { background: rgba(255,255,255,0.03); }
+
+.ip-q-num {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em;
+  min-width: 18px; padding-top: 1px; flex-shrink: 0;
+}
+
+.ip-q-text {
+  flex: 1; font-size: 0.88rem; color: rgba(255,255,255,0.88);
+  font-weight: 500; line-height: 1.5;
+}
+
+.ip-q-badge {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; padding: 3px 8px; border-radius: 20px;
+  flex-shrink: 0; align-self: flex-start; margin-top: 2px;
+}
+
+.ip-q-chevron {
+  flex-shrink: 0; color: rgba(255,255,255,0.3);
+  transition: transform 0.2s; align-self: flex-start; margin-top: 3px;
+}
+.ip-q--open .ip-q-chevron { transform: rotate(180deg); }
+
+.ip-q-body {
+  padding: 0 18px 16px 48px;
+  display: flex; flex-direction: column; gap: 10px;
+  animation: ipBodyIn 0.15s ease;
+}
+@keyframes ipBodyIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.ip-q-line { display: flex; flex-direction: column; gap: 3px; }
+
+.ip-q-line-label {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: rgba(255,255,255,0.35);
+}
+
+.ip-q-line-text { font-size: 0.84rem; color: rgba(255,255,255,0.72); line-height: 1.55; }

@@ -785,6 +785,140 @@ function CompanyInsightsPanel({ insights }) {
   );
 }
 
+function InterviewPrepPanel({ data }) {
+  const [openIdx, setOpenIdx] = useState(null);
+
+  const SECTIONS = [
+    {
+      key: "role_questions",
+      label: "Role-Specific Questions",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      ),
+      accent: "#5ee4ff",
+      items: (data.role_questions || []).map((q) => ({
+        question: q.question,
+        lines: [
+          { label: "Why asked", text: q.why_asked },
+          { label: "Tip", text: q.tip },
+        ],
+      })),
+    },
+    {
+      key: "behavioral",
+      label: "Behavioural Questions",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      ),
+      accent: "#a78bfa",
+      items: (data.behavioral || []).map((q) => ({
+        question: q.question,
+        badge: q.competency,
+        lines: [
+          { label: "STAR hint", text: q.star_hint },
+        ],
+      })),
+    },
+    {
+      key: "cv_deep_dive",
+      label: "CV Deep Dive",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      ),
+      accent: "#4ade80",
+      items: (data.cv_deep_dive || []).map((q) => ({
+        question: q.question,
+        lines: [
+          { label: "Based on", text: q.cv_reference },
+          { label: "Tip", text: q.tip },
+        ],
+      })),
+    },
+    {
+      key: "gap_challenges",
+      label: "Tough Questions",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      ),
+      accent: "#fb923c",
+      items: (data.gap_challenges || []).map((q) => ({
+        question: q.question,
+        lines: [
+          { label: "Gap", text: q.gap },
+          { label: "How to handle", text: q.how_to_handle },
+        ],
+      })),
+    },
+  ].filter((s) => s.items.length > 0);
+
+  return (
+    <section className="results-block ip-block">
+      <div className="results-block-header">
+        <div className="results-block-icon" style={{ background: "rgba(167,139,250,0.12)", color: "#a78bfa" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 className="results-block-title">Interview Prep</h2>
+          <p className="results-block-sub">Questions tailored to your CV and this specific role — click each to see tips.</p>
+        </div>
+      </div>
+
+      <div className="ip-sections">
+        {SECTIONS.map((sec) => (
+          <div key={sec.key} className="ip-section">
+            <div className="ip-section-header" style={{ borderColor: sec.accent + "33" }}>
+              <span className="ip-section-icon" style={{ color: sec.accent, background: sec.accent + "18" }}>{sec.icon}</span>
+              <span className="ip-section-label" style={{ color: sec.accent }}>{sec.label}</span>
+              <span className="ip-section-count">{sec.items.length}</span>
+            </div>
+            <div className="ip-questions">
+              {sec.items.map((item, i) => {
+                const key = `${sec.key}-${i}`;
+                const isOpen = openIdx === key;
+                return (
+                  <div key={key} className={`ip-q${isOpen ? " ip-q--open" : ""}`}>
+                    <button className="ip-q-head" onClick={() => setOpenIdx(isOpen ? null : key)}>
+                      <span className="ip-q-num" style={{ color: sec.accent }}>{i + 1}</span>
+                      <span className="ip-q-text">{item.question}</span>
+                      {item.badge && <span className="ip-q-badge" style={{ background: sec.accent + "22", color: sec.accent }}>{item.badge}</span>}
+                      <svg className="ip-q-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
+                    {isOpen && (
+                      <div className="ip-q-body">
+                        {item.lines.map((l, j) => l.text ? (
+                          <div key={j} className="ip-q-line">
+                            <span className="ip-q-line-label">{l.label}</span>
+                            <span className="ip-q-line-text">{l.text}</span>
+                          </div>
+                        ) : null)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CvHighlightPanel({ highlights }) {
   const [activeSection, setActiveSection] = useState(null);
 
@@ -1208,6 +1342,8 @@ export default function ResultsPage() {
   const [companyInsights, setCompanyInsights] = useState(null);
   const [companyInsightsError, setCompanyInsightsError] = useState("");
   const [recruiterView, setRecruiterView] = useState(null);
+  const [interviewPrep, setInterviewPrep] = useState(null);
+  const [interviewPrepError, setInterviewPrepError] = useState("");
   const [panelsLoaded, setPanelsLoaded] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
 
@@ -1215,6 +1351,7 @@ export default function ResultsPage() {
     "Analysing business fit and role context…",
     "Researching company intelligence…",
     "Building your fit analysis…",
+    "Generating interview questions…",
     "Compiling your full report…",
   ];
 
@@ -1269,12 +1406,22 @@ export default function ResultsPage() {
       "Could not load recruiter view."
     );
 
-    Promise.all([bfFetch, ciFetch, rvFetch]).then(([bf, ci, rv]) => {
+    const ipFetch = wrapFetch(
+      fetch(`${API_BASE_URL}/interview-prep`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription, role_fit_breakdown: result.role_fit_breakdown || {} }),
+        signal,
+      }).then(safeJson).then((d) => ({ ok: true, data: d.interview_prep || null })),
+      "Could not load interview prep."
+    );
+
+    Promise.all([bfFetch, ciFetch, rvFetch, ipFetch]).then(([bf, ci, rv, ip]) => {
       clearInterval(stepTimer);
       clearTimeout(timeoutId);
       if (bf.ok) setBusinessFit(bf.data); else setFitError(bf.error);
       if (ci.ok) setCompanyInsights(ci.data); else setCompanyInsightsError(ci.error);
       if (rv.ok) setRecruiterView(rv.data); else { if (!bf.ok) setFitError(rv.error); }
+      if (ip.ok) setInterviewPrep(ip.data); else setInterviewPrepError(ip.error);
       setPanelsLoaded(true);
     });
 
@@ -1481,6 +1628,12 @@ export default function ResultsPage() {
           >
             Detailed Analysis
           </button>
+          <button
+            className={`results-tab${activeTab === "interview" ? " active" : ""}`}
+            onClick={() => setActiveTab("interview")}
+          >
+            Interview Prep
+          </button>
         </div>
 
         {activeTab === "overview" && (
@@ -1619,6 +1772,18 @@ export default function ResultsPage() {
             </section>
 
             <CvHighlightPanel highlights={cvHighlights} />
+          </>
+        )}
+
+        {activeTab === "interview" && (
+          <>
+            {interviewPrep ? (
+              <InterviewPrepPanel data={interviewPrep} />
+            ) : interviewPrepError ? (
+              <section className="results-block bf-error-block">
+                <p className="rewrite-error" style={{ margin: 0 }}>{interviewPrepError}</p>
+              </section>
+            ) : null}
           </>
         )}
 

@@ -76,7 +76,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.0-flash")
+GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-3.0-flash-lite")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.0-flash")
 GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite")
@@ -3876,6 +3876,103 @@ async def recruiter_view(payload: dict):
         raise HTTPException(status_code=400, detail="Missing job_description.")
     result = gemini_recruiter_view(resume_text, job_description, role_fit_breakdown)
     return {"recruiter_view": result}
+
+
+def gemini_interview_prep(resume_text: str, job_description: str, role_fit_breakdown: dict | None = None) -> dict:
+    if not GENAI_CLIENT:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is required for interview prep.")
+
+    breakdown = role_fit_breakdown or {}
+    matched = breakdown.get("matched_responsibilities") or []
+    missing = breakdown.get("missing_responsibilities") or []
+
+    match_lines = []
+    if matched:
+        match_lines.append("Matched requirements: " + "; ".join(r.get("responsibility", "") for r in matched[:8]))
+    if missing:
+        match_lines.append("Missing/weak requirements: " + "; ".join(r.get("responsibility", "") for r in missing[:8]))
+    match_summary = "\n".join(match_lines)
+
+    prompt = (
+        "You are an expert interview coach helping a candidate prepare for a specific job interview. "
+        "Based on the candidate's CV and the job description, generate targeted interview questions they are likely to face. "
+        "Every question must be grounded in the actual CV content or JD requirements — no generic questions.\n\n"
+        "Return ONLY valid JSON with exactly this structure:\n\n"
+        "{\n"
+        '  "role_questions": [\n'
+        '    {"question": "a technical or role-specific question tied to this JD", "why_asked": "one sentence: what the interviewer is trying to evaluate", "tip": "one sentence: how to frame your answer for this specific role"}\n'
+        "  ],\n"
+        '  "behavioral": [\n'
+        '    {"question": "a behavioural/situational question tied to this role\'s demands", "competency": "the competency being tested e.g. Leadership", "star_hint": "one sentence: what specific experience from this CV to structure a STAR answer around"}\n'
+        "  ],\n"
+        '  "cv_deep_dive": [\n'
+        '    {"question": "a question drilling into a specific CV claim, achievement, or role — closely reference the actual CV line", "cv_reference": "the exact CV item this is based on", "tip": "how to answer without underselling or overpromising"}\n'
+        "  ],\n"
+        '  "gap_challenges": [\n'
+        '    {"question": "a tough question the interviewer will ask because of a gap or mismatch vs this JD", "gap": "the specific gap this challenges", "how_to_handle": "concrete strategy to address this gap honestly and confidently"}\n'
+        "  ]\n"
+        "}\n\n"
+        "Rules:\n"
+        "- role_questions: 4-5 items. Specific to this role's industry, function, and technical requirements.\n"
+        "- behavioral: 3-4 items. Each tied to a real demand from this JD.\n"
+        "- cv_deep_dive: 3-4 items. Quote or closely reference actual lines from the CV — name roles, companies, achievements.\n"
+        "- gap_challenges: 2-3 items. Only real gaps visible from CV vs JD mismatch. Omit section if no clear gaps.\n"
+        "- Every field must be specific to THIS candidate and THIS role. No generic interview advice.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+
+    contents = (
+        f"{prompt}\n\n"
+        f"REQUIREMENTS MATCH SUMMARY:\n{match_summary}\n\n"
+        f"JOB DESCRIPTION:\n{job_description}\n\n"
+        f"CANDIDATE CV:\n{resume_text}"
+    )
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_LITE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0.2),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected response shape")
+    except Exception as exc:
+        logger.warning("Interview prep failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Interview prep could not be completed. Please try again.")
+
+    def clean_obj_list(val, required_keys, limit):
+        if not isinstance(val, list):
+            return []
+        out = []
+        for item in val:
+            if not isinstance(item, dict):
+                continue
+            cleaned = {k: str(item.get(k) or "").strip() for k in required_keys}
+            if any(cleaned.values()):
+                out.append(cleaned)
+        return out[:limit]
+
+    return {
+        "role_questions": clean_obj_list(parsed.get("role_questions"), ["question", "why_asked", "tip"], 5),
+        "behavioral": clean_obj_list(parsed.get("behavioral"), ["question", "competency", "star_hint"], 4),
+        "cv_deep_dive": clean_obj_list(parsed.get("cv_deep_dive"), ["question", "cv_reference", "tip"], 4),
+        "gap_challenges": clean_obj_list(parsed.get("gap_challenges"), ["question", "gap", "how_to_handle"], 3),
+    }
+
+
+@app.post("/interview-prep")
+async def interview_prep(payload: dict):
+    resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    role_fit_breakdown = (payload or {}).get("role_fit_breakdown") or {}
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Missing resume_text.")
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+    result = gemini_interview_prep(resume_text, job_description, role_fit_breakdown)
+    return {"interview_prep": result}
 
 
 def fetch_company_news(company_name: str, max_articles: int = 6) -> list:
