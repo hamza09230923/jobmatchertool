@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /analyze
+Disallow: /results
+Disallow: /cv-rewrite
+
+Sitemap: https://shortlistly.co.uk/sitemap.xml
