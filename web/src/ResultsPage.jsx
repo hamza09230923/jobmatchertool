@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageLayout from "./PageLayout";
-import { signOut } from "./auth";
+import { signOut, getAuthHeader } from "./auth";
 import "./ResultsPage.css";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
@@ -79,6 +79,17 @@ function ScoreRing({ score }) {
         <span className="score-ring-out-of">out of 100</span>
       </div>
     </div>
+  );
+}
+
+function PanelSkeleton({ label = "Loading…" }) {
+  return (
+    <section className="results-block" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "32px 0", color: "rgba(184,192,212,0.45)", fontSize: "0.85rem" }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ animation: "spin 1.2s linear infinite", flexShrink: 0 }}>
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+      </svg>
+      {label}
+    </section>
   );
 }
 
@@ -1328,9 +1339,11 @@ function RewriteSection({ items, emptyLabel }) {
 export default function ResultsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { result, fileName, jobDescription } = location.state || {};
+  const { result, fileName, jobDescription, isSample } = location.state || {};
   const [rewriteLoading, setRewriteLoading] = useState(false);
   const [rewriteError, setRewriteError] = useState("");
+  const [coverLetterLoading, setCoverLetterLoading] = useState(false);
+  const [coverLetterError, setCoverLetterError] = useState("");
   const [feedbackRating, setFeedbackRating] = useState(null); // "accurate" | "inaccurate"
   const [feedbackNote, setFeedbackNote] = useState("");
   const [feedbackIssues, setFeedbackIssues] = useState([]);
@@ -1341,34 +1354,29 @@ export default function ResultsPage() {
   const [fitError, setFitError] = useState("");
   const [companyInsights, setCompanyInsights] = useState(null);
   const [companyInsightsError, setCompanyInsightsError] = useState("");
+  const [companyInsightsLocked, setCompanyInsightsLocked] = useState(false);
+  const [companyInsightsLockMessage, setCompanyInsightsLockMessage] = useState("");
   const [recruiterView, setRecruiterView] = useState(null);
   const [interviewPrep, setInterviewPrep] = useState(null);
   const [interviewPrepError, setInterviewPrepError] = useState("");
-  const [panelsLoaded, setPanelsLoaded] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
-
-  const loadingSteps = [
-    "Analysing business fit and role context…",
-    "Researching company intelligence…",
-    "Building your fit analysis…",
-    "Generating interview questions…",
-    "Compiling your full report…",
-  ];
 
   useEffect(() => {
     if (!result) { navigate("/analyze"); return; }
   }, [result, navigate]);
 
   useEffect(() => {
-    if (!result || !jobDescription) { setPanelsLoaded(true); return; }
+    if (!result || !jobDescription) return;
+    if (isSample) {
+      const note = "This is a sample analysis — run your own scan to see this section populated with live Gemini insights.";
+      setFitError(note);
+      setCompanyInsightsError(note);
+      setInterviewPrepError(note);
+      return;
+    }
     const resumeText = result.resume_text;
     const controller = new AbortController();
     const { signal } = controller;
     const timeoutId = setTimeout(() => controller.abort(), 150000);
-
-    const stepTimer = setInterval(() => {
-      setLoadingStep((s) => (s < loadingSteps.length - 1 ? s + 1 : s));
-    }, 1800);
 
     const safeJson = (res) =>
       res.ok ? res.json() : res.json().then((d) => Promise.reject(d?.detail || `Error ${res.status}`));
@@ -1390,10 +1398,15 @@ export default function ResultsPage() {
 
     const ciFetch = wrapFetch(
       fetch(`${API_BASE_URL}/company-insights`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeader() },
         body: JSON.stringify({ job_description: jobDescription }),
         signal,
-      }).then(safeJson).then((d) => ({ ok: true, data: d.company_insights || null })),
+      }).then(safeJson).then((d) => ({
+        ok: true,
+        data: d.company_insights || null,
+        locked: !!d.locked,
+        upgrade_message: d.upgrade_message || null,
+      })),
       "Could not load company insights."
     );
 
@@ -1416,17 +1429,22 @@ export default function ResultsPage() {
     );
 
     Promise.all([bfFetch, ciFetch, rvFetch, ipFetch]).then(([bf, ci, rv, ip]) => {
-      clearInterval(stepTimer);
       clearTimeout(timeoutId);
       if (bf.ok) setBusinessFit(bf.data); else setFitError(bf.error);
-      if (ci.ok) setCompanyInsights(ci.data); else setCompanyInsightsError(ci.error);
-      if (rv.ok) setRecruiterView(rv.data); else { if (!bf.ok) setFitError(rv.error); }
+      if (ci.ok) {
+        setCompanyInsights(ci.data);
+        if (ci.locked) {
+          setCompanyInsightsLocked(true);
+          setCompanyInsightsLockMessage(ci.upgrade_message || "Company research is available on the full plan.");
+        }
+      } else {
+        setCompanyInsightsError(ci.error);
+      }
+      if (rv.ok) setRecruiterView(rv.data);
       if (ip.ok) setInterviewPrep(ip.data); else setInterviewPrepError(ip.error);
-      setPanelsLoaded(true);
     });
 
     return () => {
-      clearInterval(stepTimer);
       clearTimeout(timeoutId);
       controller.abort();
     };
@@ -1438,53 +1456,6 @@ export default function ResultsPage() {
     </div>
   );
 
-  if (!panelsLoaded) {
-    return (
-      <PageLayout navRight={
-        <button className="cta-button ghost-button" style={{ fontSize: "0.88rem", minHeight: "40px", padding: "0 18px", cursor: "pointer" }}
-          onClick={() => { signOut(); navigate("/login", { replace: true }); }}>
-          Sign out
-        </button>
-      }>
-        <div className="rp-loading">
-          <div className="rp-loading-orbit">
-            <div className="az-loading-ring az-ring-1" />
-            <div className="az-loading-ring az-ring-2" />
-            <div className="az-loading-ring az-ring-3" />
-            <div className="az-loading-center">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
-            </div>
-          </div>
-          <div className="rp-loading-text">
-            <p className="rp-loading-step">{loadingSteps[loadingStep]}</p>
-            <p className="rp-loading-sub">Your full report is being prepared — this takes around 15 seconds</p>
-          </div>
-          <div className="rp-loading-track">
-            <div className="rp-loading-fill" style={{ width: `${((loadingStep + 1) / loadingSteps.length) * 100}%` }} />
-          </div>
-          <div className="rp-loading-steps">
-            {loadingSteps.map((step, i) => (
-              <div key={step} className={`az-step-item${i < loadingStep ? " done" : i === loadingStep ? " active" : ""}`}>
-                <span className="az-step-dot">
-                  {i < loadingStep && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </span>
-                <span className="az-step-label">{step}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </PageLayout>
-    );
-  }
 
   const {
     match_score: matchScore = 0,
@@ -1538,6 +1509,31 @@ export default function ResultsPage() {
     }
   };
 
+  const handleGenerateCoverLetter = async () => {
+    if (!resumeText || !jobDescription) {
+      setCoverLetterError("Cover letter needs both the extracted CV text and the job description.");
+      return;
+    }
+    setCoverLetterLoading(true);
+    setCoverLetterError("");
+    try {
+      const res = await fetch(`${API_BASE_URL}/generate-cover-letter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }),
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res));
+      }
+      const data = await res.json();
+      navigate("/cover-letter", { state: { letter: data.cover_letter, fileName } });
+    } catch (err) {
+      setCoverLetterError(err.message || "Could not generate a cover letter.");
+    } finally {
+      setCoverLetterLoading(false);
+    }
+  };
+
   return (
     <PageLayout
       navRight={(
@@ -1555,8 +1551,32 @@ export default function ResultsPage() {
     >
       <div className="results-page">
         <div className="results-intro">
-          <div className="section-kicker">Analysis complete</div>
+          <div className="section-kicker">
+            {isSample ? "Sample analysis" : "Analysis complete"}
+          </div>
           {fileName ? <p className="results-filename">{fileName}</p> : null}
+          {isSample && (
+            <div style={{
+              marginTop: 10,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid rgba(94,228,255,0.28)",
+              background: "rgba(94,228,255,0.06)",
+              color: "#5ee4ff",
+              fontSize: "0.74rem",
+              fontWeight: 600,
+              letterSpacing: "0.02em",
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4M12 8h.01" />
+              </svg>
+              You're viewing a demo — upload your own CV to get a live analysis.
+            </div>
+          )}
         </div>
 
         <div className="results-hero">
@@ -1600,12 +1620,33 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  <div className="rewrite-cta-row">
-                    <button type="button" className="cta-button primary-button results-cta" onClick={handleGenerateRewrite} disabled={rewriteLoading}>
-                      {rewriteLoading ? "Generating rewrite..." : "Generate tailored CV rewrite"}
+                  <div className="rewrite-cta-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="cta-button primary-button results-cta"
+                      onClick={isSample ? () => navigate("/analyze") : handleGenerateRewrite}
+                      disabled={rewriteLoading || coverLetterLoading}
+                    >
+                      {isSample
+                        ? "Upload your CV to try this"
+                        : rewriteLoading
+                          ? "Generating rewrite..."
+                          : "Generate tailored CV rewrite"}
                     </button>
+                    {!isSample && (
+                      <button
+                        type="button"
+                        className="cta-button ghost-button results-cta"
+                        onClick={handleGenerateCoverLetter}
+                        disabled={coverLetterLoading || rewriteLoading}
+                        style={{ minHeight: 48 }}
+                      >
+                        {coverLetterLoading ? "Writing cover letter..." : "Generate cover letter"}
+                      </button>
+                    )}
                   </div>
                   {rewriteError ? <p className="rewrite-error">{rewriteError}</p> : null}
+                  {coverLetterError ? <p className="rewrite-error">{coverLetterError}</p> : null}
                   {fitError ? <p className="rewrite-error">{fitError}</p> : null}
                 </>
               );
@@ -1644,15 +1685,51 @@ export default function ResultsPage() {
               <section className="results-block bf-error-block">
                 <p className="rewrite-error" style={{ margin: 0 }}>{fitError}</p>
               </section>
-            ) : null}
+            ) : (
+              <PanelSkeleton label="Analysing business fit and recruiter view…" />
+            )}
 
-            {companyInsights ? (
+            {companyInsightsLocked ? (
+              <section className="results-block" style={{
+                display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 14,
+                padding: "28px 26px",
+                border: "1px solid rgba(94,228,255,0.18)",
+                background: "linear-gradient(180deg, rgba(94,228,255,0.05), rgba(167,139,250,0.03))",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "rgba(94,228,255,0.12)", border: "1px solid rgba(94,228,255,0.28)", color: "#5ee4ff",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, color: "#f4f6fb" }}>Company intelligence</h2>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "rgba(184,192,212,0.6)" }}>Available on the full plan</p>
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.92rem", color: "rgba(232,237,245,0.85)", lineHeight: 1.6 }}>
+                  {companyInsightsLockMessage} Unlock recruiter-grade company research — why they're hiring, what's changing, where to focus — by upgrading.
+                </p>
+                <a
+                  href="mailto:gptc2903@gmail.com?subject=Shortlistly upgrade request"
+                  className="cta-button primary-button"
+                  style={{ textDecoration: "none", minHeight: 42, padding: "0 22px", fontSize: "0.88rem" }}
+                >
+                  Email to upgrade →
+                </a>
+              </section>
+            ) : companyInsights ? (
               <CompanyInsightsPanel insights={companyInsights} />
             ) : companyInsightsError ? (
               <section className="results-block bf-error-block">
                 <p className="rewrite-error" style={{ margin: 0 }}>{companyInsightsError}</p>
               </section>
-            ) : null}
+            ) : (
+              <PanelSkeleton label="Researching company intelligence…" />
+            )}
 
             <section className="results-block rfd-block">
               <div className="results-block-header">
@@ -1783,7 +1860,9 @@ export default function ResultsPage() {
               <section className="results-block bf-error-block">
                 <p className="rewrite-error" style={{ margin: 0 }}>{interviewPrepError}</p>
               </section>
-            ) : null}
+            ) : (
+              <PanelSkeleton label="Generating interview questions…" />
+            )}
           </>
         )}
 

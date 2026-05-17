@@ -33,4 +33,10 @@ htmlcov/
 # Local data
 *.pdf
 *.docx
+scan_counts.json
+users.db
+users.db-journal
+
+# Claude Code session state
+.claude/
 

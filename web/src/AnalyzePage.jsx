@@ -1,11 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageLayout from "./PageLayout";
-import { signOut, getStoredToken, refreshLimits } from "./auth";
+import { signOut, getAuthHeader, getCurrentUser, subscribe as subscribeAuth, refreshCurrentUser, resendVerificationEmail } from "./auth";
+import { getStatus, subscribe } from "./backendStatus";
+import { getScans, saveScan, removeScan, formatRelativeDate } from "./scanHistory";
+import { SAMPLE_STATE } from "./sampleScan";
 import "./AnalyzePage.css";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+const ANALYSIS_TIPS = [
+  "Recruiters spend on average 7 seconds scanning a CV before deciding.",
+  "CVs with quantified achievements are 40% more likely to get an interview.",
+  "ATS systems filter out up to 75% of applications before a human reads them.",
+  "Mirroring the job description's language can triple your ATS match score.",
+  "The strongest CVs prove every responsibility with a measurable outcome.",
+  "A tailored summary section increases interview callbacks by over 50%.",
+];
 const PLACEHOLDER_HINTS = [
   "Senior Software Engineer at Stripe...",
   "Operations Manager leading multi-site teams...",
@@ -92,56 +104,31 @@ export default function AnalyzePage() {
   const [scraping, setScraping] = useState(false);
   const [error, setError] = useState("");
   const [loadingStep, setLoadingStep] = useState(0);
+  const [tipIndex, setTipIndex] = useState(0);
   const [jobFocused, setJobFocused] = useState(false);
-  const [scanLimits, setScanLimits] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("shortlistly.session.limits") || "{}"); } catch { return {}; }
-  });
+  const [user, setUser] = useState(() => getCurrentUser());
+  const [resendState, setResendState] = useState("idle"); // "idle" | "sending" | "sent"
   // "checking" → backend ping in flight; "waking" → slow response, show banner; "ready" → responded
-  const [backendStatus, setBackendStatus] = useState("checking");
-  const backendReadyRef = useRef(false);
+  const [backendStatus, setBackendStatus] = useState(getStatus);
+  const [history, setHistory] = useState(() => getScans());
+
+  useEffect(() => { refreshCurrentUser(); }, []);
+  useEffect(() => subscribeAuth(setUser), []);
+  useEffect(() => subscribe(setBackendStatus), []);
+
+  const handleResendVerification = async () => {
+    setResendState("sending");
+    const result = await resendVerificationEmail();
+    setResendState(result.ok ? "sent" : "idle");
+  };
+
+  const atFreeTierWall = !!(user && user.tier !== "paid" && user.scans_remaining === 0);
 
   useEffect(() => {
-    refreshLimits().then(d => { if (d) setScanLimits(d); });
-
-    let cancelled = false;
-    let pollTimer = null;
-    let wakeTimer = null;
-
-    const ping = () => {
-      fetch(`${API_BASE_URL}/status`, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(() => {
-          if (cancelled) return;
-          clearTimeout(wakeTimer);
-          clearTimeout(pollTimer);
-          backendReadyRef.current = true;
-          setBackendStatus("ready");
-        })
-        .catch(() => {
-          if (cancelled) return;
-          pollTimer = setTimeout(ping, 4000);
-        });
-    };
-
-    // Show the "waking up" banner only if the first ping takes > 2 s
-    wakeTimer = setTimeout(() => {
-      if (!backendReadyRef.current && !cancelled) setBackendStatus("waking");
-    }, 2000);
-
-    ping();
-
-    // Keep-alive: re-ping every 12 min so Render doesn't spin down while user fills the form
-    const keepAlive = setInterval(() => {
-      if (!cancelled) fetch(`${API_BASE_URL}/status`).catch(() => {});
-    }, 12 * 60 * 1000);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(pollTimer);
-      clearTimeout(wakeTimer);
-      clearInterval(keepAlive);
-    };
-  }, []);
+    if (!loading) return;
+    const t = setInterval(() => setTipIndex(i => (i + 1) % ANALYSIS_TIPS.length), 4000);
+    return () => clearInterval(t);
+  }, [loading]);
 
   const loadingSteps = [
     "Reading your CV...",
@@ -150,6 +137,27 @@ export default function AnalyzePage() {
     "Scoring skill coverage...",
     "Building your role-fit report...",
   ];
+
+  const handleOpenSample = () => {
+    navigate("/results", { state: SAMPLE_STATE });
+  };
+
+  const handleOpenHistory = (entry) => {
+    navigate("/results", {
+      state: {
+        result: entry.result,
+        fileName: entry.fileName,
+        jobSource: entry.jobSource,
+        jobDescription: entry.jobDescription,
+        fromHistory: true,
+      },
+    });
+  };
+
+  const handleRemoveHistory = (id) => {
+    removeScan(id);
+    setHistory(getScans());
+  };
 
   const handleFile = (selectedFile) => {
     if (!selectedFile) return;
@@ -219,8 +227,9 @@ export default function AnalyzePage() {
     setLoadingStep(0);
 
     const stepInterval = setInterval(() => {
-      setLoadingStep((step) => (step < loadingSteps.length - 1 ? step + 1 : step));
-    }, 1000);
+      // Cap at second-to-last step so the bar never hits 100% while still waiting
+      setLoadingStep((step) => (step < loadingSteps.length - 2 ? step + 1 : step));
+    }, 5000);
 
     const analyzeController = new AbortController();
     const analyzeTimeout = setTimeout(() => analyzeController.abort(), 90000);
@@ -230,13 +239,21 @@ export default function AnalyzePage() {
       form.append("resume", file);
       form.append("job_description", jobDesc.trim());
       form.append("job_source", jobInputMode);
-      const token = getStoredToken();
-      if (token) form.append("session_token", token);
-      const res = await fetch(`${API_BASE_URL}/analyze`, { method: "POST", body: form, signal: analyzeController.signal });
+      const res = await fetch(`${API_BASE_URL}/analyze`, {
+        method: "POST",
+        body: form,
+        headers: { ...getAuthHeader() },
+        signal: analyzeController.signal,
+      });
       clearTimeout(analyzeTimeout);
-      if (res.status === 429) {
-        const d = await res.json();
-        throw new Error(d?.detail || "Daily scan limit reached. Try again tomorrow.");
+      if (res.status === 402) {
+        // Hit free-tier wall — refresh user so the upgrade screen shows.
+        await refreshCurrentUser();
+        clearInterval(stepInterval);
+        setLoading(false);
+        const d = await res.json().catch(() => ({}));
+        setError(d?.detail || "You've used your free scans. Email gptc2903@gmail.com to upgrade.");
+        return;
       }
       if (res.status === 401) {
         clearInterval(stepInterval);
@@ -245,13 +262,19 @@ export default function AnalyzePage() {
         navigate("/login", { replace: true });
         return;
       }
-      await refreshLimits();
       if (!res.ok) {
         throw new Error(await readErrorMessage(res));
       }
       const data = await res.json();
+      if (data?.user) setUser(data.user);
       clearInterval(stepInterval);
       setLoading(false);
+      saveScan({
+        result: data,
+        fileName: file.name,
+        jobSource: jobInputMode,
+        jobDescription: jobDesc.trim(),
+      });
       navigate("/results", {
         state: {
           result: data,
@@ -276,12 +299,17 @@ export default function AnalyzePage() {
     <PageLayout
       navRight={(
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          {scanLimits.daily_limit > 0 && (
+          {user && user.tier !== "paid" && typeof user.scans_remaining === "number" && (
             <span style={{ fontSize: "0.78rem", color: "rgba(184,192,212,0.55)", fontWeight: 600 }}>
-              <span style={{ color: scanLimits.scans_remaining === 0 ? "#f87171" : scanLimits.scans_remaining <= 2 ? "#fbbf24" : "#4ade80", fontWeight: 800 }}>
-                {scanLimits.scans_remaining}
+              <span style={{ color: user.scans_remaining === 0 ? "#f87171" : user.scans_remaining === 1 ? "#fbbf24" : "#4ade80", fontWeight: 800 }}>
+                {user.scans_remaining}
               </span>
-              {" "}/ {scanLimits.daily_limit} scans left today
+              {" "}of {user.free_tier_limit} free scans left
+            </span>
+          )}
+          {user && user.tier === "paid" && (
+            <span style={{ fontSize: "0.78rem", color: "#4ade80", fontWeight: 700, letterSpacing: "0.04em" }}>
+              UNLIMITED
             </span>
           )}
           <button
@@ -314,46 +342,212 @@ export default function AnalyzePage() {
             <div className="az-trust-pill">PDF upload only</div>
             <div className="az-trust-pill">Paste or fetch by URL</div>
           </div>
+          {!loading && (
+            <div className="az-quick-row">
+              <button type="button" className="az-sample-link" onClick={handleOpenSample}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+                See an example analysis
+              </button>
+            </div>
+          )}
         </div>
+
+        {!loading && user && !user.email_verified && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+            background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.22)",
+            borderRadius: 12, margin: "20px 0 4px", flexWrap: "wrap",
+          }}>
+            <span style={{ fontSize: "0.85rem", color: "#fbbf24", lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+              <strong>Verify your email</strong> — we sent a verification link to <strong>{user.email}</strong>.
+              Verifying keeps your scan history safe if you switch devices.
+            </span>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={resendState === "sending" || resendState === "sent"}
+              style={{
+                fontSize: "0.78rem", fontWeight: 700, padding: "7px 14px", borderRadius: 999,
+                border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.1)",
+                color: "#fbbf24", cursor: resendState === "sending" ? "wait" : "pointer",
+                opacity: resendState === "sent" ? 0.6 : 1,
+              }}
+            >
+              {resendState === "sent" ? "Sent ✓" : resendState === "sending" ? "Sending…" : "Resend"}
+            </button>
+          </div>
+        )}
+
+        {!loading && user && user.tier !== "paid" && user.scans_remaining === 0 ? (
+          <section style={{
+            margin: "32px 0",
+            padding: "40px 36px",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 16,
+            background: "linear-gradient(180deg, rgba(94,228,255,0.04), rgba(167,139,250,0.03))",
+            textAlign: "center",
+          }}>
+            <div style={{
+              display: "inline-flex", padding: "10px 14px", borderRadius: 999,
+              background: "rgba(94,228,255,0.08)", border: "1px solid rgba(94,228,255,0.22)",
+              color: "#5ee4ff", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.16em",
+              textTransform: "uppercase", marginBottom: 16,
+            }}>Free scans used</div>
+            <h2 style={{ fontSize: "1.6rem", fontWeight: 800, margin: "0 0 12px", letterSpacing: "-0.015em" }}>
+              You've used your {user.free_tier_limit} free scans.
+            </h2>
+            <p style={{ fontSize: "0.98rem", color: "rgba(232,237,245,0.85)", maxWidth: 480, margin: "0 auto 24px", lineHeight: 1.6 }}>
+              Want unlimited scans, company insights, and recruiter intel?
+              Email <a href="mailto:gptc2903@gmail.com" style={{ color: "#5ee4ff", textDecoration: "none", fontWeight: 600 }}>gptc2903@gmail.com</a>
+              {" "}to get upgraded — usually within a day.
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <a
+                href="mailto:gptc2903@gmail.com?subject=Shortlistly upgrade request"
+                className="cta-button primary-button"
+                style={{ textDecoration: "none" }}
+              >
+                Email to upgrade
+              </a>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  className="cta-button ghost-button"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => {
+                    const newest = history[0];
+                    navigate("/results", {
+                      state: {
+                        result: newest.result, fileName: newest.fileName,
+                        jobSource: newest.jobSource, jobDescription: newest.jobDescription,
+                        fromHistory: true,
+                      },
+                    });
+                  }}
+                >
+                  Re-open your latest scan
+                </button>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && history.length > 0 && (
+          <div className="az-history">
+            <div className="az-history-head">
+              <span className="az-history-title">Recent scans</span>
+              <span className="az-history-sub">Stored on this device · free to re-open</span>
+            </div>
+            <div className="az-history-list">
+              {history.slice(0, 5).map((entry) => {
+                const score = entry.matchScore || 0;
+                const scoreClass = score >= 70 ? "good" : score >= 40 ? "mid" : "low";
+                return (
+                  <div key={entry.id} className="az-history-card">
+                    <button
+                      type="button"
+                      className="az-history-main"
+                      onClick={() => handleOpenHistory(entry)}
+                    >
+                      <span className={`az-history-score az-history-score--${scoreClass}`}>{score}</span>
+                      <span className="az-history-meta">
+                        <span className="az-history-file">{entry.fileName}</span>
+                        <span className="az-history-date">{formatRelativeDate(entry.savedAt)}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="az-history-remove"
+                      onClick={() => handleRemoveHistory(entry.id)}
+                      aria-label="Remove from history"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="az-loading">
-            <div className="az-loading-orbit">
-              <div className="az-loading-ring az-ring-1" />
-              <div className="az-loading-ring az-ring-2" />
-              <div className="az-loading-ring az-ring-3" />
-              <div className="az-loading-center">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            {/* Header */}
+            <div className="az-loading-head">
+              <span className="az-live-badge">
+                <span className="az-live-dot" />
+                AI Analysis Running
+              </span>
+              <h2 className="az-loading-title">
+                Analysing <span className="az-loading-filename">{file?.name || "your CV"}</span>
+              </h2>
+              <p className="az-loading-caption">Comparing your experience against the job requirements</p>
+            </div>
+
+            {/* Scanner visual */}
+            <div className="az-scanner">
+              <div className="az-scanner-rings">
+                <div className="az-loading-ring az-ring-1" />
+                <div className="az-loading-ring az-ring-2" />
+                <div className="az-loading-ring az-ring-3" />
+              </div>
+              <svg className="az-scanner-sweep" viewBox="0 0 160 160" fill="none">
+                <defs>
+                  <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#5ee4ff" stopOpacity="0" />
+                    <stop offset="80%" stopColor="#5ee4ff" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="1" />
+                  </linearGradient>
+                </defs>
+                <circle cx="80" cy="80" r="66" stroke="rgba(255,255,255,0.04)" strokeWidth="2" />
+                <circle cx="80" cy="80" r="66" stroke="url(#sweepGrad)" strokeWidth="3" strokeLinecap="round" strokeDasharray="55 360" className="az-sweep-arc" />
+              </svg>
+              <div className="az-scanner-center">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                   <line x1="16" y1="13" x2="8" y2="13" />
                   <line x1="16" y1="17" x2="8" y2="17" />
                 </svg>
+                <div className="az-scan-line" />
               </div>
             </div>
-            <div className="az-loading-text">
-              <p className="az-loading-step">{loadingSteps[loadingStep]}</p>
-              <p className="az-loading-sub">Building a responsibility-based match report</p>
+
+            {/* Step checklist */}
+            <div className="az-steps-list">
+              {loadingSteps.map((step, index) => {
+                const isDone = index < loadingStep;
+                const isActive = index === loadingStep;
+                return (
+                  <div key={step} className={`az-step${isDone ? " az-step--done" : isActive ? " az-step--active" : ""}`}>
+                    <div className="az-step-icon">
+                      {isDone ? (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : isActive ? (
+                        <div className="az-step-pulse" />
+                      ) : null}
+                    </div>
+                    <span className="az-step-text">{step}</span>
+                  </div>
+                );
+              })}
             </div>
-            <div className="az-loading-track">
-              <div className="az-loading-fill" style={{ width: `${((loadingStep + 1) / loadingSteps.length) * 100}%` }} />
-            </div>
-            <div className="az-loading-steps">
-              {loadingSteps.map((step, index) => (
-                <div key={step} className={`az-step-item${index < loadingStep ? " done" : index === loadingStep ? " active" : ""}`}>
-                  <span className="az-step-dot">
-                    {index < loadingStep ? (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    ) : null}
-                  </span>
-                  <span className="az-step-label">{step}</span>
-                </div>
-              ))}
+
+            {/* Rotating insight — key forces remount to trigger fade-in */}
+            <div className="az-insight" key={tipIndex}>
+              <span className="az-insight-label">💡 Did you know?</span>
+              <span className="az-insight-text">{ANALYSIS_TIPS[tipIndex]}</span>
             </div>
           </div>
-        ) : (
+        ) : atFreeTierWall ? null : (
           <form className="analyze-form" onSubmit={handleSubmit}>
             {error ? (
               <div className="analyze-error">

@@ -7,3 +7,6 @@ google-genai
 pypdf
 python-dotenv
 scikit-learn
+bcrypt==4.0.1
+PyJWT
+httpx

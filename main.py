@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -10,22 +11,29 @@ import secrets
 import threading
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse, quote_plus
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+from dotenv import load_dotenv
+# Load env vars BEFORE importing auth_utils/db/email_service, which read os.getenv at import time.
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
 import requests
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from dotenv import load_dotenv
 from pypdf import PdfReader
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+import db
+import auth_utils
+import email_service
 
 try:
     from google import genai
@@ -35,8 +43,6 @@ except Exception as exc:
     genai = None
     types = None
     GENAI_IMPORT_ERROR = str(exc)
-
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 app = FastAPI()
 
@@ -1739,35 +1745,6 @@ def extract_must_have_skills(job_description: str, limit: int = 20) -> List[str]
 
 
 def extract_required_years(job_description: str) -> Optional[int]:
-    """Use Gemini to extract the minimum years of experience required; fallback to regex."""
-    if GENAI_CLIENT:
-        try:
-            response = GENAI_CLIENT.models.generate_content(
-                model=GEMINI_PARSE_MODEL,
-                contents=(
-                    "From this job description, what is the minimum total years of professional experience "
-                    "explicitly required for the role?\n"
-                    "Return ONLY valid JSON: {\"required_years\": N} where N is an integer, "
-                    "or {\"required_years\": null} if not stated.\n"
-                    "Rules:\n"
-                    "- Only count the overall experience requirement (e.g. '5+ years experience'), "
-                    "NOT years mentioned for specific skills/tools.\n"
-                    "- If a range is given (e.g. '3-5 years'), return the lower bound.\n"
-                    "- Do not count years that refer to company history, product age, or founding date.\n\n"
-                    f"{job_description[:3000]}"
-                ),
-                config=types.GenerateContentConfig(temperature=0),
-            )
-            raw = getattr(response, "text", "") or ""
-            parsed = parse_json_response(raw)
-            if isinstance(parsed, dict):
-                val = parsed.get("required_years")
-                if val is not None:
-                    return int(val)
-        except Exception:
-            pass
-
-    # Regex fallback
     values: List[int] = []
     for match in AT_LEAST_YEARS_RE.findall(job_description):
         values.append(int(match))
@@ -3064,40 +3041,164 @@ def annotate_cv_lines(
     return annotated
 
 
+FREE_TIER_SCAN_LIMIT = int(os.getenv("FREE_TIER_SCAN_LIMIT", "2"))
+
+
+def _user_to_public(user: dict) -> dict:
+    """Shape a user row into the JSON we return to the frontend."""
+    lifetime = int(user.get("lifetime_scans") or 0)
+    tier = user.get("tier") or "free"
+    if tier == "paid":
+        scans_remaining = None  # unlimited
+    else:
+        scans_remaining = max(0, FREE_TIER_SCAN_LIMIT - lifetime)
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "tier": tier,
+        "email_verified": bool(user.get("email_verified")),
+        "lifetime_scans": lifetime,
+        "scans_remaining": scans_remaining,
+        "free_tier_limit": FREE_TIER_SCAN_LIMIT,
+    }
+
+
+def _require_user(authorization: Optional[str] = Header(None)) -> dict:
+    """FastAPI dependency: returns the user row for the bearer token, or 401."""
+    user_id = auth_utils.get_current_user_id(authorization=authorization)
+    user = db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session no longer valid.")
+    return user
+
+
+@app.post("/auth/signup")
+async def auth_signup(payload: dict):
+    email = str((payload or {}).get("email") or "").strip().lower()
+    password = str((payload or {}).get("password") or "")
+    if not auth_utils.is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    if len(password) < auth_utils.MIN_PASSWORD_LEN:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {auth_utils.MIN_PASSWORD_LEN} characters.")
+    if db.get_user_by_email(email):
+        raise HTTPException(status_code=409, detail="An account with that email already exists.")
+
+    verification_token = auth_utils.generate_secure_token()
+    user = db.create_user(
+        email=email,
+        password_hash=auth_utils.hash_password(password),
+        verification_token=verification_token,
+    )
+    # Fire-and-forget — failure shouldn't block signup. User can request resend.
+    try:
+        email_service.send_verification_email(email, verification_token)
+    except Exception as exc:
+        logger.warning("Could not send verification email to %s: %s", email, exc)
+
+    token = auth_utils.create_jwt(user["id"], user["email"])
+    return {"token": token, "user": _user_to_public(user)}
+
+
 @app.post("/auth/login")
 async def auth_login(payload: dict):
     email = str((payload or {}).get("email") or "").strip().lower()
-    password = str((payload or {}).get("password") or "").strip()
+    password = str((payload or {}).get("password") or "")
     if not email or not password:
         raise HTTPException(status_code=400, detail="Email and password required.")
-    account = ACCOUNTS.get(email)
-    if not account or account["password"] != password:
+    user = db.get_user_by_email(email)
+    if not user or not auth_utils.verify_password(password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
-    token = str(uuid.uuid4())
-    _sessions[token] = {"email": email, "created_at": datetime.now(timezone.utc).isoformat()}
-    limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
-    used = get_scans_today(email)
-    return {
-        "token": token,
-        "email": email,
-        "daily_limit": limit,
-        "scans_today": used,
-        "scans_remaining": max(0, limit - used),
-    }
+    token = auth_utils.create_jwt(user["id"], user["email"])
+    return {"token": token, "user": _user_to_public(user)}
+
+
+@app.post("/auth/verify-email")
+async def auth_verify_email(payload: dict):
+    token = str((payload or {}).get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Verification token required.")
+    user = db.get_user_by_verification_token(token)
+    if not user:
+        raise HTTPException(status_code=400, detail="This verification link is invalid or has already been used.")
+    db.mark_email_verified(user["id"])
+    fresh = db.get_user_by_id(user["id"])
+    return {"ok": True, "user": _user_to_public(fresh)}
+
+
+@app.post("/auth/resend-verification")
+async def auth_resend_verification(user: dict = Depends(_require_user)):
+    if user.get("email_verified"):
+        return {"ok": True, "already_verified": True}
+    new_token = auth_utils.generate_secure_token()
+    db.set_verification_token(user["id"], new_token)
+    try:
+        email_service.send_verification_email(user["email"], new_token)
+    except Exception as exc:
+        logger.warning("Could not resend verification: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not send the verification email. Please try again in a moment.")
+    return {"ok": True}
+
+
+@app.post("/auth/forgot-password")
+async def auth_forgot_password(payload: dict):
+    email = str((payload or {}).get("email") or "").strip().lower()
+    if not auth_utils.is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    user = db.get_user_by_email(email)
+    # Don't leak whether the email exists — always return 200.
+    if user:
+        reset_token = auth_utils.generate_secure_token()
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        db.set_password_reset_token(user["id"], reset_token, expires)
+        try:
+            email_service.send_password_reset_email(email, reset_token)
+        except Exception as exc:
+            logger.warning("Could not send password reset email to %s: %s", email, exc)
+    return {"ok": True}
+
+
+@app.post("/auth/reset-password")
+async def auth_reset_password(payload: dict):
+    token = str((payload or {}).get("token") or "").strip()
+    new_password = str((payload or {}).get("password") or "")
+    if not token:
+        raise HTTPException(status_code=400, detail="Reset token required.")
+    if len(new_password) < auth_utils.MIN_PASSWORD_LEN:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {auth_utils.MIN_PASSWORD_LEN} characters.")
+    user = db.get_user_by_reset_token(token)
+    if not user:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has already been used.")
+    expires_iso = user.get("password_reset_expires") or ""
+    try:
+        expires_at = datetime.fromisoformat(expires_iso)
+    except (ValueError, TypeError):
+        expires_at = None
+    if not expires_at or datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="This reset link has expired. Request a new one.")
+    db.update_password(user["id"], auth_utils.hash_password(new_password))
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+async def auth_me(user: dict = Depends(_require_user)):
+    return {"user": _user_to_public(user)}
 
 
 @app.post("/auth/status")
 async def auth_status(payload: dict):
-    email = require_auth(payload)
-    account = ACCOUNTS.get(email, {})
-    limit = account.get("daily_limit", DEFAULT_DAILY_LIMIT)
-    used = get_scans_today(email)
-    return {
-        "email": email,
-        "daily_limit": limit,
-        "scans_today": used,
-        "scans_remaining": max(0, limit - used),
-    }
+    """Legacy endpoint kept for backwards compatibility — pulls token from {'_token': ...} body."""
+    token = str((payload or {}).get("_token") or "").strip()
+    decoded = auth_utils.decode_jwt(token) if token else None
+    if not decoded or "sub" not in decoded:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+    try:
+        user_id = int(decoded["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid session.")
+    user = db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session no longer valid.")
+    return _user_to_public(user)
 
 
 @app.post("/feedback")
@@ -3285,22 +3386,171 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
     return {"must_have": must_items, "nice_to_have": nice_items}
 
 
+def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text: str) -> dict:
+    """Single Gemini call that does both skills matching and ATS keyword extraction.
+
+    Replaces separate gemini_skills_match + gemini_ats_keywords to save one API round-trip.
+    Returns {"skills": {...}, "ats_keywords": {...}}.
+    """
+    if not GENAI_CLIENT:
+        return {
+            "skills": gemini_skills_match(job_description, parsed_resume),
+            "ats_keywords": {"hard_skills": [], "soft_skills": []},
+        }
+
+    cv_bullets = []
+    for job in (parsed_resume.get("work_experience") or []):
+        title = job.get("title", "")
+        company = job.get("company", "")
+        for bullet in (job.get("bullets") or []):
+            if isinstance(bullet, str) and bullet.strip():
+                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
+    skills_list = [str(s) for s in (parsed_resume.get("skills") or [])[:40]]
+    summary = (parsed_resume.get("summary") or "").strip()
+
+    cv_parts = []
+    if summary:
+        cv_parts.append(f"SUMMARY: {summary}")
+    if skills_list:
+        cv_parts.append("SKILLS LISTED: " + ", ".join(skills_list))
+    if cv_bullets:
+        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
+    cv_section = "\n\n".join(cv_parts)
+
+    if not cv_section:
+        return {
+            "skills": gemini_skills_match(job_description, parsed_resume),
+            "ats_keywords": {"hard_skills": [], "soft_skills": []},
+        }
+
+    prompt = (
+        "You are matching a candidate's CV against a job description. Complete TWO tasks in one response.\n\n"
+        "TASK 1 — SKILLS MATCHING:\n"
+        "Extract ALL skills, tools, technologies, and competencies from the JD. "
+        "Classify each as 'must_have' (required/essential) or 'nice_to_have' (preferred/bonus). "
+        "For each skill, check whether the CV demonstrates it semantically "
+        "(e.g. 'AWS Lambda' counts for 'serverless', 'led a team of 5' counts for 'team leadership').\n\n"
+        "TASK 2 — ATS KEYWORDS:\n"
+        "Extract EVERY keyword from the JD that an ATS would use to rank candidates. "
+        "For each keyword count exact appearances in the JD (jd_count) and CV (cv_count, case-insensitive). "
+        "Categorise into hard_skills (technical, tools, methodologies, certifications, domain terms) "
+        "and soft_skills (behavioural, interpersonal, leadership qualities).\n\n"
+        "Return ONLY valid JSON:\n"
+        "{\n"
+        '  "skills": {\n'
+        '    "must_have": [{"skill": "Python", "present": true, "cv_where": "[Title @ Co] Built Python ETL..."}],\n'
+        '    "nice_to_have": [{"skill": "Kubernetes", "present": false, "cv_where": null}]\n'
+        "  },\n"
+        '  "ats_keywords": {\n'
+        '    "hard_skills": [{"skill": "Python", "jd_count": 3, "cv_count": 2}],\n'
+        '    "soft_skills": [{"skill": "stakeholder management", "jd_count": 2, "cv_count": 0}]\n'
+        "  }\n"
+        "}\n\n"
+        "Rules:\n"
+        "- skills: semantic matching only; cv_where quotes the exact CV bullet proving the skill, or null.\n"
+        "- skills: if a skill is in both required and preferred sections of the JD, put it in must_have only.\n"
+        "- ats_keywords: be exhaustive for hard_skills; sort each list by jd_count descending.\n"
+        "- ats_keywords: exclude the company name, the exact job title of the post, and generic filler words.\n"
+        "- Return ONLY the JSON object, no markdown fences.\n"
+    )
+    contents = (
+        f"{prompt}\n\n"
+        f"JOB DESCRIPTION:\n{job_description[:4000]}\n\n"
+        f"CANDIDATE CV:\n{cv_section}\n\n"
+        f"FULL CV TEXT (for ats cv_count):\n{resume_text[:3000]}"
+    )
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_REWRITE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        raw = getattr(response, "text", "") or ""
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected response shape")
+    except Exception as exc:
+        logger.warning("gemini_skills_and_ats failed, using fallback: %s", exc)
+        return {
+            "skills": gemini_skills_match(job_description, parsed_resume),
+            "ats_keywords": {"hard_skills": [], "soft_skills": []},
+        }
+
+    def _clean_skills(lst):
+        out, seen = [], set()
+        for item in (lst or []):
+            if not isinstance(item, dict):
+                continue
+            skill = str(item.get("skill") or "").strip()
+            if not skill or skill.lower() in seen:
+                continue
+            seen.add(skill.lower())
+            out.append({
+                "skill": skill,
+                "present": bool(item.get("present")),
+                "cv_where": str(item.get("cv_where") or "").strip() or None,
+            })
+        return out
+
+    def _clean_ats(lst):
+        out, seen = [], set()
+        for item in (lst or []):
+            if not isinstance(item, dict):
+                continue
+            skill = str(item.get("skill") or "").strip()
+            if not skill or skill.lower() in seen:
+                continue
+            seen.add(skill.lower())
+            jd_count = max(1, int(item.get("jd_count") or 1))
+            cv_count = max(0, int(item.get("cv_count") or 0))
+            status = "missing" if cv_count == 0 else ("low" if cv_count < max(1, jd_count // 2) else "present")
+            out.append({"skill": skill, "jd_count": jd_count, "cv_count": cv_count, "status": status})
+        return out
+
+    skills_raw = parsed.get("skills") or {}
+    ats_raw = parsed.get("ats_keywords") or {}
+    return {
+        "skills": {
+            "must_have": _clean_skills(skills_raw.get("must_have")),
+            "nice_to_have": _clean_skills(skills_raw.get("nice_to_have")),
+        },
+        "ats_keywords": {
+            "hard_skills": _clean_ats(ats_raw.get("hard_skills")),
+            "soft_skills": _clean_ats(ats_raw.get("soft_skills")),
+        },
+    }
+
+
 @app.post("/analyze")
 async def analyze(
     resume: UploadFile = File(...),
     job_description: str = Form(...),
     job_source: str = Form("paste"),
     session_token: str = Form(""),
+    authorization: Optional[str] = Header(None),
     debug: bool = False,
 ):
-    # Auth & rate limit (only enforced when accounts are configured)
-    if ACCOUNTS:
-        if not session_token:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        email = get_email_from_token(session_token)
-        if not email:
-            raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
-        check_and_increment_scan(email)
+    # Resolve user: prefer Authorization: Bearer, fall back to legacy session_token form field.
+    token = auth_utils.extract_bearer_token(authorization) or session_token.strip()
+    decoded = auth_utils.decode_jwt(token) if token else None
+    if not decoded or "sub" not in decoded:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        user_id = int(decoded["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid session.")
+    user = db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session no longer valid.")
+
+    # Free-tier lifetime gate. Paid users skip this.
+    if (user.get("tier") or "free") != "paid":
+        if int(user.get("lifetime_scans") or 0) >= FREE_TIER_SCAN_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail=f"You've used your {FREE_TIER_SCAN_LIMIT} free scans. Email gptc2903@gmail.com to upgrade for unlimited scans + company insights.",
+            )
 
     file_bytes = await resume.read()
     if not file_bytes:
@@ -3317,22 +3567,54 @@ async def analyze(
         raise HTTPException(status_code=400, detail="Job description is empty.")
 
     debug_info = {} if debug else None
-    parsed_resume = parse_resume(resume_text, debug_info)
+
+    # Phase 1: Parse resume — everything else depends on this
+    parsed_resume = await asyncio.to_thread(parse_resume, resume_text, debug_info)
     parsed_resume["_resume_text"] = resume_text
-    cv_sections_analysis = analyze_cv_sections(resume_text, parsed_resume, job_description)
+
+    # Local computation — no API calls
     parsed_skills = parsed_resume.get("skills") or []
     parsed_tools = parsed_resume.get("tools") or []
     resume_text_norm = normalize_phrase(resume_text)
     resume_token_set = set(resume_text_norm.split())
     resume_compact = resume_text_norm.replace(" ", "")
-
     resume_sections = split_resume_sections(resume_text)
     resume_sections_raw = split_resume_sections_raw(resume_text)
-    textrazor_terms = textrazor_extract_phrases(job_description, debug_info if debug else None)
     tfidf_terms = extract_tfidf_terms(job_description, limit=40)
-    combined_terms = merge_unique(textrazor_terms + tfidf_terms)
+    required_years = extract_required_years(job_description)
+    resume_years = (
+        years_from_work_experience(parsed_resume.get("work_experience") or [])
+        or parsed_resume.get("years_experience")
+        or extract_resume_years(resume_text)
+    )
+    responsibility_candidates = extract_job_responsibilities(job_description)
 
-    skills_result = gemini_skills_match(job_description, parsed_resume)
+    # Phase 2: All independent API calls run in parallel (70 s hard cap, 20 s before frontend timeout)
+    try:
+        (
+            cv_sections_analysis,
+            unified_result,
+            responsibility_result,
+            semantic_score,
+            textrazor_terms,
+        ) = await asyncio.wait_for(
+            asyncio.gather(
+                asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, job_description),
+                asyncio.to_thread(gemini_skills_and_ats, job_description, parsed_resume, resume_text),
+                asyncio.to_thread(gemini_responsibility_match, responsibility_candidates, parsed_resume),
+                asyncio.to_thread(compute_semantic_score, resume_text, job_description, None),
+                asyncio.to_thread(textrazor_extract_phrases, job_description, None),
+            ),
+            timeout=70,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Analysis timed out — the AI service is under load. Please try again in a moment.",
+        )
+
+    skills_result = unified_result["skills"]
+    ats_keywords_result = unified_result["ats_keywords"]
     must_have_items   = skills_result["must_have"]
     nice_to_have_items = skills_result["nice_to_have"]
     present_must_have  = [s["skill"] for s in must_have_items   if s["present"]]
@@ -3341,18 +3623,8 @@ async def analyze(
     missing_nice_to_have = [s["skill"] for s in nice_to_have_items if not s["present"]]
     must_coverage  = len(present_must_have)  / max(1, len(must_have_items))
     nice_coverage  = len(present_nice_to_have) / max(1, len(nice_to_have_items)) if nice_to_have_items else 0.0
+    combined_terms = merge_unique(textrazor_terms + tfidf_terms)
 
-    required_years = extract_required_years(job_description)
-    resume_years = (
-        years_from_work_experience(parsed_resume.get("work_experience") or [])
-        or parsed_resume.get("years_experience")
-        or extract_resume_years(resume_text)
-    )
-    responsibility_candidates = extract_job_responsibilities(job_description)
-    responsibility_result = gemini_responsibility_match(
-        responsibility_candidates,
-        parsed_resume,
-    )
     experience_result = compute_experience_match(
         raw_sections=resume_sections_raw,
         resume_text=resume_text,
@@ -3375,7 +3647,6 @@ async def analyze(
     skills_present = merge_unique(present_must_have + present_nice_to_have)
     skills_missing = merge_unique(missing_must_have + missing_nice_to_have)
 
-    semantic_score = compute_semantic_score(resume_text, job_description, debug_info)
     match_score = round(
         (
             responsibility_result["score"] * RESPONSIBILITY_MATCH_WEIGHT
@@ -3464,7 +3735,7 @@ async def analyze(
             "achievements": parsed_resume.get("achievements") or [],
         },
         "cv_sections_analysis": cv_sections_analysis,
-        "ats_keywords": gemini_ats_keywords(job_description, resume_text),
+        "ats_keywords": ats_keywords_result,
     }
     if debug:
         response["debug"] = {
@@ -3487,8 +3758,14 @@ async def analyze(
             "skills_path": SKILLS_PATH,
             "resume_excerpt": resume_text[:1200],
             "responsibilities_detected": len(responsibility_candidates),
-            "evidence_units": len(evidence_units),
         }
+
+    # Only count the scan now that we know the response is valid.
+    # Skip for paid tier; we leave their counter alone.
+    if (user.get("tier") or "free") != "paid":
+        db.increment_lifetime_scans(user["id"])
+    fresh_user = db.get_user_by_id(user["id"])
+    response["user"] = _user_to_public(fresh_user) if fresh_user else None
     return response
 
 
@@ -3509,6 +3786,177 @@ async def rewrite_cv(payload: dict):
         role_fit_breakdown=role_fit_breakdown if isinstance(role_fit_breakdown, dict) else {},
     )
     return {"rewrite": rewrite}
+
+
+COVER_LETTER_SYSTEM_PROMPT = """You are a senior career writer producing a professional, tailored cover letter for a real human applying to a real job. A cover letter is a marketing tool, not an autobiography. Every paragraph must do specific work. Target length: 420–500 words.
+
+Required structure: five paragraphs, single blank line between each. Each paragraph below has a fixed role — do not merge them or change their order.
+
+PARAGRAPH 1 — Introduction (2–3 sentences, ~60–80 words)
+- Sentence 1: Introduce the candidate by their academic/professional background AND state hands-on experience areas in a three-part list (e.g. "with hands-on experience building scalable backend systems, automated workflows, and robust data pipelines").
+- Sentence 2: Name the target company's specific mission/values (drawn from the JD) and state that it resonates with the candidate; in the same sentence or a third, express excitement to contribute as the specific role and mention the skill themes the candidate brings.
+- Example shape: "I am a [degree/background] and [other distinguishing fact like co-founder of X], with hands-on experience building [A], [B], and [C]. [Company]'s mission to [paraphrased mission from JD] resonates deeply with me, and I am excited to contribute my skills in [skill 1], [skill 2], and [skill 3] as a [Role] on the [team]."
+
+PARAGRAPH 2 — DEEP DIVE on FIRST major role (~85–110 words, 4–5 sentences)
+- Name the role title AND employer (e.g. "As Co-Founder and Data Analyst at MySchola, I...").
+- Pack in 3–4 specific actions FROM THIS ROLE'S CV BULLETS, each with a metric or concrete scope (e.g. "designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users").
+- Use commas/em-dashes to chain actions densely: "I implemented X improving Y by N%, automated Z reducing manual workload by M%, and integrated multiple APIs for seamless data flow."
+- Close with one sentence linking this role to one or two SPECIFIC JD requirements, paraphrased cleanly: "This experience aligns closely with [Company]'s focus on [JD theme 1], [JD theme 2], and [JD theme 3]."
+
+PARAGRAPH 3 — DEEP DIVE on SECOND major role (~70–95 words, 3–4 sentences)
+- Name the role title AND employer (e.g. "In my role as a Full Stack Developer at MHR, I...").
+- Pack in 2–3 specific actions from THIS role's bullets with metrics or tooling names.
+- Close with a sentence linking this role's experience to JD-relevant capabilities, paraphrased: "My experience with [X], [Y], and [Z] equips me to contribute effectively to the [team]'s cross-functional projects and technical design initiatives."
+
+PARAGRAPH 4 — Additional projects, skills, and JD-aligned capabilities (~80–110 words)
+- Open with: "Additionally, I have developed expertise in [theme 1], [theme 2], and [theme 3] through projects such as..."
+- Name 1 specific project from the CV's projects section, with what was built and the metric (e.g. "a serverless expense compliance system using AWS Step Functions and DynamoDB, which reduced manual auditing effort by 90%").
+- Close with one tight sentence naming a SHORT list (NO MORE THAN 4 items) of higher-level capability areas the candidate is comfortable with — pick the areas most relevant to the JD. DO NOT list 8+ individual tools. Wrong: "Python, JavaScript, SQL, Node.js, AWS Lambda, RDS, DynamoDB, Step Functions, Firebase, Firestore, REST APIs, FastAPI, MySQL". Right: "I am comfortable using ETL orchestration tools, managing cloud infrastructure, and implementing robust testing practices". Use the format: " - skills directly relevant to [Company]'s requirements for [JD-derived themes]." (single hyphen with spaces, NOT an em-dash, to avoid encoding glitches).
+
+PARAGRAPH 5 — Why this company + conclusion (~75–95 words, 4 sentences + thank you)
+- Sentence 1: "I am particularly drawn to [Company]'s [specific value 1 from JD], [specific value 2 from JD], and [specific value 3 from JD]."
+- Sentence 2: "I am confident that my experience in [candidate's strength 1] and [strength 2], combined with my [trait — e.g. collaborative mindset / analytical approach] and passion for [field/work], makes me a strong fit for the [Role] role."
+- Sentence 3: "I look forward to contributing to your team and supporting [Company]'s mission to [paraphrase from JD]."
+- Then on its own line, with blank line above: "Thank you for your time and consideration."
+
+Sign-off: blank line, then "Sincerely," on its own line, then the candidate's full name on the next line (no extra blank line between Sincerely and the name).
+
+CRITICAL EXTRACTION RULES
+- Extract the COMPANY NAME and ROLE TITLE from the JD — use them verbatim throughout, never with placeholders.
+- Extract the CANDIDATE NAME from the top of the CV.
+- Pull measurable achievements (numbers, percentages, counts) only from the CV. Do not invent.
+- Do not over-claim years of experience. If unsure, write "over the past few years" or "across my recent roles" instead of a specific number.
+- Mirror JD vocabulary in paragraphs 3 and 4 — recruiters scan for matched terminology.
+- If the CV has no name, omit it and just write "Sincerely," with nothing after.
+
+ABSOLUTE NO-HALLUCINATION RULE FOR SKILLS AND TOOLS
+This is the single most important rule. When writing paragraph 3, you MUST ONLY name programming languages, frameworks, databases, tools, cloud services, and methodologies that appear EXPLICITLY in the candidate's CV. If a tool is required by the JD but the CV does not list it, you must NOT claim the candidate is "familiar with", "comfortable with", "experienced in", or "has practical expertise in" that tool.
+Examples of forbidden moves:
+- JD requires Terraform; CV does not list Terraform → DO NOT mention Terraform
+- JD requires Kubernetes; CV mentions only Docker → DO NOT mention Kubernetes (and DO mention Docker)
+- JD requires Snowflake/Neo4j/Kafka; CV does not list them → DO NOT name those tools
+Instead, in paragraph 3 only name CV-attested skills. In paragraph 5 you may write "I am eager to deepen my experience in [JD-required tool/area]" — this honestly signals interest without claiming experience the candidate doesn't have.
+Before finalising your output, re-read paragraph 3 and verify EVERY tool/language/framework/service mentioned appears somewhere in the CV. If any do not, remove them.
+
+OUTPUT REQUIREMENTS
+- Return ONLY the cover letter text. No preamble, no markdown fences, no "[Start of Cover Letter]" markers.
+- First line: "Dear Hiring Manager," (or use a specific name only if explicitly named in the JD).
+- Five paragraphs separated by single blank lines.
+- End with the sign-off block as described above.
+- Total length: 420 to 480 words. Hit the lower bound at minimum. If your draft is under 400 words, EXPAND paragraphs 2 and 4 with more specifics from the CV and JD before returning. Be dense, not padded.
+- DO NOT use em-dashes ("—") or en-dashes ("–") ANYWHERE in the output. Use commas, semicolons, full stops, or a hyphen with spaces ( - ) instead. Em-dashes cause encoding issues in some downstream systems.
+- DO NOT use smart/curly quotation marks ("smart" or 'smart'). Use straight quotes only (" and ').
+- Use ASCII-safe punctuation throughout (regular hyphens, periods, commas, semicolons, colons, parentheses).
+
+────────────────────────────────────────────────────────────────────
+STYLE REFERENCE (FOR STRUCTURE ONLY — DO NOT COPY ANY FACTS, NAMES, PHRASES, OR DETAILS)
+
+The cover letter below is a model of the DENSITY, RHYTHM, and SENTENCE-LEVEL STRUCTURE we want. Study how each paragraph:
+- packs multiple specific actions into each sentence,
+- weaves the candidate's experience with the target role's responsibilities,
+- uses three-part lists ("X, Y, and Z" / "A, B, and C"),
+- transitions between paragraphs with natural connectors ("Over the past few years…", "I bring strong skills in…", "I am particularly drawn to…", "I am confident that…"),
+- closes with a "Thank you for your time and consideration." line on its own before "Sincerely,".
+
+You MUST mirror this style, but you MUST NOT copy any specific fact, employer, product, role, value statement, or phrase from it into your output. Your output must come entirely from the actual CV and JD provided after this reference.
+
+──── Begin style reference ────
+
+Dear Hiring Manager,
+
+I am a Computer Science (Artificial Intelligence) graduate and co-founder of a data-driven EdTech platform, with hands-on experience building scalable backend systems, automated workflows, and robust data pipelines. [Company]'s mission to [paraphrased mission] resonates deeply with me, and I am excited to contribute my skills in [skill area 1], [skill area 2], and [skill area 3] as a [Role] on the [team name].
+
+As [Role 1 Title] at [Employer 1], I designed and maintained backend pipelines and serverless workflows using [Tool 1], [Tool 2], and [Tool 3], supporting [scale e.g. "60+ active users"]. I implemented data validation and integrity checks that improved system reliability by [N]%, automated operational processes reducing manual workload by [N]%, and integrated multiple APIs for seamless data flow. This experience aligns closely with [Company]'s focus on [JD theme 1], [JD theme 2], and [JD theme 3].
+
+In my role as a [Role 2 Title] at [Employer 2], I built backend services, end-to-end data flows, and cloud-based application infrastructure on [Cloud Platform]. I contributed to data migration, workflow automation, and structured reporting for stakeholders, ensuring reliable, high-quality outputs and [achievement metric, e.g. "100% on-time project delivery"]. My experience with [Skill X], [Skill Y], and [Methodology Z] equips me to contribute effectively to the [team name]'s cross-functional projects and technical design initiatives.
+
+Additionally, I have developed expertise in [theme 1], [theme 2], and [theme 3] through projects such as [project name], a [brief description] using [tools from CV], which [measurable outcome, e.g. "reduced manual auditing effort by 90%"]. I am comfortable using [skill area from CV], managing [skill area from CV], and implementing [skill area from CV] - skills directly relevant to [Company]'s requirements for [JD-derived themes].
+
+I am particularly drawn to [Company]'s [specific value 1 from JD], [specific value 2 from JD], and [specific value 3 from JD]. I am confident that my experience in [candidate strength 1] and [strength 2], combined with my collaborative mindset and passion for [field/work], makes me a strong fit for the [Role] role. I look forward to contributing to your team and supporting [Company]'s mission to [paraphrase from JD].
+
+Thank you for your time and consideration.
+
+Sincerely,
+[Candidate Name]
+
+──── End style reference ────
+
+REMEMBER: the reference above used placeholders [Company], [Role], [Candidate Name], [Project A], [Company B] only because we are showing the SHAPE. In your actual output for the real candidate below, fill EVERY field with the real specifics drawn from the provided CV and JD. NEVER output a literal "[Company]" or other placeholder. Adapt the SENTENCE STRUCTURE to the candidate's real CV: if their CV is in a non-technical field (marketing, finance, healthcare, etc.), still mirror the rhythm but draw on THEIR actual roles, tools, achievements, and the target company's actual mission and values.
+"""
+
+
+def gemini_generate_cover_letter(resume_text: str, job_description: str) -> str:
+    if not GENAI_CLIENT:
+        detail = "GEMINI_API_KEY is not set."
+        if GENAI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
+        raise HTTPException(status_code=503, detail=detail)
+
+    prompt = f"""{COVER_LETTER_SYSTEM_PROMPT}
+
+---
+SOURCE CV:
+{resume_text}
+
+---
+JOB DESCRIPTION:
+{job_description}
+
+---
+Generate the cover letter now."""
+
+    response = GENAI_CLIENT.models.generate_content(
+        model=GEMINI_REWRITE_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=0.4),
+    )
+    text = (getattr(response, "text", "") or "").strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="Cover letter generation returned an empty response.")
+    # Strip any stray markdown fences or wrapper markers the model sometimes adds.
+    for marker in ("```", "[Start of Cover Letter]", "[End of Cover Letter]"):
+        text = text.replace(marker, "")
+    # Replace problematic Unicode punctuation that the model often adds despite instructions,
+    # which can render as mangled chars in some terminals / downstream apps.
+    text = (
+        text
+        .replace("—", " - ")   # em dash
+        .replace("–", "-")     # en dash
+        .replace("‘", "'")     # left single quote
+        .replace("’", "'")     # right single quote
+        .replace("“", '"')     # left double quote
+        .replace("”", '"')     # right double quote
+        .replace("…", "...")  # ellipsis
+    )
+    # Collapse any double spaces created by the em-dash replacement.
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.strip()
+
+
+@app.post("/generate-cover-letter")
+async def generate_cover_letter(payload: dict, authorization: Optional[str] = Header(None)):
+    # Auth required — cover letters cost real API calls.
+    token = auth_utils.extract_bearer_token(authorization)
+    decoded = auth_utils.decode_jwt(token) if token else None
+    if not decoded or "sub" not in decoded:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        user = db.get_user_by_id(int(decoded["sub"]))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid session.")
+    if not user:
+        raise HTTPException(status_code=401, detail="Session no longer valid.")
+
+    resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Missing resume_text.")
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+
+    letter = gemini_generate_cover_letter(resume_text, job_description)
+    return {"cover_letter": letter}
 
 
 @app.post("/scrape-job")
@@ -4148,7 +4596,26 @@ def gemini_company_insights(company_name: str, job_description: str) -> dict:
 
 
 @app.post("/company-insights")
-async def company_insights(payload: dict):
+async def company_insights(payload: dict, authorization: Optional[str] = Header(None)):
+    # Gate behind tier. Free-tier users get a structured "locked" response so the
+    # frontend can render an upgrade CTA without a 4xx.
+    token = auth_utils.extract_bearer_token(authorization)
+    decoded = auth_utils.decode_jwt(token) if token else None
+    if not decoded or "sub" not in decoded:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        user = db.get_user_by_id(int(decoded["sub"]))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid session.")
+    if not user:
+        raise HTTPException(status_code=401, detail="Session no longer valid.")
+    if (user.get("tier") or "free") != "paid":
+        return {
+            "company_insights": None,
+            "locked": True,
+            "upgrade_message": "Company research is available on the full plan. Email gptc2903@gmail.com to upgrade.",
+        }
+
     job_description = clean_text(str((payload or {}).get("job_description") or ""))
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
@@ -4158,4 +4625,4 @@ async def company_insights(payload: dict):
     if not company_name:
         raise HTTPException(status_code=422, detail="Could not identify company name from job description.")
     result = gemini_company_insights(company_name, job_description)
-    return {"company_insights": result}
+    return {"company_insights": result, "locked": False}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import shortlistlyLogo from "./assets/logos/short.png";
-import { isAuthenticated, isAuthConfigured, signIn } from "./auth";
+import { isAuthenticated, signIn } from "./auth";
 import "./LoginPage.css";
 
 const PARTICLES = Array.from({ length: 22 }, (_, i) => ({
@@ -195,7 +195,7 @@ export default function LoginPage({ onLogin }) {
               <div className={`lf${focusedField === "pass" ? " lf--focused" : ""}${password ? " lf--filled" : ""}`}>
                 <div className="lf__label-row">
                   <label className="lf__label">Password</label>
-                  <a href="#" className="lf__forgot">Forgot?</a>
+                  <Link to="/forgot-password" className="lf__forgot">Forgot?</Link>
                 </div>
                 <div className="lf__wrap">
                   <svg className="lf__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -238,9 +238,7 @@ export default function LoginPage({ onLogin }) {
             </form>
 
             <p className="login-signup-hint">
-              {isAuthConfigured()
-                ? "Access is invite-only. Use the credentials you were given."
-                : "Access is locked until you configure the allowed account in web/.env.local."}
+              Don't have an account? <Link to="/signup" style={{ color: "#5ee4ff", textDecoration: "none", fontWeight: 600 }}>Sign up — 2 free scans</Link>
             </p>
           </div>
         </div>
