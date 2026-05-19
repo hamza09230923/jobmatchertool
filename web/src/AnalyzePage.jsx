@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageLayout from "./PageLayout";
 import { signOut, getAuthHeader, getCurrentUser, subscribe as subscribeAuth, refreshCurrentUser, resendVerificationEmail, deleteAccount } from "./auth";
