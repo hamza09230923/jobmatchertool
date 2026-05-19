@@ -388,7 +388,7 @@ function LandingPage() {
         </section>
 
         <div className="example-preview-row">
-          <Link className="cta-button ghost-button hero-sample-link" to="/results" state={SAMPLE_STATE}>
+          <Link className="cta-button ghost-button hero-sample-link" to="/results?sample=1" state={SAMPLE_STATE}>
             See an example analysis →
           </Link>
           <span className="example-preview-subhint">No signup needed · 15-second preview</span>

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageLayout from "./PageLayout";
 import { signOut, getAuthHeader } from "./auth";
+import { getScans } from "./scanHistory";
+import { SAMPLE_STATE } from "./sampleScan";
 import "./ResultsPage.css";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
@@ -1339,7 +1341,29 @@ function RewriteSection({ items, emptyLabel }) {
 export default function ResultsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { result, fileName, jobDescription, isSample } = location.state || {};
+  // Tiered hydration so /results survives refresh and direct URLs:
+  //   1. location.state (fresh navigation — fastest, used by Analyze form submit + history click)
+  //   2. ?sample=1 in URL  → use SAMPLE_STATE (sample link survives refresh)
+  //   3. Most recent scan in localStorage (refresh re-opens the last analysis the user ran)
+  //   4. Nothing → redirect to /analyze in the useEffect below
+  const hydrated = (() => {
+    const fromState = location.state || {};
+    if (fromState.result) return fromState;
+    const params = new URLSearchParams(location.search);
+    if (params.get("sample") === "1") return { ...SAMPLE_STATE };
+    const recent = getScans()[0];
+    if (recent && recent.result) {
+      return {
+        result: recent.result,
+        fileName: recent.fileName,
+        jobDescription: recent.jobDescription,
+        jobSource: recent.jobSource,
+        fromHistory: true,
+      };
+    }
+    return {};
+  })();
+  const { result, fileName, jobDescription, isSample } = hydrated;
   const [rewriteLoading, setRewriteLoading] = useState(false);
   const [rewriteError, setRewriteError] = useState("");
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);

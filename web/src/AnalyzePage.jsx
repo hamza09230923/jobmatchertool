@@ -157,7 +157,7 @@ export default function AnalyzePage() {
   ];
 
   const handleOpenSample = () => {
-    navigate("/results", { state: SAMPLE_STATE });
+    navigate("/results?sample=1", { state: SAMPLE_STATE });
   };
 
   const handleOpenHistory = (entry) => {
