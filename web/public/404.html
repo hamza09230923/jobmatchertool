@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shortlistly</title>
+  <!-- spa-github-pages technique:
+       GitHub Pages serves this 404.html for any path that doesn't map to a real file.
+       We immediately redirect to "/?/<original-path>", which the boot script in
+       index.html then decodes back into the proper URL so React Router can handle it.
+       Custom domain (shortlistly.co.uk) sits at the root, so pathSegmentsToKeep = 0. -->
+  <script>
+    (function () {
+      var pathSegmentsToKeep = 0;
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    })();
+  </script>
+</head>
+<body>
+  <noscript>
+    This page needs JavaScript to load. Please enable JavaScript and reload, or go to
+    <a href="/">shortlistly.co.uk</a>.
+  </noscript>
+</body>
+</html>

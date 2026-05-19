@@ -12,6 +12,20 @@
       rel="stylesheet"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- spa-github-pages: decode the redirected path from 404.html back into a real
+         URL so React Router renders the right route. Must run before any other JS. -->
+    <script>
+      (function (l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search.slice(1).split('&').map(function (s) {
+            return s.replace(/~and~/g, '&');
+          }).join('?');
+          window.history.replaceState(null, null,
+            l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      })(window.location);
+    </script>
     <title>Shortlistly — Score your CV against any job description in 30 seconds</title>
     <meta name="description" content="Shortlistly scores your CV against the actual job description — responsibility match, ATS keyword coverage, and a recruiter-grade verdict in about 30 seconds. Free during early access." />
     <meta name="theme-color" content="#0f1115" />
