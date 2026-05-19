@@ -454,50 +454,178 @@ function SimpleList({ items, emptyLabel }) {
   );
 }
 
+// Normalize both the new Gemini-powered shape and the legacy heuristic shape
+// into one consistent { verdict, summary_line, strengths, improvements } shape.
+function normalizeSectionFeedback(raw) {
+  const result = {};
+  for (const [key, fb] of Object.entries(raw || {})) {
+    if (!fb || typeof fb !== "object") continue;
+    // Drop the "other" bucket entirely — it's never useful.
+    if (key === "other") continue;
+
+    if (fb.verdict) {
+      // New Gemini shape — pass through, defaulting nulls.
+      result[key] = {
+        verdict: String(fb.verdict).toLowerCase(),
+        summary_line: fb.summary_line || "",
+        strengths: Array.isArray(fb.strengths) ? fb.strengths.slice(0, 2) : [],
+        improvements: Array.isArray(fb.improvements)
+          ? fb.improvements
+              .filter((i) => i && (i.issue || i.fix))
+              .slice(0, 2)
+              .map((i) => ({ issue: i.issue || "", fix: i.fix || "" }))
+          : [],
+      };
+      continue;
+    }
+    // Legacy heuristic shape — convert.
+    const good = Array.isArray(fb.good) ? fb.good : [];
+    const notGood = Array.isArray(fb.not_good) ? fb.not_good : [];
+    const isMissing =
+      good.length === 0 &&
+      notGood.length === 1 &&
+      typeof notGood[0] === "string" &&
+      notGood[0].includes("missing");
+    let verdict;
+    if (isMissing) verdict = "weak";
+    else if (notGood.length === 0) verdict = "strong";
+    else if (notGood.length <= 1) verdict = "good";
+    else verdict = "needs_work";
+    result[key] = {
+      verdict,
+      summary_line: "",
+      strengths: good.slice(0, 2),
+      improvements: notGood.slice(0, 2).map((item) => ({ issue: item, fix: "" })),
+    };
+  }
+  return result;
+}
+
+const VERDICT_META = {
+  strong:     { label: "Strong",      color: "#4ade80", bg: "rgba(74,222,128,0.10)", border: "rgba(74,222,128,0.30)" },
+  good:       { label: "Good",        color: "#5ee4ff", bg: "rgba(94,228,255,0.10)", border: "rgba(94,228,255,0.30)" },
+  needs_work: { label: "Needs work",  color: "#fbbf24", bg: "rgba(251,191,36,0.10)", border: "rgba(251,191,36,0.30)" },
+  weak:       { label: "Weak",        color: "#f87171", bg: "rgba(248,113,113,0.10)", border: "rgba(248,113,113,0.30)" },
+};
+
 function SectionCard({ name, feedback }) {
-  const [open, setOpen] = useState(false);
-  const { good = [], not_good: notGood = [] } = feedback;
-  const hasIssues = notGood.length > 0;
-  const isMissing = good.length === 0 && notGood.length === 1 && notGood[0]?.includes("missing or too short");
+  const { verdict = "good", summary_line = "", strengths = [], improvements = [] } = feedback || {};
+  const meta = VERDICT_META[verdict] || VERDICT_META.good;
+  // Auto-expand when verdict needs attention; collapsed when already strong.
+  const [open, setOpen] = useState(verdict === "needs_work" || verdict === "weak");
+  const showBody = strengths.length > 0 || improvements.length > 0 || summary_line;
 
   return (
-    <div className={`section-card${hasIssues ? " has-issues" : " all-good"}${isMissing ? " section-missing" : ""}`}>
-      <button type="button" className="section-card-header" onClick={() => setOpen((value) => !value)}>
-        <div className="section-card-left">
-          <span className={`section-card-dot${isMissing ? " dot-missing" : hasIssues ? " dot-warn" : " dot-ok"}`} />
-          <span className="section-card-name">{SECTION_LABELS[name] || name}</span>
-          {isMissing ? (
-            <span className="badge badge-missing">Not found</span>
-          ) : (
-            <div className="section-card-badges">
-              {good.length > 0 ? <span className="badge badge-ok">{good.length} good</span> : null}
-              {notGood.length > 0 ? <span className="badge badge-warn">{notGood.length} to fix</span> : null}
-            </div>
-          )}
+    <div className="section-card" style={{
+      borderColor: meta.border,
+      background: `linear-gradient(180deg, ${meta.bg}, rgba(255,255,255,0.015))`,
+    }}>
+      <button
+        type="button"
+        className="section-card-header"
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: "100%", textAlign: "left", border: 0, background: "transparent", cursor: showBody ? "pointer" : "default", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+          <span style={{
+            display: "inline-flex",
+            padding: "4px 10px",
+            borderRadius: 999,
+            fontSize: "0.72rem",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: meta.color,
+            background: meta.bg,
+            border: `1px solid ${meta.border}`,
+            whiteSpace: "nowrap",
+          }}>{meta.label}</span>
+          <span style={{ fontSize: "0.98rem", fontWeight: 700, color: "#f4f6fb", textTransform: "capitalize" }}>
+            {SECTION_LABELS[name] || name.replace(/_/g, " ")}
+          </span>
+          {summary_line ? (
+            <span style={{
+              fontSize: "0.86rem",
+              color: "rgba(232,237,245,0.7)",
+              marginLeft: 4,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+              minWidth: 0,
+            }}>{summary_line}</span>
+          ) : null}
         </div>
-        <span className={`section-card-chevron${open ? " open" : ""}`}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </span>
+        {showBody ? (
+          <span style={{ flexShrink: 0, color: "rgba(184,192,212,0.5)", transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </span>
+        ) : null}
       </button>
 
-      <div className={`section-card-body${open ? " open" : ""}`}>
-        <div className="section-card-body-inner">
-          {good.map((item) => (
-            <div key={item} className="section-feedback-item ok">
-              <FeedbackIcon type="ok" />
-              <span>{item}</span>
+      {open && showBody ? (
+        <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {summary_line ? (
+            <p style={{
+              margin: 0,
+              fontSize: "0.92rem",
+              color: "rgba(232,237,245,0.9)",
+              lineHeight: 1.55,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: "rgba(255,255,255,0.025)",
+              border: "1px solid rgba(255,255,255,0.05)",
+            }}>{summary_line}</p>
+          ) : null}
+
+          {strengths.length > 0 ? (
+            <div>
+              <p style={{ margin: "0 0 8px", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#4ade80" }}>
+                Working well
+              </p>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+                {strengths.map((s, i) => (
+                  <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.88rem", color: "rgba(232,237,245,0.85)", lineHeight: 1.55 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.8" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 4 }}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          ))}
-          {notGood.map((item) => (
-            <div key={item} className="section-feedback-item warn">
-              <FeedbackIcon type="warn" />
-              <span>{item}</span>
+          ) : null}
+
+          {improvements.length > 0 ? (
+            <div>
+              <p style={{ margin: "0 0 8px", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#fbbf24" }}>
+                To improve
+              </p>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
+                {improvements.map((imp, i) => (
+                  <li key={i} style={{
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: "rgba(251,191,36,0.04)",
+                    border: "1px solid rgba(251,191,36,0.18)",
+                  }}>
+                    {imp.issue ? (
+                      <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#f4f6fb", marginBottom: imp.fix ? 6 : 0, lineHeight: 1.5 }}>{imp.issue}</div>
+                    ) : null}
+                    {imp.fix ? (
+                      <div style={{ fontSize: "0.85rem", color: "rgba(232,237,245,0.78)", lineHeight: 1.55 }}>
+                        <strong style={{ color: "#fbbf24", fontWeight: 700, marginRight: 6 }}>Fix:</strong>{imp.fix}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             </div>
-          ))}
+          ) : null}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -1492,13 +1620,20 @@ export default function ResultsPage() {
     ats_keywords: atsKeywords = {},
     score_breakdown: scoreBreakdown = null,
   } = result;
-  const sortedSectionKeys = Object.keys(sectionFeedback)
+  // Normalize sectionFeedback to the unified verdict shape (handles both Gemini-powered
+  // and legacy heuristic responses). Sort worst verdict first so the user sees what
+  // matters most at the top.
+  const normalizedSections = normalizeSectionFeedback(sectionFeedback);
+  const VERDICT_ORDER = { weak: 0, needs_work: 1, good: 2, strong: 3 };
+  const sortedSectionKeys = Object.keys(normalizedSections)
     .filter((k) => {
-      const fb = sectionFeedback[k];
-      return (fb?.good?.length || 0) + (fb?.not_good?.length || 0) > 0;
+      const fb = normalizedSections[k];
+      return fb.summary_line || fb.strengths.length > 0 || fb.improvements.length > 0 || fb.verdict === "weak";
     })
     .sort(
-      (a, b) => (sectionFeedback[b]?.not_good?.length || 0) - (sectionFeedback[a]?.not_good?.length || 0),
+      (a, b) =>
+        (VERDICT_ORDER[normalizedSections[a].verdict] ?? 2) -
+        (VERDICT_ORDER[normalizedSections[b].verdict] ?? 2),
     );
   const jobMeta = breakdown.job_description || {};
   const responsibilityDetail = breakdown.responsibility_detail || {};
@@ -1944,7 +2079,7 @@ export default function ResultsPage() {
               </div>
               <div className="section-cards">
                 {sortedSectionKeys.map((key) => (
-                  <SectionCard key={key} name={key} feedback={sectionFeedback[key]} />
+                  <SectionCard key={key} name={key} feedback={normalizedSections[key]} />
                 ))}
               </div>
             </section>

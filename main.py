@@ -2635,6 +2635,168 @@ def has_tech_terms(text: str) -> bool:
     return any(term in normalized for term in LANGUAGE_SKILLS)
 
 
+def gemini_section_feedback(
+    parsed_resume: dict,
+    job_description: str,
+    role_fit_breakdown: dict | None = None,
+) -> dict:
+    """Produce per-section feedback using Gemini, grounded in actual CV content and JD requirements.
+
+    Returns dict keyed by section name with:
+        verdict: 'strong' | 'good' | 'needs_work' | 'weak'
+        summary_line: one-sentence diagnosis
+        strengths: list[str] (max 2 — specific, naming CV content)
+        improvements: list[{issue, fix}] (max 2 — surgical edits, not generic advice)
+    """
+    if not GENAI_CLIENT:
+        return {}
+
+    # Build a compact CV summary for the prompt
+    summary = (parsed_resume.get("summary") or "").strip()
+    skills = [str(s) for s in (parsed_resume.get("skills") or [])[:40]]
+    jobs = parsed_resume.get("work_experience") or []
+    projects = parsed_resume.get("projects") or []
+    education = parsed_resume.get("education") or []
+
+    exp_lines = []
+    for job in jobs[:5]:
+        if not isinstance(job, dict):
+            continue
+        title = job.get("title", "")
+        company = job.get("company", "")
+        bullets = job.get("bullets") or []
+        bullet_text = "\n".join(f"      - {str(b).strip()}" for b in bullets[:8] if str(b).strip())
+        exp_lines.append(f"   [{title} @ {company}]\n{bullet_text}")
+    exp_blob = "\n".join(exp_lines) if exp_lines else "(no work experience parsed)"
+
+    proj_lines = []
+    for proj in projects[:5]:
+        if isinstance(proj, dict):
+            name = proj.get("name", "")
+            bullets = proj.get("bullets") or []
+            bullet_text = "\n".join(f"      - {str(b).strip()}" for b in bullets[:5] if str(b).strip())
+            proj_lines.append(f"   [{name}]\n{bullet_text}")
+        elif isinstance(proj, str):
+            proj_lines.append(f"   - {proj}")
+    proj_blob = "\n".join(proj_lines) if proj_lines else "(no projects parsed)"
+
+    edu_lines = []
+    for edu in education[:3]:
+        if isinstance(edu, dict):
+            edu_lines.append(f"   - {edu.get('degree', '')} | {edu.get('institution', '')} | {edu.get('graduation_year', '')}")
+        elif isinstance(edu, str):
+            edu_lines.append(f"   - {edu}")
+    edu_blob = "\n".join(edu_lines) if edu_lines else "(no education parsed)"
+
+    breakdown = role_fit_breakdown or {}
+    missing_essential = [
+        r.get("responsibility", "")
+        for r in (breakdown.get("missing_responsibilities") or [])
+        if (r.get("category") or "essential") != "nice_to_have"
+    ]
+    missing_skills_summary = ""
+    skills_detail = breakdown.get("skills_detail") or {}
+    must_missing = [s for s in (skills_detail.get("must_have") or []) if not s.get("present")]
+    if must_missing:
+        names = []
+        for s in must_missing[:8]:
+            nm = s.get("skill") or s.get("keyword") or ""
+            if nm:
+                names.append(nm)
+        if names:
+            missing_skills_summary = "Missing from CV but required by JD: " + ", ".join(names)
+
+    prompt = f"""You are a senior career coach reviewing a CV against a specific job description, section by section. Produce concrete, surgical feedback grounded in what's actually written in this CV — never generic advice.
+
+Return ONLY valid JSON with this exact structure:
+
+{{
+  "summary":     {{ "verdict": "strong|good|needs_work|weak", "summary_line": "one sentence", "strengths": ["string", ...], "improvements": [{{"issue": "string", "fix": "string"}}, ...] }},
+  "experience":  {{ "verdict": "strong|good|needs_work|weak", "summary_line": "one sentence", "strengths": [...], "improvements": [...] }},
+  "projects":    {{ "verdict": "strong|good|needs_work|weak", "summary_line": "one sentence", "strengths": [...], "improvements": [...] }},
+  "skills":      {{ "verdict": "strong|good|needs_work|weak", "summary_line": "one sentence", "strengths": [...], "improvements": [...] }},
+  "education":   {{ "verdict": "strong|good|needs_work|weak", "summary_line": "one sentence", "strengths": [...], "improvements": [...] }}
+}}
+
+VERDICTS (apply strictly):
+- "strong":     Section is competitive for this role. Nothing material is missing.
+- "good":       Section is solid but has 1-2 improvements that would meaningfully strengthen it.
+- "needs_work": Section has clear gaps vs the JD or weak content. Multiple improvements needed.
+- "weak":       Section is missing critical content for this role, or is poorly written. Major rework needed.
+
+STRICT RULES:
+1. Every strength must NAME the specific bullet, role, project, or content from the CV. Bad: "Uses action verbs". Good: "The MySchola bullet about AWS Lambda automation quantifies impact (70% reduction)."
+2. Every improvement.fix must be a SURGICAL EDIT, not generic advice. Bad: "Add more metrics". Good: "In your MHR role, the bullet 'Built end-to-end data flows...' could end with the system reliability gain (you mention 40% elsewhere — see if it applies here)."
+3. Cross-reference the JD. If the JD wants 'distributed systems' and the CV doesn't mention it, that's a concrete improvement for the relevant section (usually summary or experience).
+4. Maximum 2 strengths and 2 improvements per section. Pick the top items only. Quality over quantity.
+5. The summary_line must be ONE sentence that gives the candidate the gist of how this section reads to a recruiter for THIS specific role.
+6. If a section is genuinely missing from the CV (e.g. no projects, no education), verdict = "weak", strengths = [], improvements = one item explaining what to add.
+7. DO NOT mention employment gaps, dates, or tenure — that's covered elsewhere.
+8. DO NOT use em-dashes, en-dashes, or smart quotes. Use plain hyphens and straight quotes only.
+
+CONTEXT FROM THE ANALYSIS:
+{missing_skills_summary}
+{("Missing essential responsibilities from JD: " + "; ".join(missing_essential[:5])) if missing_essential else ""}
+
+JOB DESCRIPTION:
+{job_description}
+
+CANDIDATE CV:
+SUMMARY: {summary or "(no summary parsed)"}
+
+WORK EXPERIENCE:
+{exp_blob}
+
+PROJECTS:
+{proj_blob}
+
+SKILLS: {", ".join(skills) if skills else "(no skills parsed)"}
+
+EDUCATION:
+{edu_blob}
+"""
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_REWRITE_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2),
+        )
+        raw = (getattr(response, "text", "") or "").strip()
+        # Strip stray markdown fences just in case
+        for marker in ("```json", "```"):
+            raw = raw.replace(marker, "")
+        parsed = parse_json_response(raw)
+        if not isinstance(parsed, dict):
+            return {}
+        # Normalize each section's shape
+        normalized = {}
+        for section in ("summary", "experience", "projects", "skills", "education"):
+            data = parsed.get(section) or {}
+            if not isinstance(data, dict):
+                continue
+            verdict = str(data.get("verdict", "good")).lower()
+            if verdict not in ("strong", "good", "needs_work", "weak"):
+                verdict = "good"
+            normalized[section] = {
+                "verdict": verdict,
+                "summary_line": str(data.get("summary_line") or "").strip(),
+                "strengths": [str(s).strip() for s in (data.get("strengths") or [])[:2] if str(s).strip()],
+                "improvements": [
+                    {
+                        "issue": str(item.get("issue") or "").strip(),
+                        "fix": str(item.get("fix") or "").strip(),
+                    }
+                    for item in (data.get("improvements") or [])[:2]
+                    if isinstance(item, dict) and (item.get("issue") or item.get("fix"))
+                ],
+            }
+        return normalized
+    except Exception as exc:
+        logger.warning("Gemini section feedback failed, using heuristic fallback: %s", exc)
+        return {}
+
+
 def build_section_feedback(
     raw_sections: dict,
     norm_sections: dict,
@@ -3801,6 +3963,7 @@ async def analyze(
             responsibility_result,
             semantic_score,
             textrazor_terms,
+            gemini_sections,
         ) = await asyncio.wait_for(
             asyncio.gather(
                 asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, job_description),
@@ -3808,6 +3971,10 @@ async def analyze(
                 asyncio.to_thread(gemini_responsibility_match, responsibility_candidates, parsed_resume),
                 asyncio.to_thread(compute_semantic_score, resume_text, job_description, None),
                 asyncio.to_thread(textrazor_extract_phrases, job_description, None),
+                # 6th task: per-section feedback via Gemini. Runs in parallel so no added latency.
+                # Skips role_fit_breakdown context here (chicken-and-egg) — the prompt is strong
+                # enough to infer JD vs CV gaps on its own.
+                asyncio.to_thread(gemini_section_feedback, parsed_resume, job_description, None),
             ),
             timeout=70,
         )
@@ -3921,11 +4088,17 @@ async def analyze(
         "resume_text": resume_text,
         "cv_highlights": cv_highlights,
         "role_fit_breakdown": role_fit_breakdown,
-        "section_feedback": build_section_feedback(
-            resume_sections_raw,
-            resume_sections,
-            job_description,
-            parsed_resume,
+        # Prefer the Gemini-powered section feedback (richer, JD-aware, references actual CV content);
+        # fall back to the heuristic checklist if the Gemini call returned nothing.
+        "section_feedback": (
+            gemini_sections
+            if isinstance(gemini_sections, dict) and gemini_sections
+            else build_section_feedback(
+                resume_sections_raw,
+                resume_sections,
+                job_description,
+                parsed_resume,
+            )
         ),
         "candidate_profile": {
             "seniority_level": parsed_resume.get("seniority_level"),

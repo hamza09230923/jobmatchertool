@@ -123,31 +123,61 @@ export const SAMPLE_RESULT = {
   },
 
   section_feedback: {
-    work_experience: {
-      good: [
-        "Each role leads with quantified outcomes (retention lift, conversion lift, sprint completion).",
-        "Bullets connect the action you took to the metric it moved.",
+    summary: {
+      verdict: "needs_work",
+      summary_line: "Names the target function (growth PM) but stops short of mirroring Lumen's specific positioning around self-serve activation.",
+      strengths: [
+        "Names target function directly: 'Growth-focused product manager with 6 years experience...'",
       ],
-      not_good: [
-        "Pricing & packaging experience isn't represented — even one supporting bullet would close the largest gap.",
-        "Tools (Optimizely is mentioned, but the JD also calls out Amplitude / Mixpanel / Heap — none appear).",
+      improvements: [
+        {
+          issue: "Generic PM framing — doesn't mirror Lumen's 'self-serve' or 'customer activation' language.",
+          fix: "Rewrite opening line as: 'Growth PM with 6 years building self-serve activation funnels across two SaaS companies.' Mirrors the JD verbatim.",
+        },
+      ],
+    },
+    experience: {
+      verdict: "good",
+      summary_line: "Each role leads with a quantified outcome — strong recruiter-scan signal. One bullet on pricing/packaging would close the largest visible gap.",
+      strengths: [
+        "Lumen bullets all quantify impact: retention 22%→34%, 60+ experiments, 18 winners, +14% on conversion.",
+        "Bullets connect action to metric without burying the result.",
+      ],
+      improvements: [
+        {
+          issue: "No pricing or packaging work represented — JD names this as an essential responsibility.",
+          fix: "Either add a bullet under Lumen referencing any pricing test you ran, or add a one-line 'Adjacent work' note acknowledging the gap honestly.",
+        },
       ],
     },
     skills: {
-      good: [
-        "Hard skills section covers SQL, experimentation, and analytics tools.",
+      verdict: "good",
+      summary_line: "Covers the JD's hard requirements (SQL, A/B testing) but is missing the product-analytics tooling the JD calls out by name.",
+      strengths: [
+        "Hard skills cover SQL, experimentation, and stakeholder communication — all JD must-haves.",
       ],
-      not_good: [
-        "Add a brief 'product analytics' line covering whichever of Amplitude / Mixpanel / Heap you've actually used.",
+      improvements: [
+        {
+          issue: "JD names Amplitude/Mixpanel/Heap as nice-to-have; none appear in your skills section.",
+          fix: "Add a 'Product analytics' subsection listing whichever of Amplitude/Mixpanel/Heap you've actually touched. Even basic familiarity counts here.",
+        },
       ],
     },
-    summary: {
-      good: [
-        "Summary is one tight paragraph and names the function (growth PM) directly.",
+    projects: {
+      verdict: "strong",
+      summary_line: "No standalone projects section, but your role bullets read like projects with measurable outcomes — appropriate for a PM CV.",
+      strengths: [
+        "Your work-experience bullets effectively function as project mini-cases (e.g. 'activation funnel redesign').",
       ],
-      not_good: [
-        "The summary still reads as generic PM — name 'self-serve' or 'activation' to mirror the role.",
+      improvements: [],
+    },
+    education: {
+      verdict: "good",
+      summary_line: "Education is concise and relevant; doesn't dominate the CV which is right for a 6-year-experienced PM.",
+      strengths: [
+        "BSc Computer Science from Manchester — institution and degree both clearly listed.",
       ],
+      improvements: [],
     },
   },
 
