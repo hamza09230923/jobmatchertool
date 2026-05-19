@@ -171,6 +171,34 @@ export const SAMPLE_RESULT = {
     sections_missing: ["projects", "certifications"],
     quality_score: 82,
   },
+
+  score_breakdown: {
+    current_score: 76,
+    potential_score: 89,
+    verdict_line: "You're in competitive range. Closing the gaps below could lift you to 89.",
+    factors_pulling_down: [
+      {
+        label: "1 essential responsibility not evidenced",
+        points_lost: 7,
+        fix: "Add bullets that explicitly evidence: Build pricing & packaging experiments alongside the commercial team",
+      },
+      {
+        label: "1 responsibility only partially evidenced",
+        points_lost: 4,
+        fix: "Strengthen evidence with metrics or exact-keyword bullets for: Translate qualitative user research into prioritised product bets",
+      },
+      {
+        label: "1 ATS keyword from the JD not present",
+        points_lost: 2,
+        fix: "Mirror these JD keywords in your CV (only if you genuinely have the experience): Amplitude, Mixpanel, Heap",
+      },
+    ],
+    factors_pulling_up: [
+      "4 responsibilities clearly evidenced in your experience",
+      "4 of 5 must-have skills already in your CV",
+      "Years of experience meets or exceeds the requirement",
+    ],
+  },
 };
 
 export const SAMPLE_STATE = {

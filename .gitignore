@@ -40,3 +40,6 @@ users.db-journal
 # Claude Code session state
 .claude/
 
+# One-shot debug scripts
+audit_analyze.py
+

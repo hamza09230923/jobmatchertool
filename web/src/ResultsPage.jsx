@@ -1466,6 +1466,7 @@ export default function ResultsPage() {
     candidate_profile: candidateProfile = null,
     cv_sections_analysis: cvSectionsAnalysis = null,
     ats_keywords: atsKeywords = {},
+    score_breakdown: scoreBreakdown = null,
   } = result;
   const sortedSectionKeys = Object.keys(sectionFeedback)
     .filter((k) => {
@@ -1653,6 +1654,82 @@ export default function ResultsPage() {
             })()}
           </div>
         </div>
+
+        {scoreBreakdown && (scoreBreakdown.factors_pulling_down?.length || scoreBreakdown.factors_pulling_up?.length) ? (
+          <section className="results-block score-explainer-block" style={{
+            margin: "20px 0 24px",
+            padding: "26px 28px",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 16,
+            background: "linear-gradient(180deg, rgba(94,228,255,0.04), rgba(167,139,250,0.025))",
+          }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 700, color: "#f4f6fb" }}>
+                Why your score is <span style={{ color: "#5ee4ff" }}>{scoreBreakdown.current_score}</span>
+              </h2>
+              {scoreBreakdown.potential_score > scoreBreakdown.current_score && (
+                <span style={{
+                  fontSize: "0.82rem", color: "rgba(184,192,212,0.7)",
+                }}>
+                  → potential: <strong style={{ color: "#4ade80" }}>{scoreBreakdown.potential_score}</strong>
+                </span>
+              )}
+            </div>
+            <p style={{ margin: "0 0 18px", fontSize: "0.92rem", color: "rgba(232,237,245,0.85)", lineHeight: 1.55 }}>
+              {scoreBreakdown.verdict_line}
+            </p>
+
+            {scoreBreakdown.factors_pulling_down?.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ margin: "0 0 10px", fontSize: "0.74rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#f87171" }}>
+                  Pulling your score down
+                </p>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {scoreBreakdown.factors_pulling_down.map((f, i) => (
+                    <li key={i} style={{
+                      display: "flex", gap: 12, alignItems: "flex-start",
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      background: "rgba(248,113,113,0.04)",
+                      border: "1px solid rgba(248,113,113,0.15)",
+                    }}>
+                      <span style={{
+                        flexShrink: 0,
+                        fontSize: "0.78rem", fontWeight: 800,
+                        color: "#f87171",
+                        padding: "3px 9px", borderRadius: 999,
+                        background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)",
+                        minWidth: 50, textAlign: "center",
+                      }}>−{f.points_lost}</span>
+                      <div>
+                        <div style={{ fontSize: "0.92rem", fontWeight: 600, color: "#f4f6fb", marginBottom: 2 }}>{f.label}</div>
+                        {f.fix && <div style={{ fontSize: "0.84rem", color: "rgba(184,192,212,0.75)", lineHeight: 1.5 }}>{f.fix}</div>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {scoreBreakdown.factors_pulling_up?.length > 0 && (
+              <div>
+                <p style={{ margin: "0 0 10px", fontSize: "0.74rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#4ade80" }}>
+                  Working in your favour
+                </p>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {scoreBreakdown.factors_pulling_up.map((f, i) => (
+                    <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.88rem", color: "rgba(232,237,245,0.85)" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.8" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 3 }}>
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        ) : null}
 
         <CandidateProfileBar profile={candidateProfile} />
 

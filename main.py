@@ -1127,12 +1127,86 @@ def fallback_parse_resume(resume_text: str) -> dict:
     }
 
 
+_DATE_RE = re.compile(
+    r"(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)?"
+    r"[a-z]*[\s,/\-]*"
+    r"(?P<year>\d{4})",
+    re.IGNORECASE,
+)
+_MONTH_NUM = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+
+def _parse_month_year(token: str) -> Optional[tuple[int, int]]:
+    """Parse 'May 2022', '05/2022', '2022', 'Present', etc. Returns (year, month)."""
+    if not token:
+        return None
+    s = str(token).strip().lower()
+    if s in ("present", "current", "now", "today"):
+        now = datetime.now(timezone.utc)
+        return (now.year, now.month)
+    # Try month-name form first
+    m = _DATE_RE.search(s)
+    if m:
+        year = int(m.group("year"))
+        month_token = (m.group("month") or "").lower()[:4]
+        month = _MONTH_NUM.get(month_token) or _MONTH_NUM.get(month_token[:3], 1)
+        return (year, month)
+    # Try MM/YYYY
+    parts = re.split(r"[\s/\-]+", s)
+    if len(parts) >= 2:
+        try:
+            m_num = int(parts[0])
+            year = int(parts[1])
+            if 1 <= m_num <= 12 and 1900 < year < 2100:
+                return (year, m_num)
+        except ValueError:
+            pass
+    return None
+
+
+def compute_employment_gaps_from_jobs(jobs: list[dict], min_gap_months: int = 3) -> list[dict]:
+    """Deterministically compute employment gaps from work_experience entries.
+    Replaces the model's unreliable employment_gaps output."""
+    if not jobs:
+        return []
+    parsed_jobs = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        start = _parse_month_year(job.get("start_date") or job.get("start") or "")
+        end = _parse_month_year(job.get("end_date") or job.get("end") or "Present")
+        if not start or not end:
+            continue
+        parsed_jobs.append((start, end))
+    # Sort by start date ascending so consecutive entries are properly ordered.
+    parsed_jobs.sort(key=lambda p: (p[0][0], p[0][1]))
+    gaps = []
+    for prev, nxt in zip(parsed_jobs, parsed_jobs[1:]):
+        prev_end_year, prev_end_month = prev[1]
+        next_start_year, next_start_month = nxt[0]
+        months = (next_start_year - prev_end_year) * 12 + (next_start_month - prev_end_month)
+        if months >= min_gap_months:
+            gaps.append({
+                "start": f"{prev[1][1]:02d}/{prev[1][0]}",
+                "end": f"{nxt[0][1]:02d}/{nxt[0][0]}",
+                "duration_months": months,
+            })
+    return gaps
+
+
 def parse_resume(resume_text: str, debug_info: dict | None = None) -> dict:
     if GENAI_CLIENT:
         try:
             parsed = gemini_parse_resume(resume_text)
             if not isinstance(parsed, dict):
                 parsed = {}
+            # Always recompute employment_gaps deterministically from work_experience —
+            # the model frequently produces reversed dates and negative durations.
+            jobs = parsed.get("work_experience") or []
+            parsed["employment_gaps"] = compute_employment_gaps_from_jobs(jobs)
             if debug_info is not None:
                 debug_info["parse_method"] = "gemini"
             return parsed
@@ -2295,10 +2369,24 @@ def gemini_responsibility_match(
         "}\n\n"
         "Rules:\n"
         "- Use semantic matching: 'managed client relationships' can match 'led stakeholder engagement across 3 enterprise accounts'\n"
-        "- strong: CV clearly and directly demonstrates this — the evidence directly maps to what is asked\n"
-        "- partial: CV shows genuinely related experience but not an exact match (e.g. adjacent domain, smaller scale)\n"
+        "\n"
+        "CONFIDENCE LEVELS — apply strictly:\n"
+        "- 'strong': The evidence bullet contains the SAME concept or a clearly equivalent term as the responsibility. The candidate has provably done this thing.\n"
+        "    Example STRONG: responsibility 'experience with AWS Lambda' matched by bullet '...using Python and AWS Lambda, reducing manual workload by 70%...'\n"
+        "- 'partial': The evidence shows ADJACENT but not equivalent experience — same family of work, smaller scale, related tool, or domain-adjacent.\n"
+        "    Example PARTIAL: responsibility 'distributed systems' matched by bullet '...backend data systems and pipelines...' (pipelines are not necessarily distributed systems).\n"
+        "    Example PARTIAL: responsibility 'mentoring junior engineers' matched by bullet '...trained two new joiners...' (training != formal mentorship).\n"
+        "\n"
+        "EVIDENCE QUALITY RULES (CRITICAL — read carefully):\n"
+        "- The evidence MUST contain an explicit signal of the responsibility's core concept. If the bullet only LOOSELY relates, demote to 'partial'. If the bullet doesn't relate at all, the item belongs in 'missing'.\n"
+        "- Do NOT match 'unit and integration testing' with 'data validation' or 'integrity checks'. Those are different concepts. If the CV's tools list explicitly names testing frameworks (Jest, Pytest, Vitest, JUnit, Testing Library, etc.), use THAT as evidence instead. If neither exists, mark this responsibility as 'missing'.\n"
+        "- Do NOT match 'distributed systems' with 'backend services' or 'data pipelines'. Distributed systems means designing for multiple machines/regions/services coordinating — needs explicit signal (microservices, queues, replication, sharding, consensus, etc.).\n"
+        "- Do NOT match a specific named technology (Neo4j, Kafka, Snowflake, dbt, Airflow, Terraform, etc.) with a different technology. If the CV doesn't name the exact tool or a near-synonym, the item is 'missing' or at best 'partial' if there's a closely related tool.\n"
+        "- If the CV's skills/tools list names a relevant tool (e.g. responsibility says 'unit testing', CV skills list includes 'Vitest, Testing Library'), use the SKILLS line as evidence: 'SKILLS: Vitest, Testing Library, ...' — this is valid evidence.\n"
+        "- When in doubt between 'strong' and 'partial' → choose 'partial'. When in doubt between 'partial' and 'missing' → choose 'missing'. False positives mislead the candidate; false negatives just push them to add real evidence.\n"
+        "\n"
         "- Every responsibility index must appear in exactly one of matches or missing\n"
-        "- evidence: quote the CV bullet verbatim including the [Title @ Company] prefix so the candidate knows exactly where it came from\n"
+        "- evidence: quote the CV bullet verbatim including the [Title @ Company] prefix so the candidate knows exactly where it came from. If using skills line, write 'SKILLS: <verbatim line>'.\n"
         "- gap: be specific — e.g. 'No experience leading cross-functional teams, only individual contributor roles shown' not 'needs more leadership'\n"
         "- Return ONLY the JSON object, no markdown fences.\n"
     )
@@ -2561,7 +2649,9 @@ def build_section_feedback(
         good: List[str] = []
         not_good: List[str] = []
 
-        # Fall back to Gemini-parsed data when heading detection misses the section
+        # Fall back to Gemini-parsed data when heading detection misses the section.
+        # PDFs with multi-column layouts or unusual headings often fail the regex-based
+        # split, but the Gemini-parsed structured resume usually has the data correctly.
         if section == "skills" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
             parsed_skills_fallback = (parsed_resume or {}).get("skills") or []
             if parsed_skills_fallback:
@@ -2574,8 +2664,63 @@ def build_section_feedback(
                 raw_text = parsed_summary_fallback
                 norm_text = normalize_phrase(raw_text)
 
+        if section == "education" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
+            edu_list = (parsed_resume or {}).get("education") or []
+            if edu_list:
+                pieces = []
+                for entry in edu_list:
+                    if isinstance(entry, dict):
+                        pieces.append(" ".join(str(v) for v in entry.values() if v))
+                    elif isinstance(entry, str):
+                        pieces.append(entry)
+                edu_blob = " | ".join(p for p in pieces if p.strip())
+                if edu_blob:
+                    raw_text = edu_blob
+                    norm_text = normalize_phrase(raw_text)
+
+        if section == "experience" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
+            jobs = (parsed_resume or {}).get("work_experience") or []
+            if jobs:
+                pieces = []
+                for job in jobs:
+                    if isinstance(job, dict):
+                        title = str(job.get("title") or "")
+                        company = str(job.get("company") or "")
+                        dates = str(job.get("dates") or "")
+                        bullets = " ".join(str(b) for b in (job.get("bullets") or []) if b)
+                        pieces.append(f"{title} {company} {dates} {bullets}".strip())
+                exp_blob = "\n".join(p for p in pieces if p)
+                if exp_blob:
+                    raw_text = exp_blob
+                    norm_text = normalize_phrase(raw_text)
+
+        if section == "projects" and len(re.findall(r"\b\w+\b", raw_text)) < 15:
+            projects_list = (parsed_resume or {}).get("projects") or []
+            if projects_list:
+                pieces = []
+                for proj in projects_list:
+                    if isinstance(proj, dict):
+                        name = str(proj.get("name") or "")
+                        desc = str(proj.get("description") or "")
+                        tech = " ".join(str(t) for t in (proj.get("technologies") or []) if t)
+                        bullets = " ".join(str(b) for b in (proj.get("bullets") or []) if b)
+                        pieces.append(f"{name} {desc} {tech} {bullets}".strip())
+                    elif isinstance(proj, str):
+                        pieces.append(proj)
+                proj_blob = "\n".join(p for p in pieces if p)
+                if proj_blob:
+                    raw_text = proj_blob
+                    norm_text = normalize_phrase(raw_text)
+
         word_count = len(re.findall(r"\b\w+\b", raw_text))
-        if not raw_text.strip() or word_count < 15:
+        # Per-section minimum word counts. Education is intentionally short (just degree
+        # + institution + year is ~6 words and that's enough to evaluate).
+        min_words = {
+            "education": 4,
+            "skills": 6,
+            "projects": 8,
+        }.get(section, 15)
+        if not raw_text.strip() or word_count < min_words:
             not_good.append("Section is missing or too short to be useful.")
             feedback[section] = {"good": good, "not_good": not_good}
             continue
@@ -3819,6 +3964,10 @@ async def analyze(
             "responsibilities_detected": len(responsibility_candidates),
         }
 
+    # Add a "why your score is X" explainer so the frontend can render an actionable
+    # callout under the score ring.
+    response["score_breakdown"] = build_score_explainer(response)
+
     # Only count the scan now that we know the response is valid.
     # Skip for paid tier; we leave their counter alone.
     if (user.get("tier") or "free") != "paid":
@@ -3826,6 +3975,137 @@ async def analyze(
     fresh_user = db.get_user_by_id(user["id"])
     response["user"] = _user_to_public(fresh_user) if fresh_user else None
     return response
+
+
+def build_score_explainer(analyze_response: dict) -> dict:
+    """Turn the raw score/breakdown into a user-facing explainer.
+
+    Returns:
+      {
+        "current_score": int,
+        "potential_score": int,         # achievable if top fixes are addressed
+        "verdict_line": str,            # one-sentence framing
+        "factors_pulling_down": [       # ranked, highest-impact first
+          {"label": str, "points_lost": int, "fix": str}
+        ],
+        "factors_pulling_up": [str],   # what's already working
+      }
+    """
+    score = round(float(analyze_response.get("match_score") or 0))
+    breakdown = analyze_response.get("role_fit_breakdown") or {}
+    ats = analyze_response.get("ats_keywords") or {}
+
+    resp_detail = breakdown.get("responsibility_detail") or {}
+    matched = breakdown.get("matched_responsibilities") or []
+    missing_resps = breakdown.get("missing_responsibilities") or []
+    skills_detail = breakdown.get("skills_detail") or {}
+    must = skills_detail.get("must_have") or []
+    nice = skills_detail.get("nice_to_have") or []
+    exp_detail = breakdown.get("experience_detail") or {}
+
+    factors_down: list[dict] = []
+    factors_up: list[str] = []
+
+    # 1) Missing essential responsibilities = biggest single lever
+    essential_missing = [m for m in missing_resps if (m.get("category") or "essential") != "nice_to_have"]
+    if essential_missing:
+        names = [m.get("responsibility") or "" for m in essential_missing[:3]]
+        names = [n for n in names if n]
+        factors_down.append({
+            "label": f"{len(essential_missing)} essential responsibilit{'ies' if len(essential_missing) != 1 else 'y'} not evidenced",
+            "points_lost": min(20, len(essential_missing) * 6),
+            "fix": "Add bullets that explicitly evidence: " + "; ".join(names[:3]) if names else "",
+        })
+
+    # 2) Partial responsibilities — could be upgraded to strong with evidence
+    partial = [m for m in matched if m.get("confidence") == "partial"]
+    if partial:
+        partial_names = [p.get("responsibility") or "" for p in partial[:3]]
+        partial_names = [n for n in partial_names if n]
+        factors_down.append({
+            "label": f"{len(partial)} responsibilit{'ies' if len(partial) != 1 else 'y'} only partially evidenced",
+            "points_lost": min(15, len(partial) * 4),
+            "fix": "Strengthen evidence with metrics or exact-keyword bullets for: " + "; ".join(partial_names[:3]) if partial_names else "",
+        })
+
+    # 3) Missing must-have skills
+    must_missing = [s for s in must if not s.get("present")]
+    if must_missing:
+        missing_names = []
+        for s in must_missing[:5]:
+            kw = s.get("skill") or s.get("keyword") or ""
+            if kw:
+                missing_names.append(kw)
+        factors_down.append({
+            "label": f"{len(must_missing)} must-have skill{'s' if len(must_missing) != 1 else ''} missing from CV",
+            "points_lost": min(15, len(must_missing) * 2),
+            "fix": "Add to your skills/tools section if you have any experience with: " + ", ".join(missing_names) if missing_names else "",
+        })
+
+    # 4) ATS hard-skill coverage
+    hard = ats.get("hard_skills") or []
+    ats_missing = [
+        (s.get("keyword") or s.get("term") or "")
+        for s in hard
+        if (s.get("status") == "missing") and (s.get("keyword") or s.get("term"))
+    ]
+    if ats_missing:
+        factors_down.append({
+            "label": f"{len(ats_missing)} ATS keyword{'s' if len(ats_missing) != 1 else ''} from the JD not present",
+            "points_lost": min(10, len(ats_missing) * 2),
+            "fix": "Mirror these JD keywords in your CV (only if you genuinely have the experience): "
+                   + ", ".join(ats_missing[:6]),
+        })
+
+    # 5) Experience years gap
+    req_years = exp_detail.get("required_years")
+    cand_years = exp_detail.get("candidate_years")
+    meets = exp_detail.get("meets_requirement")
+    if req_years and cand_years is not None and meets is False:
+        gap = max(0, int(req_years) - int(cand_years))
+        if gap > 0:
+            factors_down.append({
+                "label": f"{gap} year{'s' if gap != 1 else ''} short of required experience",
+                "points_lost": min(15, gap * 5),
+                "fix": "If your CV understates total experience, expand earlier roles or projects with dates.",
+            })
+
+    # Sort factors_down by points_lost desc, cap at top 3
+    factors_down.sort(key=lambda x: -x.get("points_lost", 0))
+    factors_down = factors_down[:3]
+
+    # Build factors_up (what's working)
+    strong = [m for m in matched if m.get("confidence") == "strong"]
+    if strong:
+        factors_up.append(f"{len(strong)} responsibilit{'ies' if len(strong) != 1 else 'y'} clearly evidenced in your experience")
+    if must:
+        must_present = [s for s in must if s.get("present")]
+        if must_present:
+            factors_up.append(f"{len(must_present)} of {len(must)} must-have skills already in your CV")
+    if exp_detail.get("meets_requirement"):
+        factors_up.append("Years of experience meets or exceeds the requirement")
+
+    # Potential score = current + points recoverable if user addresses top fixes
+    recoverable = sum(f.get("points_lost", 0) for f in factors_down)
+    potential = min(100, score + recoverable)
+
+    # Verdict line
+    if score >= 80:
+        verdict = "Your CV is already a strong match. Small refinements could push you higher."
+    elif score >= 60:
+        verdict = f"You're in competitive range. Closing the gaps below could lift you to {potential}."
+    elif score >= 40:
+        verdict = f"You have a foundation but several gaps are pulling the score down. Addressing the items below could get you to {potential}."
+    else:
+        verdict = "Significant gaps between this CV and the role. Focus on the items below before applying."
+
+    return {
+        "current_score": score,
+        "potential_score": potential,
+        "verdict_line": verdict,
+        "factors_pulling_down": factors_down,
+        "factors_pulling_up": factors_up,
+    }
 
 
 @app.post("/rewrite-cv")
