@@ -193,5 +193,31 @@ def set_tier(user_id: int, tier: str) -> None:
             conn.close()
 
 
+def list_users(limit: int = 100) -> list[dict]:
+    """Return up to `limit` users for admin dashboards. Newest first."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, email, created_at, lifetime_scans, tier, email_verified "
+            "FROM users ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_user_by_id(user_id: int) -> bool:
+    """Permanently delete a user. Returns True if a row was removed."""
+    with _lock:
+        conn = _connect()
+        try:
+            cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
 # Eager init so importers don't have to call init_db() manually.
 init_db()

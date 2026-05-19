@@ -34,6 +34,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import db
 import auth_utils
 import email_service
+import rate_limit
 
 try:
     from google import genai
@@ -3072,7 +3073,7 @@ def _require_user(authorization: Optional[str] = Header(None)) -> dict:
     return user
 
 
-@app.post("/auth/signup")
+@app.post("/auth/signup", dependencies=[Depends(rate_limit.require_auth_rate_limit)])
 async def auth_signup(payload: dict):
     email = str((payload or {}).get("email") or "").strip().lower()
     password = str((payload or {}).get("password") or "")
@@ -3099,7 +3100,7 @@ async def auth_signup(payload: dict):
     return {"token": token, "user": _user_to_public(user)}
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", dependencies=[Depends(rate_limit.require_auth_rate_limit)])
 async def auth_login(payload: dict):
     email = str((payload or {}).get("email") or "").strip().lower()
     password = str((payload or {}).get("password") or "")
@@ -3139,7 +3140,7 @@ async def auth_resend_verification(user: dict = Depends(_require_user)):
     return {"ok": True}
 
 
-@app.post("/auth/forgot-password")
+@app.post("/auth/forgot-password", dependencies=[Depends(rate_limit.require_auth_rate_limit)])
 async def auth_forgot_password(payload: dict):
     email = str((payload or {}).get("email") or "").strip().lower()
     if not auth_utils.is_valid_email(email):
@@ -3182,6 +3183,64 @@ async def auth_reset_password(payload: dict):
 @app.get("/auth/me")
 async def auth_me(user: dict = Depends(_require_user)):
     return {"user": _user_to_public(user)}
+
+
+@app.post("/auth/delete-account")
+async def auth_delete_account(payload: dict, user: dict = Depends(_require_user)):
+    """GDPR right-to-be-forgotten. Requires password confirmation to prevent
+    a stolen JWT from nuking the account."""
+    password = str((payload or {}).get("password") or "")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required to confirm account deletion.")
+    if not auth_utils.verify_password(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Password is incorrect.")
+    deleted = db.delete_user_by_id(user["id"])
+    if not deleted:
+        # Should never happen — we just authenticated as this user.
+        raise HTTPException(status_code=500, detail="Could not delete account.")
+    return {"ok": True}
+
+
+def _check_admin(authorization: Optional[str], x_admin_token: Optional[str]) -> None:
+    """Admin endpoints accept the token via X-Admin-Token header (preferred)
+    or fall back to Authorization: Bearer <token>. Either must match ADMIN_TOKEN."""
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Admin endpoints are disabled (no ADMIN_TOKEN set).")
+    bearer = auth_utils.extract_bearer_token(authorization) or ""
+    candidate = (x_admin_token or "").strip() or bearer
+    if not candidate or candidate != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token.")
+
+
+@app.get("/admin/users")
+async def admin_list_users(
+    authorization: Optional[str] = Header(None),
+    x_admin_token: Optional[str] = Header(None),
+    limit: int = 100,
+):
+    _check_admin(authorization, x_admin_token)
+    return {"users": db.list_users(limit=max(1, min(limit, 500)))}
+
+
+@app.post("/admin/promote-user")
+async def admin_promote_user(
+    payload: dict,
+    authorization: Optional[str] = Header(None),
+    x_admin_token: Optional[str] = Header(None),
+):
+    _check_admin(authorization, x_admin_token)
+    email = str((payload or {}).get("email") or "").strip().lower()
+    tier = str((payload or {}).get("tier") or "paid").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Missing email.")
+    if tier not in ("free", "paid"):
+        raise HTTPException(status_code=400, detail="tier must be 'free' or 'paid'.")
+    user = db.get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"No user with email {email}.")
+    db.set_tier(user["id"], tier)
+    fresh = db.get_user_by_id(user["id"])
+    return {"ok": True, "user": _user_to_public(fresh) if fresh else None}
 
 
 @app.post("/auth/status")

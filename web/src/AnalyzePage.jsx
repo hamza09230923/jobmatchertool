@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageLayout from "./PageLayout";
-import { signOut, getAuthHeader, getCurrentUser, subscribe as subscribeAuth, refreshCurrentUser, resendVerificationEmail } from "./auth";
+import { signOut, getAuthHeader, getCurrentUser, subscribe as subscribeAuth, refreshCurrentUser, resendVerificationEmail, deleteAccount } from "./auth";
 import { getStatus, subscribe } from "./backendStatus";
 import { getScans, saveScan, removeScan, formatRelativeDate } from "./scanHistory";
 import { SAMPLE_STATE } from "./sampleScan";
@@ -120,6 +120,24 @@ export default function AnalyzePage() {
     setResendState("sending");
     const result = await resendVerificationEmail();
     setResendState(result.ok ? "sent" : "idle");
+  };
+
+  const handleDeleteAccount = async () => {
+    const password = window.prompt(
+      "This will permanently delete your account, scan limits, and any server-side data we hold about you.\n\n" +
+      "Type your password to confirm:"
+    );
+    if (!password) return;
+    const confirmed = window.confirm(
+      "Are you sure? This cannot be undone."
+    );
+    if (!confirmed) return;
+    const result = await deleteAccount(password);
+    if (!result.ok) {
+      window.alert(result.error || "Could not delete account.");
+      return;
+    }
+    navigate("/", { replace: true });
   };
 
   const atFreeTierWall = !!(user && user.tier !== "paid" && user.scans_remaining === 0);
@@ -752,6 +770,32 @@ export default function AnalyzePage() {
               </div>
             </div>
           </form>
+        )}
+
+        {user && !loading && (
+          <div style={{
+            marginTop: 48,
+            paddingTop: 20,
+            borderTop: "1px solid rgba(255,255,255,0.05)",
+            textAlign: "center",
+          }}>
+            <button
+              type="button"
+              onClick={handleDeleteAccount}
+              style={{
+                background: "transparent",
+                border: 0,
+                color: "rgba(184,192,212,0.4)",
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                padding: "6px 10px",
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            >
+              Delete my account
+            </button>
+          </div>
         )}
       </div>
     </PageLayout>

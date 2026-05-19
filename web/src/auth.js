@@ -179,6 +179,22 @@ export async function resendVerificationEmail() {
   }
 }
 
+export async function deleteAccount(password) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/delete-account`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeader() },
+      body: JSON.stringify({ password }),
+    });
+    const data = await _readJson(res);
+    if (!res.ok) return { ok: false, error: data?.detail || "Could not delete account." };
+    signOut();
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not reach the server. Please try again." };
+  }
+}
+
 export function signOut() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
