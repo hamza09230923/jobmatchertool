@@ -1,5 +1,6 @@
 // Auth + current-user state. JWT bearer tokens, kept in localStorage.
 // Components subscribe to currentUser changes via subscribe(fn).
+import { API_BASE_URL } from "./apiConfig";
 
 const TOKEN_KEY = "shortlistly.session.token";
 const USER_KEY  = "shortlistly.session.user";
@@ -7,7 +8,7 @@ const USER_KEY  = "shortlistly.session.user";
 const LEGACY_EMAIL_KEY  = "shortlistly.session.email";
 const LEGACY_LIMITS_KEY = "shortlistly.session.limits";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const API_BASE = API_BASE_URL;
 
 let _currentUser = _readStoredUser();
 const _listeners = new Set();

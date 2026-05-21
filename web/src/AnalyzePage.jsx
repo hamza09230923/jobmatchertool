@@ -5,9 +5,9 @@ import { signOut, getAuthHeader, getCurrentUser, subscribe as subscribeAuth, ref
 import { getStatus, subscribe } from "./backendStatus";
 import { getScans, saveScan, removeScan, formatRelativeDate } from "./scanHistory";
 import { SAMPLE_STATE } from "./sampleScan";
+import { API_BASE_URL } from "./apiConfig";
 import "./AnalyzePage.css";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 const ANALYSIS_TIPS = [

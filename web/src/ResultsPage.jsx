@@ -4,9 +4,8 @@ import PageLayout from "./PageLayout";
 import { signOut, getAuthHeader } from "./auth";
 import { getScans } from "./scanHistory";
 import { SAMPLE_STATE } from "./sampleScan";
+import { API_BASE_URL } from "./apiConfig";
 import "./ResultsPage.css";
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
 
 const SECTION_LABELS = {
   summary: "Summary",

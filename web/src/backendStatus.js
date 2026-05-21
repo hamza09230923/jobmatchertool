@@ -1,7 +1,6 @@
 // Starts pinging the backend immediately on module import (before any component mounts).
 // Shared across all routes so the cold start is hidden behind the landing page / login wait.
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
+import { API_BASE_URL } from "./apiConfig";
 
 let _status = "checking";
 let _ready  = false;
