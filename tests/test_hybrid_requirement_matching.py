@@ -438,6 +438,50 @@ def test_project_management_can_be_partial_from_project_delivery_evidence():
     assert result["section"] == "projects"
 
 
+def test_lead_fullstack_jd_extracts_owned_responsibilities_when_gemini_is_sparse(monkeypatch):
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient('{"requirements":[{"text":"Excellent communication skills","category":"essential"}]}'))
+    jd = """
+    How You'll Spend Your Time
+    You will design, develop, test, deploy, and improve digital products with a focus on full-stack development.
+    You will be responsible for the technical approach to problems, and getting the team aligned on a technical vision.
+    You will be accountable for the technical delivery of the project by the team.
+
+    What We're Looking For
+    Experience deploying, securing, scaling, and monitoring in the cloud with deep experience of AWS, Azure, or GCP.
+    Experience with automated testing and creating CI/CD pipelines.
+    """
+
+    requirements = main.extract_job_responsibilities(jd)
+    texts = [req["text"].lower() for req in requirements]
+
+    assert len(requirements) >= 6
+    assert any("technical vision" in text for text in texts)
+    assert any("technical delivery" in text for text in texts)
+    assert any("automated testing" in text or "pipelines" in text for text in texts)
+
+
+def test_seniority_fit_marks_junior_candidate_as_stretch_for_lead_role():
+    resume = {"seniority_level": "junior"}
+    resume_text = """
+    Junior AI Engineer
+    Recent BSc Computer Science graduate.
+    Built React and FastAPI projects using AWS Lambda and GitHub Actions.
+    """
+    jd = """
+    Lead Full-stack Engineer.
+    You will drive technical direction, align the team on a technical vision,
+    mentor engineers, and be accountable for technical delivery.
+    """
+
+    seniority = main.compute_seniority_fit(jd, resume, resume_text, resume_years=1)
+    positioning = main.build_application_positioning(35, 45, seniority)
+
+    assert seniority["role"]["label"] == "lead"
+    assert seniority["candidate"]["label"] == "junior"
+    assert seniority["fit_type"] in {"stretch", "underleveled"}
+    assert "under-leveled" in positioning["headline"]
+
+
 def test_at_least_one_language_examples_are_not_all_required():
     parsed_resume = {
         "_resume_text": "Skills\nPython, SQL, Git",
@@ -822,9 +866,31 @@ ROLE_FIXTURES = [
             ],
         },
         "Strong written and verbal communication skills",
-        "partial",
+        "present",
         "skills",
         id="communication can use skills or work evidence",
+    ),
+    pytest.param(
+        "written_verbal_presentation_strong_from_reports_and_presenting",
+        {
+            "_resume_text": "Experience\nPresented weekly reports to stakeholders and explained performance trends clearly.",
+            "summary": "",
+            "skills": [],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Operations Analyst",
+                    "company": "OpsCo",
+                    "bullets": ["Presented weekly reports to stakeholders and explained performance trends clearly."],
+                }
+            ],
+        },
+        "Excellent written and verbal communication and presentation skills",
+        "present",
+        "experience",
+        id="reports plus presentations prove communication modes",
     ),
     pytest.param(
         "people_management_missing_from_teamwork",

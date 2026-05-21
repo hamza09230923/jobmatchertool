@@ -2259,9 +2259,143 @@ _CANDIDATE_HINTS = (
 )
 _ACTION_VERBS_SET = set(ACTION_VERBS)
 
+ROLE_REQUIREMENT_SIGNALS = (
+    "experience", "knowledge", "skills", "ability", "proficiency",
+    "proficient", "familiar", "awareness", "comfortable", "expertise",
+    "responsible", "accountable", "expected to", "you will", "you'll",
+    "you ll", "you can", "you are able", "lead", "mentor", "manage",
+    "design", "develop", "test", "testing", "deploy", "scale", "secure", "monitor",
+    "collaborate", "communicate", "stakeholder", "technical direction",
+    "technical vision", "delivery", "architecture", "agile", "creating",
+    "pipeline", "pipelines",
+)
+
+NICE_SECTION_HEADERS = (
+    "nice to have", "preferred", "desirable", "bonus", "advantageous",
+    "ideal experience", "nice-to-have",
+)
+
+ESSENTIAL_SECTION_HEADERS = (
+    "what we're looking for", "what we are looking for", "required",
+    "requirements", "qualifications", "essential", "skills you will have",
+    "how you'll spend your time", "how you ll spend your time",
+    "responsibilities", "job responsibilities", "about you",
+)
+
+
+def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
+    if any(header in line_norm for header in NICE_SECTION_HEADERS):
+        return "nice_to_have"
+    if any(header in line_norm for header in ESSENTIAL_SECTION_HEADERS):
+        return "essential"
+    return current_category
+
+
+def _should_keep_requirement_line(text: str) -> bool:
+    norm = normalize_phrase(text)
+    if len(norm.split()) < 3:
+        return False
+    if _COMPANY_SUBJECT_RE.match(text):
+        return False
+    if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
+        return False
+    if any(noise in norm for noise in ("salary", "benefit", "pension", "healthcare", "annual leave", "dress code")):
+        return False
+    tokens = norm.split()
+    starts_action = bool(tokens) and tokens[0] in _ACTION_VERBS_SET
+    return starts_action or any(sig in norm for sig in ROLE_REQUIREMENT_SIGNALS)
+
+
+def _requirement_dict(text: str, category: str) -> dict | None:
+    cleaned = str(text or "").strip().strip("-*â€¢ ").strip()
+    if not _should_keep_requirement_line(cleaned):
+        return None
+    norm = normalize_phrase(cleaned)
+    return {
+        "text": cleaned,
+        "normalized": norm,
+        "action_phrases": extract_action_phrases(cleaned),
+        "category": category if category in {"essential", "nice_to_have"} else "essential",
+    }
+
+
+def extract_local_job_requirements(job_description: str, limit: int = 35) -> List[dict]:
+    """Deterministically extract candidate-owned requirements and responsibilities from a JD."""
+    requirements: List[dict] = []
+    seen: set[str] = set()
+    category = "essential"
+
+    for raw_line in str(job_description or "").splitlines():
+        line = raw_line.strip().strip("-*â€¢ ").strip()
+        if not line:
+            continue
+        line_norm = normalize_phrase(line)
+        next_category = _infer_requirement_category_from_context(line_norm, category)
+        if next_category != category and len(line_norm.split()) <= 6:
+            category = next_category
+            continue
+        category = next_category
+
+        clauses = [line]
+        if len(line.split()) > 28:
+            clauses = [
+                part.strip()
+                for part in re.split(r"(?<=[.!?])\s+", line)
+                if part.strip()
+            ] or [line]
+
+        for clause in clauses:
+            atoms = decompose_requirement_text(clause)
+            candidates = [a["text"] for a in atoms] if len(atoms) > 1 else [clause]
+            added_for_clause = False
+            for candidate in candidates:
+                req = _requirement_dict(candidate, category)
+                if not req:
+                    continue
+                norm = req["normalized"]
+                if norm in seen:
+                    continue
+                seen.add(norm)
+                requirements.append(req)
+                added_for_clause = True
+                if len(requirements) >= limit:
+                    return requirements
+            if not added_for_clause and candidates != [clause]:
+                req = _requirement_dict(clause, category)
+                if req and req["normalized"] not in seen:
+                    seen.add(req["normalized"])
+                    requirements.append(req)
+                    if len(requirements) >= limit:
+                        return requirements
+    return requirements
+
+
+def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit: int = 35) -> List[dict]:
+    merged: List[dict] = []
+    seen: set[str] = set()
+    for req in [*(primary or []), *(supplemental or [])]:
+        if not isinstance(req, dict):
+            continue
+        text = str(req.get("text") or "").strip()
+        norm = req.get("normalized") or normalize_phrase(text)
+        if not text or not norm or norm in seen:
+            continue
+        seen.add(norm)
+        merged.append({
+            "text": text,
+            "normalized": norm,
+            "action_phrases": req.get("action_phrases") or extract_action_phrases(text),
+            "category": req.get("category") if req.get("category") in {"essential", "nice_to_have"} else "essential",
+        })
+        if len(merged) >= limit:
+            break
+    return merged
+
 
 def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[dict]:
     """Extract essential + nice-to-have requirements from a JD using Gemini; regex fallback."""
+    effective_limit = max(limit, 35)
+    local_requirements = extract_local_job_requirements(job_description, limit=effective_limit)
     if GENAI_CLIENT:
         try:
             response = GENAI_CLIENT.models.generate_content(
@@ -2310,7 +2444,7 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
                             "category": category,
                         })
                     if result:
-                        return result
+                        return merge_job_requirements(result, local_requirements, limit=effective_limit)
         except Exception as exc:
             logger.warning("Gemini requirement extraction failed, using regex: %s", exc)
 
@@ -2343,10 +2477,11 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
                     "text": clause_text,
                     "normalized": normalized,
                     "action_phrases": action_phrases,
+                    "category": "essential",
                 })
-                if len(responsibilities) >= limit:
-                    return responsibilities
-    return responsibilities
+                if len(responsibilities) >= effective_limit:
+                    return merge_job_requirements(responsibilities, local_requirements, limit=effective_limit)
+    return merge_job_requirements(responsibilities, local_requirements, limit=effective_limit)
 
 
 ATOMIC_REQUIREMENT_HINTS = (
@@ -3309,11 +3444,27 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         evidence_tokens = set(evidence_norm.split())
         communication_signals = {
             "communication", "communicated", "communicate", "stakeholder", "stakeholders",
-            "presented", "presentation", "reported", "reports", "documentation",
-            "documented", "explained", "written", "verbal",
+            "presented", "presenting", "presentation", "presentations", "reported",
+            "reports", "reporting", "documentation", "documented", "explained",
+            "explain", "written", "verbal", "client", "clients",
         }
         if evidence_tokens.intersection(communication_signals):
-            if {"written", "verbal"}.intersection(set(req_norm.split())) and not {"written", "verbal"}.intersection(evidence_tokens):
+            req_tokens = set(req_norm.split())
+            req_modes = {
+                "written": bool({"written", "writing"}.intersection(req_tokens)),
+                "verbal": bool({"verbal", "spoken", "oral"}.intersection(req_tokens)),
+                "presentation": bool({"presentation", "presentations", "presenting"}.intersection(req_tokens)),
+            }
+            evidence_modes = {
+                "written": bool({"written", "documentation", "documented", "reported", "reports", "reporting"}.intersection(evidence_tokens)),
+                "verbal": bool({"verbal", "communicated", "communicate", "explained", "explain", "stakeholder", "stakeholders", "client", "clients"}.intersection(evidence_tokens)),
+                "presentation": bool({"presented", "presenting", "presentation", "presentations"}.intersection(evidence_tokens)),
+            }
+            requested_modes = [mode for mode, requested in req_modes.items() if requested]
+            if requested_modes:
+                covered_modes = sum(1 for mode in requested_modes if evidence_modes.get(mode))
+                if covered_modes == len(requested_modes) or covered_modes >= 2 or "communication" in evidence_tokens:
+                    return "strong"
                 return "partial"
             return "strong"
 
@@ -3899,6 +4050,149 @@ def compute_title_alignment(job_description: str, resume_text: str) -> dict:
         "job_terms": job_terms,
         "resume_terms": resume_terms,
         "aligned": bool(score >= 0.75),
+    }
+
+
+SENIORITY_LABELS = {
+    0: "unspecified",
+    1: "junior",
+    2: "mid",
+    3: "senior",
+    4: "lead",
+    5: "principal",
+}
+
+LEADERSHIP_EVIDENCE_TERMS = (
+    "lead", "led", "mentor", "mentored", "managed", "line management",
+    "technical direction", "technical vision", "accountable", "architecture",
+    "stakeholder", "client", "delivery", "roadmap", "prioritise", "prioritize",
+)
+
+
+def infer_role_seniority(job_description: str) -> dict:
+    terms = extract_seniority_terms(job_description)
+    norm = normalize_phrase(job_description)
+    if "technical direction" in norm or "technical vision" in norm or "accountable for the technical delivery" in norm:
+        terms.append("lead")
+    if "mentor" in norm or "line management" in norm:
+        terms.append("lead")
+    level = max((SENIORITY_LEVELS.get(term, 0) for term in terms), default=0)
+    return {
+        "level": level,
+        "label": SENIORITY_LABELS.get(level, "unspecified"),
+        "terms": merge_unique(terms),
+    }
+
+
+def infer_candidate_seniority(parsed_resume: dict, resume_text: str, resume_years: Optional[int]) -> dict:
+    terms = extract_seniority_terms(resume_text)
+    parsed_level = normalize_phrase(parsed_resume.get("seniority_level") or "")
+    if parsed_level in SENIORITY_LEVELS:
+        terms.append(parsed_level)
+    norm = normalize_phrase(resume_text)
+    leadership_hits = [term for term in LEADERSHIP_EVIDENCE_TERMS if term in norm]
+    level = max((SENIORITY_LEVELS.get(term, 0) for term in terms), default=0)
+    if level == 0:
+        if resume_years is not None and resume_years >= 8:
+            level = 3
+        elif resume_years is not None and resume_years >= 4:
+            level = 2
+        elif resume_years is not None:
+            level = 1
+    if level < 3 and len(leadership_hits) >= 4 and "junior" not in terms:
+        level = max(level, 2)
+    return {
+        "level": level,
+        "label": SENIORITY_LABELS.get(level, "unspecified"),
+        "terms": merge_unique(terms),
+        "leadership_evidence": merge_unique(leadership_hits),
+    }
+
+
+def compute_seniority_fit(job_description: str, parsed_resume: dict, resume_text: str, resume_years: Optional[int]) -> dict:
+    role = infer_role_seniority(job_description)
+    candidate = infer_candidate_seniority(parsed_resume, resume_text, resume_years)
+    role_level = role["level"]
+    candidate_level = candidate["level"]
+    if role_level == 0:
+        score = 100.0
+        gap = "No explicit seniority requirement detected."
+    elif candidate_level >= role_level:
+        score = 100.0
+        gap = "Candidate seniority appears aligned with the role level."
+    else:
+        level_gap = role_level - candidate_level
+        score = max(10.0, 100.0 - (level_gap * 32.0))
+        gap = f"Role appears {role['label']}-level while the CV reads closer to {candidate['label']} level."
+    fit_type = "aligned"
+    if role_level and candidate_level < role_level:
+        fit_type = "stretch" if role_level - candidate_level <= 2 else "underleveled"
+    return {
+        "score": round(score, 2),
+        "role": role,
+        "candidate": candidate,
+        "fit_type": fit_type,
+        "gap": gap,
+    }
+
+
+def compute_technical_relevance_score(
+    responsibility_score: float,
+    semantic_score: float,
+    skills_score: float,
+    experience_result: dict,
+) -> float:
+    evidence_score = experience_result.get("responsibility_evidence_score")
+    if evidence_score is None:
+        evidence_score = experience_result.get("score") or 0
+    score = (
+        responsibility_score * 0.45
+        + semantic_score * 0.25
+        + skills_score * 0.20
+        + float(evidence_score or 0) * 0.10
+    )
+    return round(max(0.0, min(100.0, score)), 2)
+
+
+def combine_final_match_score(base_score: float, technical_score: float, seniority_fit: dict) -> float:
+    role_level = (seniority_fit.get("role") or {}).get("level") or 0
+    seniority_score = seniority_fit.get("score") or 100.0
+    if role_level >= 4:
+        adjusted = technical_score * 0.60 + seniority_score * 0.40
+        return round(max(0.0, min(100.0, adjusted)), 2)
+    if role_level == 3:
+        adjusted = technical_score * 0.70 + seniority_score * 0.30
+        return round(max(0.0, min(100.0, adjusted)), 2)
+    return round(base_score, 2)
+
+
+def build_application_positioning(match_score: float, technical_score: float, seniority_fit: dict) -> dict:
+    fit_type = seniority_fit.get("fit_type") or "aligned"
+    role_label = (seniority_fit.get("role") or {}).get("label") or "unspecified"
+    candidate_label = (seniority_fit.get("candidate") or {}).get("label") or "unspecified"
+    if fit_type in {"stretch", "underleveled"}:
+        headline = "Technically relevant but under-leveled for this role"
+        tone = "stretch, evidence-based, avoid seniority overclaims"
+        cover_guidance = (
+            f"Frame the candidate as technically relevant with growth potential, but do not claim they are already a strong {role_label}-level fit. "
+            f"Acknowledge evidence honestly from a {candidate_label}-level profile."
+        )
+    elif match_score >= 75:
+        headline = "Strong fit"
+        tone = "confident and evidence-led"
+        cover_guidance = "Use confident fit language backed by specific CV evidence."
+    else:
+        headline = "Developing fit"
+        tone = "balanced and evidence-led"
+        cover_guidance = "Focus on transferable evidence and avoid unsupported claims."
+    return {
+        "fit_type": fit_type,
+        "headline": headline,
+        "cover_letter_tone": tone,
+        "cover_letter_guidance": cover_guidance,
+        "technical_relevance_score": technical_score,
+        "seniority_fit_score": seniority_fit.get("score"),
+        "seniority_gap": seniority_fit.get("gap"),
     }
 
 
@@ -5505,7 +5799,7 @@ async def analyze(
     skills_partial = merge_unique(partial_must_have + partial_nice_to_have)
     skills_missing = merge_unique(missing_must_have + missing_nice_to_have)
 
-    match_score = round(
+    base_match_score = round(
         (
             responsibility_result["score"] * RESPONSIBILITY_MATCH_WEIGHT
             + experience_result["score"] * EXPERIENCE_MATCH_WEIGHT
@@ -5514,7 +5808,16 @@ async def analyze(
         ),
         2,
     )
-    match_score = max(0.0, min(100.0, match_score))
+    base_match_score = max(0.0, min(100.0, base_match_score))
+    seniority_fit = compute_seniority_fit(job_description, parsed_resume, resume_text, resume_years)
+    technical_relevance_score = compute_technical_relevance_score(
+        responsibility_result["score"],
+        semantic_score,
+        skills_match_score,
+        experience_result,
+    )
+    match_score = combine_final_match_score(base_match_score, technical_relevance_score, seniority_fit)
+    application_positioning = build_application_positioning(match_score, technical_relevance_score, seniority_fit)
     cv_highlights = annotate_cv_lines(resume_sections_raw, responsibility_result, parsed_resume)
 
     role_fit_breakdown = {
@@ -5522,6 +5825,11 @@ async def analyze(
         "experience_match_score": experience_result["score"],
         "skills_match_score": skills_match_score,
         "semantic_score": round(semantic_score, 2),
+        "base_match_score": base_match_score,
+        "technical_relevance_score": technical_relevance_score,
+        "seniority_fit_score": seniority_fit["score"],
+        "seniority_fit": seniority_fit,
+        "application_positioning": application_positioning,
         "final_match_score": match_score,
         "matched_responsibilities": responsibility_result["matched_responsibilities"],
         "missing_responsibilities": responsibility_result["missing_responsibilities"],
@@ -5925,6 +6233,17 @@ def gemini_generate_cover_letter(resume_text: str, job_description: str) -> str:
         if domain_notes
         else "(No special domain evidence detected by the pre-scan.)"
     )
+    seniority_fit = compute_seniority_fit(
+        job_description,
+        {},
+        resume_text,
+        extract_resume_years(resume_text),
+    )
+    cover_positioning = build_application_positioning(
+        seniority_fit.get("score") or 0,
+        0,
+        seniority_fit,
+    )
 
     prompt = f"""{COVER_LETTER_SYSTEM_PROMPT}
 
@@ -5939,6 +6258,14 @@ JOB DESCRIPTION:
 ---
 JD-RELEVANT CV EVIDENCE TO PRIORITISE:
 {domain_notes_block}
+
+---
+APPLICATION POSITIONING RULES:
+- Fit headline: {cover_positioning['headline']}
+- Tone: {cover_positioning['cover_letter_tone']}
+- Seniority note: {cover_positioning['seniority_gap']}
+- Guidance: {cover_positioning['cover_letter_guidance']}
+- If the role is senior/lead-level and the CV is junior/early-career, do NOT say "strong fit", "ideal fit", or imply proven lead-level ownership. Frame the application as relevant technical experience plus growth potential.
 
 ---
 Generate the cover letter now."""
