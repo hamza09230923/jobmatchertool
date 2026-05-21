@@ -1593,6 +1593,54 @@ def normalize_rewrite_response(payload: dict) -> dict:
     return normalized
 
 
+def validate_rewrite_skills(rewrite: dict, resume_text: str) -> dict:
+    """Remove generated skills that are not evidenced in the source CV."""
+    if not isinstance(rewrite, dict):
+        return rewrite
+    parsed_for_validation = {"_resume_text": resume_text}
+    additional = [
+        str(item).strip()
+        for item in (rewrite.get("additional_keywords_to_include") or [])
+        if str(item).strip()
+    ]
+    validated_sections = []
+    removed = []
+
+    for section in rewrite.get("skills_section") or []:
+        if not isinstance(section, dict):
+            continue
+        kept_items = []
+        for skill in section.get("items") or []:
+            skill_text = str(skill).strip()
+            if not skill_text:
+                continue
+            evidence = find_cv_evidence_for_requirement(skill_text, parsed_for_validation, resume_text)
+            if evidence:
+                kept_items.append(skill_text)
+            else:
+                removed.append(skill_text)
+        if kept_items:
+            validated_sections.append({
+                "category": str(section.get("category") or "").strip(),
+                "items": merge_unique(kept_items),
+            })
+
+    for skill in removed:
+        note = f"{skill} (add only if accurate)"
+        if normalize_phrase(note) not in {normalize_phrase(item) for item in additional}:
+            additional.append(note)
+
+    rewrite["skills_section"] = validated_sections
+    rewrite["additional_keywords_to_include"] = additional[:15]
+    if removed:
+        missing = rewrite.setdefault("missing_information", [])
+        missing.append(
+            "Removed unevidenced generated skills from the rewritten skills section: "
+            + ", ".join(removed[:8])
+        )
+    return rewrite
+
+
 def extract_openai_output_text(response_json: dict) -> str:
     if not isinstance(response_json, dict):
         return ""
@@ -1681,7 +1729,7 @@ Return ONLY valid JSON with this exact schema:
   "missing_information": ["string"]
 }}
 
-Use concise UK CV style — action verb + outcome, no first-person pronouns. Optimize for role fit. For skills_section, include ALL skills evidenced in the CV plus every plausible JD skill to maximise ATS coverage. Preserve education as-is. Do not invent facts. For bullets missing a quantitative metric that would strengthen them, append [METRIC: short question] at the end. Add section_changes entries explaining what changed and why for each major rewrite. The rewritten_summary MUST end with a formal closing sentence explicitly naming the exact role title and company from the JD (e.g. "Eager to bring this expertise to the [Role Title] role at [Company]."). For additional_keywords_to_include, list every JD skill/keyword NOT already evidenced in the CV — these are skills the candidate should review and add if accurate.
+Use concise UK CV style — action verb + outcome, no first-person pronouns. Optimize for role fit. For skills_section, include ONLY skills explicitly evidenced in the CV. Do not add JD skills unless the source CV directly proves them. Preserve education as-is. Do not invent facts. For bullets missing a quantitative metric that would strengthen them, append [METRIC: short question] at the end. Add section_changes entries explaining what changed and why for each major rewrite. The rewritten_summary MUST end with a formal closing sentence explicitly naming the exact role title and company from the JD (e.g. "Eager to bring this expertise to the [Role Title] role at [Company]."). For additional_keywords_to_include, list every JD skill/keyword NOT already evidenced in the CV — these are skills the candidate should review and add only if accurate.
 
 Source CV:
 {resume_text}
@@ -1722,6 +1770,7 @@ Structured analysis:
     text = extract_openai_output_text(payload)
     parsed = parse_json_response(text)
     normalized = normalize_rewrite_response(parsed)
+    normalized = validate_rewrite_skills(normalized, resume_text)
     if not normalized["rewritten_summary"] and not normalized["experience_section"]:
         raise HTTPException(status_code=502, detail="OpenAI rewrite generation returned an invalid response.")
     return normalized
@@ -1769,7 +1818,7 @@ Your job:
 6. If a metric is missing, write a strong factual bullet without inventing the number, and list the missing metric in missing_information.
 7. Use concise UK CV style bullet points — action verb + outcome, no first-person pronouns.
 8. Optimize for role fit: responsibilities, ownership, governance, stakeholder communication.
-9. For skills_section, include ALL skills evidenced in the CV plus every relevant skill from the JD that is plausible given the candidate's background. Maximise ATS keyword coverage — do not limit to only what is explicitly mentioned in the CV. Group into Technical Skills and Soft Skills (or other logical groups).
+9. For skills_section, include ONLY skills explicitly evidenced in the CV. Do not add JD skills unless the source CV directly proves them. Put missing JD keywords in additional_keywords_to_include with the note that they should be added only if accurate. Group into Technical Skills and Soft Skills (or other logical groups).
 10. For education_section, extract as-is from the CV — do not rewrite or omit.
 11. For every bullet where a specific quantitative metric (%, £/$, number, timeframe) is absent but would materially change how a recruiter reads it, append exactly [METRIC: <short question>] at the end of the bullet. E.g. "Reduced churn [METRIC: by what %? over what period?]". Only add [METRIC:] where a real number would noticeably strengthen the line.
 12. For section_changes, write one concise entry per major rewrite — what changed and why it improves the candidate's positioning for this role. Be specific, not generic.
@@ -1845,6 +1894,7 @@ Structured analysis:
     )
     parsed = parse_json_response(getattr(response, "text", "") or "")
     normalized = normalize_rewrite_response(parsed)
+    normalized = validate_rewrite_skills(normalized, resume_text)
     if not normalized["rewritten_summary"] and not normalized["experience_section"]:
         raise HTTPException(status_code=502, detail="CV rewrite generation returned an invalid response.")
     return normalized
@@ -2185,6 +2235,223 @@ STRICT_TOOL_TERMS = {
 }
 
 
+DEGREE_TERMS = (
+    "degree", "bachelor", "bachelors", "bachelor's", "master", "masters",
+    "master's", "ba", "bsc", "bs", "ma", "msc", "ms", "llb", "jd", "phd",
+)
+SHORT_DEGREE_TERMS = {"ba", "bs", "ma", "ms", "jd"}
+
+DEGREE_SUBJECT_ALIASES = {
+    "accounting": ("accounting", "accountancy"),
+    "finance": ("finance", "financial"),
+    "law": ("law", "llb", "legal studies", "juris", "juris doctor"),
+    "english": ("english", "english literature", "english language"),
+    "computer science": ("computer science", "computing", "software engineering"),
+    "engineering": ("engineering",),
+    "mathematics": ("mathematics", "maths", "math"),
+    "economics": ("economics",),
+    "business": ("business", "business administration", "management"),
+}
+
+REGULATED_PROCESS_TERMS = (
+    "regulatory reporting", "regulatory reports", "regulatory filing",
+    "regulatory filings", "securities reporting", "statutory reporting",
+    "compliance reporting", "hipaa", "gdpr", "sox",
+    "regulatory requirement", "regulatory requirements",
+)
+
+CONTROL_GOVERNANCE_TERMS = (
+    "financial control", "product control", "balance sheet governance",
+    "control environment", "proofing", "reconciliation", "reconcile",
+    "reconciliations", "attestation", "attestations",
+)
+
+REPORTING_STRICT_TERMS = (
+    "financial statements", "balance sheet", "income statement",
+    "quarterly reporting", "annual reporting", "management reporting",
+    "external reporting",
+)
+
+
+def _extract_degree_subjects(req_norm: str) -> set:
+    subjects = set()
+    for canonical, aliases in DEGREE_SUBJECT_ALIASES.items():
+        if any(_phrase_present_in_normalized_text(normalize_phrase(alias), req_norm) for alias in aliases):
+            subjects.add(canonical)
+    return subjects
+
+
+def _requirement_policy(requirement: str) -> dict:
+    """Classify which evidence sections and specificity can prove a requirement."""
+    req_norm = normalize_phrase(requirement)
+    tokens = set(req_norm.split())
+    policy = {
+        "type": "general",
+        "strict": False,
+        "allowed_sections": {"skills", "experience", "projects", "summary", "education", "certifications"},
+        "subjects": set(),
+    }
+
+    has_degree_token = any(
+        (term in tokens) if term in SHORT_DEGREE_TERMS else (term in tokens or term in req_norm)
+        for term in DEGREE_TERMS
+    )
+    if has_degree_token:
+        policy.update({
+            "type": "degree",
+            "strict": True,
+            "allowed_sections": {"education"},
+            "subjects": _extract_degree_subjects(req_norm),
+        })
+        return policy
+
+    if any(term in req_norm for term in ("certification", "certificate", "certified", "licence", "license", "qts")):
+        policy.update({
+            "type": "certification",
+            "strict": True,
+            "allowed_sections": {"certifications", "education"},
+        })
+        return policy
+
+    if any(term in req_norm for term in REGULATED_PROCESS_TERMS):
+        policy.update({
+            "type": "regulated_process",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects", "certifications"},
+        })
+        return policy
+
+    if any(term in req_norm for term in CONTROL_GOVERNANCE_TERMS):
+        policy.update({
+            "type": "control_or_governance",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects"},
+        })
+        return policy
+
+    if any(term in req_norm for term in REPORTING_STRICT_TERMS):
+        policy.update({
+            "type": "reporting",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects"},
+        })
+        return policy
+
+    if any(term in req_norm for term in STRICT_TOOL_TERMS):
+        policy.update({
+            "type": "exact_tool",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects"},
+        })
+        return policy
+
+    if re.search(r"\b\d+\+?\s+years?\b", req_norm):
+        policy.update({
+            "type": "years_experience",
+            "strict": True,
+            "allowed_sections": {"experience"},
+        })
+        return policy
+
+    if "project management" in req_norm or "manage multiple deadlines" in req_norm or "deliverables" in req_norm:
+        policy.update({
+            "type": "project_management",
+            "allowed_sections": {"experience", "projects", "summary"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("people management", "line management", "managed team", "manage team", "mentoring", "mentor")):
+        policy.update({
+            "type": "management",
+            "strict": True,
+            "allowed_sections": {"experience"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("communication", "communicate", "written", "verbal", "presentation", "stakeholder")):
+        policy.update({
+            "type": "communication",
+            "allowed_sections": {"skills", "experience", "projects", "summary"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("data quality", "data integrity", "validation", "accuracy", "completeness")):
+        policy.update({
+            "type": "data_quality",
+            "allowed_sections": {"skills", "experience", "projects", "summary"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("experience in", "experience with", "exposure to", "professional experience")):
+        policy.update({
+            "type": "professional_experience",
+            "allowed_sections": {"experience", "projects", "summary"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("interest in", "knowledge of", "market knowledge", "industry knowledge", "domain")):
+        policy.update({
+            "type": "domain_exposure",
+            "allowed_sections": {"experience", "projects", "education", "summary"},
+        })
+    return policy
+
+
+def _evidence_has_degree_subject(evidence_norm: str, subjects: set) -> bool:
+    if not subjects:
+        return True
+    for subject in subjects:
+        aliases = DEGREE_SUBJECT_ALIASES.get(subject, (subject,))
+        if any(_phrase_present_in_normalized_text(normalize_phrase(alias), evidence_norm) for alias in aliases):
+            return True
+    return False
+
+
+def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
+    req_norm = normalize_phrase(requirement)
+    if policy["type"] == "degree":
+        terms = []
+        for subject in policy.get("subjects") or []:
+            terms.extend(DEGREE_SUBJECT_ALIASES.get(subject, (subject,)))
+        return merge_unique(terms)
+    if policy["type"] == "regulated_process":
+        return [term for term in REGULATED_PROCESS_TERMS if term in req_norm] or list(REGULATED_PROCESS_TERMS)
+    if policy["type"] == "control_or_governance":
+        return [term for term in CONTROL_GOVERNANCE_TERMS if term in req_norm] or list(CONTROL_GOVERNANCE_TERMS)
+    if policy["type"] == "reporting":
+        return [term for term in REPORTING_STRICT_TERMS if term in req_norm] or list(REPORTING_STRICT_TERMS)
+    return []
+
+
+def validate_evidence_for_requirement(requirement: str, evidence: str, confidence: str) -> dict | None:
+    policy = _requirement_policy(requirement)
+    section = infer_evidence_section(evidence)
+    evidence_norm = normalize_phrase(evidence)
+    if section not in policy["allowed_sections"]:
+        return None
+
+    if policy["type"] == "degree":
+        if not _evidence_has_degree_subject(evidence_norm, policy.get("subjects") or set()):
+            return None
+        return {"confidence": "strong", "section": section, "policy": policy}
+
+    explicit_terms = _policy_explicit_terms(policy, requirement)
+    if policy["strict"] and explicit_terms:
+        explicit_hit = any(
+            _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
+            for term in explicit_terms
+        )
+        if not explicit_hit:
+            return None
+
+    adjusted = confidence if confidence in ("strong", "partial") else "partial"
+    if policy["type"] == "professional_experience" and section in {"projects", "summary"}:
+        adjusted = "partial"
+    if policy["type"] == "project_management" and section in {"projects", "summary"}:
+        adjusted = "partial"
+    return {"confidence": adjusted, "section": section, "policy": policy}
+
+
 def _split_list_fragments(text: str) -> List[str]:
     raw_parts = re.split(r",|/|&|\band\b", text, flags=re.IGNORECASE)
     parts: List[str] = []
@@ -2210,6 +2477,16 @@ def decompose_requirement_text(text: str) -> List[dict]:
     source = str(text or "").strip()
     if not source:
         return []
+
+    parent_policy = _requirement_policy(source)
+    if parent_policy["type"] in {"degree", "certification", "years_experience"}:
+        normalized = normalize_phrase(source)
+        return [{
+            "text": source,
+            "normalized": normalized,
+            "strict": True,
+            "requirement_type": parent_policy["type"],
+        }]
 
     atoms: List[str] = []
 
@@ -2261,17 +2538,21 @@ def decompose_requirement_text(text: str) -> List[dict]:
         if not norm or norm == normalized_parent or norm in seen:
             continue
         seen.add(norm)
+        policy = _requirement_policy(atom)
         normalized_atoms.append({
             "text": atom,
             "normalized": norm,
-            "strict": requires_strict_evidence(atom) or norm in STRICT_TOOL_TERMS,
+            "strict": policy["strict"] or requires_strict_evidence(atom) or norm in STRICT_TOOL_TERMS,
+            "requirement_type": policy["type"],
         })
 
     if not normalized_atoms:
+        policy = _requirement_policy(source)
         normalized_atoms.append({
             "text": source,
             "normalized": normalized_parent,
-            "strict": requires_strict_evidence(source) or normalized_parent in STRICT_TOOL_TERMS,
+            "strict": policy["strict"] or requires_strict_evidence(source) or normalized_parent in STRICT_TOOL_TERMS,
+            "requirement_type": policy["type"],
         })
 
     return normalized_atoms
@@ -2303,10 +2584,13 @@ def aggregate_requirement_evidence(
             confidence = found["confidence"]
             status = "present" if found["confidence"] == "strong" else "partial"
         elif ai_present and ai_evidence and not atom["strict"]:
-            evidence = ai_evidence
-            section = infer_evidence_section(ai_evidence)
-            confidence = "partial" if ai_confidence not in ("strong", "partial") else ai_confidence
-            status = "partial" if confidence == "partial" else "present"
+            candidate_confidence = "partial" if ai_confidence not in ("strong", "partial") else ai_confidence
+            validated = validate_evidence_for_requirement(atom["text"], ai_evidence, candidate_confidence)
+            if validated:
+                evidence = ai_evidence
+                section = validated["section"]
+                confidence = validated["confidence"]
+                status = "partial" if confidence == "partial" else "present"
 
         breakdown.append({
             "requirement": atom["text"],
@@ -2315,6 +2599,7 @@ def aggregate_requirement_evidence(
             "evidence": evidence,
             "section": section,
             "strict": atom["strict"],
+            "requirement_type": atom.get("requirement_type") or _requirement_policy(atom["text"])["type"],
         })
 
     present_count = sum(1 for item in breakdown if item["status"] == "present")
@@ -2339,11 +2624,19 @@ def aggregate_requirement_evidence(
         best = next((item for item in breakdown if item["status"] in ("present", "partial") and item["evidence"]), None)
         best_evidence = best["evidence"] if best else None
         best_section = best["section"] if best else None
-    elif ai_present and ai_evidence and not requires_strict_evidence(requirement):
-        overall_status = "present" if ai_confidence == "strong" else "partial"
-        overall_confidence = "strong" if ai_confidence == "strong" else "partial"
-        best_evidence = ai_evidence
-        best_section = infer_evidence_section(ai_evidence)
+    elif ai_present and ai_evidence and not _requirement_policy(requirement)["strict"]:
+        candidate_confidence = "strong" if ai_confidence == "strong" else "partial"
+        validated = validate_evidence_for_requirement(requirement, ai_evidence, candidate_confidence)
+        if validated:
+            overall_status = "present" if validated["confidence"] == "strong" else "partial"
+            overall_confidence = validated["confidence"]
+            best_evidence = ai_evidence
+            best_section = validated["section"]
+        else:
+            overall_status = "missing"
+            overall_confidence = "missing"
+            best_evidence = None
+            best_section = None
     else:
         overall_status = "missing"
         overall_confidence = "missing"
@@ -2465,6 +2758,54 @@ def cv_project_evidence_lines(parsed_resume: dict, limit: int = 80) -> List[str]
     return lines[:limit]
 
 
+def cv_education_evidence_lines(parsed_resume: dict, limit: int = 40) -> List[str]:
+    lines: List[str] = []
+    seen_norms: set = set()
+
+    def _append(line: str) -> None:
+        norm = normalize_phrase(line)
+        if not norm or norm in seen_norms:
+            return
+        seen_norms.add(norm)
+        lines.append(line)
+
+    for education in (parsed_resume.get("education") or []):
+        if isinstance(education, str):
+            if education.strip():
+                _append(f"[Education] {education.strip()}")
+            continue
+        if not isinstance(education, dict):
+            continue
+        parts = []
+        for key in ("degree", "institution", "graduation_year", "gpa"):
+            value = str(education.get(key) or "").strip()
+            if value:
+                parts.append(value)
+        if parts:
+            _append("[Education] " + " | ".join(parts))
+        if len(lines) >= limit:
+            return lines[:limit]
+
+    raw_resume = str(parsed_resume.get("_resume_text") or "")
+    if raw_resume:
+        raw_education = (split_resume_sections_raw(raw_resume) or {}).get("education", "") or ""
+        for raw_line in split_text_units(raw_education):
+            _append(f"[Education] {raw_line}")
+            if len(lines) >= limit:
+                return lines[:limit]
+    return lines[:limit]
+
+
+def cv_certification_evidence_lines(parsed_resume: dict, limit: int = 30) -> List[str]:
+    lines: List[str] = []
+    for cert in (parsed_resume.get("certifications") or []):
+        if isinstance(cert, str) and cert.strip():
+            lines.append(f"[Certification] {cert.strip()}")
+            if len(lines) >= limit:
+                return lines
+    return lines
+
+
 def cv_skills_evidence_line(parsed_resume: dict, limit: int = 80) -> str:
     skills = []
     for key in ("skills", "tools", "soft_skills"):
@@ -2483,6 +2824,12 @@ def format_cv_match_evidence(
     summary = str(parsed_resume.get("summary") or "").strip()
     if summary:
         cv_parts.append(f"SUMMARY:\n{summary}")
+    education_lines = cv_education_evidence_lines(parsed_resume, limit=20)
+    if education_lines:
+        cv_parts.append("EDUCATION EVIDENCE:\n" + "\n".join(education_lines))
+    certification_lines = cv_certification_evidence_lines(parsed_resume, limit=20)
+    if certification_lines:
+        cv_parts.append("CERTIFICATION EVIDENCE:\n" + "\n".join(certification_lines))
     skills_line = cv_skills_evidence_line(parsed_resume)
     if skills_line:
         cv_parts.append(skills_line)
@@ -2499,6 +2846,10 @@ def infer_evidence_section(evidence: str) -> str:
     text = (evidence or "").strip()
     if text.startswith("[Project"):
         return "projects"
+    if text.startswith("[Education"):
+        return "education"
+    if text.startswith("[Certification"):
+        return "certifications"
     if text.startswith("SKILLS:"):
         return "skills"
     if text.startswith("SUMMARY:"):
@@ -2548,7 +2899,7 @@ STRICT_EVIDENCE_TERMS = (
 
 def requires_strict_evidence(requirement: str) -> bool:
     req_norm = normalize_phrase(requirement)
-    return any(term in req_norm for term in STRICT_EVIDENCE_TERMS)
+    return _requirement_policy(requirement)["strict"] or any(term in req_norm for term in STRICT_EVIDENCE_TERMS)
 
 
 def classify_requirement_evidence_match(requirement: str, evidence_text: str) -> str | None:
@@ -2556,6 +2907,28 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
     evidence_norm = normalize_phrase(evidence_text)
     if not req_norm or not evidence_norm:
         return None
+
+    policy = _requirement_policy(requirement)
+    if policy["type"] == "degree":
+        has_degree_signal = any(
+            _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
+            for term in DEGREE_TERMS
+            if term not in SHORT_DEGREE_TERMS or f" {term} " in f" {evidence_norm} "
+        )
+        if has_degree_signal and _evidence_has_degree_subject(evidence_norm, policy.get("subjects") or set()):
+            return "strong"
+        return None
+
+    if policy["type"] == "project_management":
+        evidence_tokens = set(evidence_norm.split())
+        management_signals = {
+            "coordinated", "coordinate", "managed", "manage", "tracked", "planned",
+            "delivered", "delivery", "stakeholder", "stakeholders", "deadline",
+            "deadlines", "deliverables", "process", "improvements", "initiative",
+            "initiatives",
+        }
+        if evidence_tokens.intersection(management_signals):
+            return "partial"
 
     for alias in _requirement_aliases(requirement):
         alias_norm = normalize_phrase(alias)
@@ -2607,6 +2980,8 @@ def find_cv_evidence_for_requirement(
         return None
 
     evidence_lines = []
+    evidence_lines.extend(cv_education_evidence_lines(parsed_resume, limit=60))
+    evidence_lines.extend(cv_certification_evidence_lines(parsed_resume, limit=40))
     skills_line = cv_skills_evidence_line(parsed_resume)
     if skills_line:
         evidence_lines.append(skills_line)
@@ -2622,10 +2997,14 @@ def find_cv_evidence_for_requirement(
     for line in evidence_lines:
         confidence = classify_requirement_evidence_match(requirement, line)
         if confidence:
+            validated = validate_evidence_for_requirement(requirement, line, confidence)
+            if not validated:
+                continue
             return {
                 "evidence": line,
-                "section": infer_evidence_section(line),
-                "confidence": confidence,
+                "section": validated["section"],
+                "confidence": validated["confidence"],
+                "requirement_type": validated["policy"]["type"],
             }
 
     return None
@@ -2693,6 +3072,12 @@ def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
     skills_line = cv_skills_evidence_line(parsed_resume)
     if skills_line:
         _add(skills_line, "skills", 0.65)
+
+    for line in cv_education_evidence_lines(parsed_resume, limit=40):
+        _add(line, "education", 0.9)
+
+    for line in cv_certification_evidence_lines(parsed_resume, limit=30):
+        _add(line, "certifications", 0.9)
 
     for line in cv_work_evidence_lines(parsed_resume, limit=100):
         _add(line, "experience", 1.0)

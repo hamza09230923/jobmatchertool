@@ -42,6 +42,43 @@ def sample_resume():
     }
 
 
+def degree_resume():
+    resume_text = """
+    Education
+    BA English Literature, University of Nottingham, 2024
+
+    Projects
+    Built a legal case summarisation tool using Python and embeddings.
+    Built a financial prediction dashboard using market data and sentiment signals.
+    """
+    return {
+        "_resume_text": resume_text,
+        "summary": "Graduate with Python project experience in legal and finance-adjacent tools.",
+        "skills": ["Python", "communication"],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BA English Literature",
+                "institution": "University of Nottingham",
+                "graduation_year": "2024",
+            }
+        ],
+        "projects": [
+            {
+                "name": "Legal Case Summarisation Tool",
+                "tech_stack": ["Python"],
+                "bullets": ["Built a legal case summarisation tool using Python and embeddings."],
+            },
+            {
+                "name": "Financial Prediction Dashboard",
+                "tech_stack": ["Python"],
+                "bullets": ["Built a financial prediction dashboard using market data and sentiment signals."],
+            },
+        ],
+        "work_experience": [],
+    }
+
+
 def test_aggregate_requirement_marks_react_typescript_as_partial():
     parsed_resume = sample_resume()
     result = main.aggregate_requirement_evidence(
@@ -139,3 +176,112 @@ def test_gemini_skills_and_ats_preserves_partial_status(monkeypatch):
         atom["requirement"].lower() == "typescript" and atom["status"] == "missing"
         for atom in skill["atomic_breakdown"]
     )
+
+
+def test_degree_requirements_only_match_education_subjects():
+    parsed_resume = degree_resume()
+
+    english = main.aggregate_requirement_evidence(
+        "Bachelor's degree in English",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    law = main.aggregate_requirement_evidence(
+        "Law degree",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    finance = main.aggregate_requirement_evidence(
+        "Bachelor's degree in Finance",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert english["status"] == "present"
+    assert english["section"] == "education"
+    assert law["status"] == "missing"
+    assert finance["status"] == "missing"
+
+
+def test_finance_reporting_terms_do_not_match_financial_market_project():
+    parsed_resume = degree_resume()
+
+    statements = main.aggregate_requirement_evidence(
+        "financial statements",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    control = main.aggregate_requirement_evidence(
+        "financial control",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    reporting = main.aggregate_requirement_evidence(
+        "regulatory reporting",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert statements["status"] == "missing"
+    assert control["status"] == "missing"
+    assert reporting["status"] == "missing"
+
+
+def test_project_management_can_be_partial_from_project_delivery_evidence():
+    parsed_resume = {
+        "_resume_text": "",
+        "summary": "",
+        "skills": [],
+        "tools": [],
+        "education": [],
+        "projects": [
+            {
+                "name": "Data Quality Migration",
+                "tech_stack": ["SQL"],
+                "bullets": [
+                    "Coordinated stakeholders, tracked deliverables, and delivered process improvements for a data quality migration."
+                ],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Project management experience supporting process improvements and data-quality initiatives",
+        parsed_resume,
+        "",
+    )
+
+    assert result["status"] == "partial"
+    assert result["section"] == "projects"
+
+
+def test_rewrite_skill_validator_removes_unevidenced_jd_skills():
+    parsed_resume = degree_resume()
+    rewrite = {
+        "skills_section": [
+            {
+                "category": "Skills",
+                "items": [
+                    "Python",
+                    "English",
+                    "Law",
+                    "Accounting",
+                    "Regulatory Reporting",
+                ],
+            }
+        ],
+        "additional_keywords_to_include": [],
+        "missing_information": [],
+    }
+
+    result = main.validate_rewrite_skills(rewrite, parsed_resume["_resume_text"])
+    skills = result["skills_section"][0]["items"]
+
+    assert "Python" in skills
+    assert "English" in skills
+    assert "Law" not in skills
+    assert "Accounting" not in skills
+    assert "Regulatory Reporting" not in skills
+    assert any("Law" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
+    assert any("Regulatory Reporting" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
