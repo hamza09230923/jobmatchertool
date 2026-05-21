@@ -294,19 +294,6 @@ a {
   letter-spacing: 0.01em;
 }
 
-.example-preview-row {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0 56px;
-}
-.example-preview-subhint {
-  font-size: 0.74rem;
-  color: rgba(184, 192, 212, 0.45);
-  letter-spacing: 0.01em;
-}
-
 .landing-footer {
   margin-top: 72px;
   padding: 28px 0 16px;
