@@ -214,6 +214,177 @@ def test_degree_requirements_only_match_education_subjects():
     assert finance["status"] == "missing"
 
 
+def test_degree_project_circuit_experience_not_proven_by_cs_degree_only():
+    parsed_resume = {
+        "_resume_text": """
+        Education
+        BSc Computer Science (Artificial Intelligence), University of Nottingham, 2025
+        """,
+        "summary": "",
+        "skills": ["Python"],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BSc Computer Science (Artificial Intelligence)",
+                "institution": "University of Nottingham",
+                "graduation_year": "2025",
+            }
+        ],
+        "projects": [],
+        "work_experience": [],
+    }
+
+    degree = main.aggregate_requirement_evidence(
+        "Undergraduate degree in electronic engineering, computer science or similar discipline",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    circuits = main.aggregate_requirement_evidence(
+        "Experience analysing, designing, constructing & testing electronic circuits during degree projects",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert degree["status"] == "present"
+    assert circuits["status"] == "missing"
+
+
+def test_postgraduate_qualification_not_proven_by_bsc():
+    bsc_resume = {
+        "_resume_text": "Education\nBSc Computer Science, University of Nottingham, 2025",
+        "summary": "",
+        "skills": [],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BSc Computer Science",
+                "institution": "University of Nottingham",
+                "graduation_year": "2025",
+            }
+        ],
+        "projects": [],
+        "work_experience": [],
+    }
+    msc_resume = {
+        **bsc_resume,
+        "_resume_text": "Education\nMSc Computer Science, University of Nottingham, 2026",
+        "education": [
+            {
+                "degree": "MSc Computer Science",
+                "institution": "University of Nottingham",
+                "graduation_year": "2026",
+            }
+        ],
+    }
+
+    requirement = "Post graduate qualification (Master/PHD) in electronics engineering, computer science or similar discipline"
+
+    assert main.aggregate_requirement_evidence(requirement, bsc_resume, bsc_resume["_resume_text"])["status"] == "missing"
+    assert main.aggregate_requirement_evidence(requirement, msc_resume, msc_resume["_resume_text"])["status"] == "present"
+
+
+def test_master_data_management_is_not_treated_as_masters_degree():
+    parsed_resume = {
+        "_resume_text": "Projects\nBuilt a data quality dashboard using SQL.",
+        "summary": "",
+        "skills": ["SQL", "data quality"],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BSc Computer Science",
+                "institution": "University of Nottingham",
+                "graduation_year": "2025",
+            }
+        ],
+        "projects": [
+            {
+                "name": "Data Quality Dashboard",
+                "tech_stack": ["SQL"],
+                "bullets": ["Built a data quality dashboard using SQL."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    policy = main._requirement_policy("Master data management experience")
+    result = main.aggregate_requirement_evidence(
+        "Master data management experience",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert policy["type"] != "postgraduate_degree"
+    assert result["status"] != "present"
+
+
+def test_final_year_degree_project_does_not_prove_electronics_without_evidence():
+    parsed_resume = {
+        "_resume_text": """
+        Education
+        BSc Computer Science, University of Nottingham, 2025
+
+        Projects
+        Final year degree project: Built a web analytics dashboard using Python and React.
+        """,
+        "summary": "",
+        "skills": ["Python", "React"],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BSc Computer Science",
+                "institution": "University of Nottingham",
+                "graduation_year": "2025",
+            }
+        ],
+        "projects": [
+            {
+                "name": "Final Year Degree Project",
+                "tech_stack": ["Python", "React"],
+                "bullets": ["Built a web analytics dashboard using Python and React."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Experience analysing, designing, constructing & testing electronic circuits during degree projects",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "missing"
+
+
+def test_certification_named_project_does_not_prove_certification():
+    parsed_resume = {
+        "_resume_text": """
+        Projects
+        AWS Certification Tracker: Built a dashboard for tracking cloud learning progress.
+        """,
+        "summary": "",
+        "skills": ["AWS", "Python"],
+        "tools": [],
+        "education": [],
+        "certifications": [],
+        "projects": [
+            {
+                "name": "AWS Certification Tracker",
+                "tech_stack": ["Python"],
+                "bullets": ["Built a dashboard for tracking cloud learning progress."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "AWS certification",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "missing"
+
+
 def test_finance_reporting_terms_do_not_match_financial_market_project():
     parsed_resume = degree_resume()
 
@@ -265,6 +436,119 @@ def test_project_management_can_be_partial_from_project_delivery_evidence():
 
     assert result["status"] == "partial"
     assert result["section"] == "projects"
+
+
+def test_at_least_one_language_examples_are_not_all_required():
+    parsed_resume = {
+        "_resume_text": "Skills\nPython, SQL, Git",
+        "summary": "",
+        "skills": ["Python", "SQL", "Git"],
+        "tools": [],
+        "education": [],
+        "projects": [],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Strong programming skills in at least one relevant language such as Python, Java, C++, C#, or JavaScript",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert result["matched_count"] == 1
+    assert result["total_count"] == 1
+    assert any(
+        atom["requirement"].lower() == "python" and atom["status"] == "present"
+        for atom in result["atomic_breakdown"]
+    )
+    assert any(
+        atom["requirement"].lower() == "c++" and atom["status"] == "missing"
+        for atom in result["atomic_breakdown"]
+    )
+
+
+def test_such_as_framework_examples_are_alternatives():
+    parsed_resume = {
+        "_resume_text": "Skills\nMachine learning, PyTorch, TensorFlow",
+        "summary": "",
+        "skills": ["Machine learning", "PyTorch", "TensorFlow"],
+        "tools": [],
+        "education": [],
+        "projects": [],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Exposure to machine learning frameworks or libraries such as PyTorch, TensorFlow, or Scikit-learn",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert result["matched_count"] == 1
+    assert result["total_count"] == 1
+    assert any(
+        atom["requirement"].lower() == "scikit-learn" and atom["status"] == "missing"
+        for atom in result["atomic_breakdown"]
+    )
+
+
+def test_missing_skills_from_satisfied_alternative_list_are_not_penalized():
+    items = [
+        {"skill": "Python", "status": "present", "present": True},
+        {"skill": "C++", "status": "missing", "present": False},
+        {"skill": "C#", "status": "missing", "present": False},
+        {"skill": "JavaScript", "status": "present", "present": True},
+    ]
+    jd = "Strong programming skills in at least one relevant language such as Python, Java, C++, C#, or JavaScript."
+
+    result = main.filter_satisfied_alternative_missing_skills(items, jd)
+    skills = [item["skill"] for item in result]
+
+    assert "Python" in skills
+    assert "JavaScript" in skills
+    assert "C++" not in skills
+    assert "C#" not in skills
+
+
+def test_early_career_project_experience_satisfies_zero_to_one_year_requirement():
+    parsed_resume = {
+        "_resume_text": """
+        Education
+        BSc Computer Science with Artificial Intelligence, University of Nottingham, 2025
+
+        Projects
+        Built a CV matching platform using Python and FastAPI.
+        """,
+        "summary": "",
+        "skills": ["Python"],
+        "tools": [],
+        "education": [
+            {
+                "degree": "BSc Computer Science with Artificial Intelligence",
+                "institution": "University of Nottingham",
+                "graduation_year": "2025",
+            }
+        ],
+        "projects": [
+            {
+                "name": "CV Matching Platform",
+                "tech_stack": ["Python", "FastAPI"],
+                "bullets": ["Built a CV matching platform using Python and FastAPI."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "0-1 years of relevant experience through academic projects, internships, placements, or early professional experience",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert result["section"] in {"education", "projects"}
 
 
 def test_rewrite_skill_validator_removes_unevidenced_jd_skills():

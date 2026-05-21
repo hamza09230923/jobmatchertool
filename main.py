@@ -2364,6 +2364,7 @@ STRICT_TOOL_TERMS = {
     "docker",
     "kubernetes",
     "c++",
+    "c#",
     "cpp",
     "equities",
     "equity",
@@ -2375,6 +2376,13 @@ STRICT_TOOL_TERMS = {
     "lakehouse",
     "messaging middleware",
 }
+
+
+ALTERNATIVE_LIST_MARKERS = (
+    "at least one",
+    "one of",
+    "any of",
+)
 
 
 DEGREE_TERMS = (
@@ -2394,6 +2402,35 @@ DEGREE_SUBJECT_ALIASES = {
     "economics": ("economics",),
     "business": ("business", "business administration", "management"),
 }
+
+POSTGRADUATE_DEGREE_TERMS = (
+    "post graduate", "postgraduate", "masters", "master's", "master",
+    "msc", "ma", "phd", "doctorate",
+)
+
+UNDERGRADUATE_DEGREE_TERMS = (
+    "undergraduate degree", "bachelor", "bachelors", "bachelor's",
+    "bsc", "ba", "bs", "llb",
+)
+
+
+SHORT_POSTGRADUATE_DEGREE_TERMS = {"ma", "ms", "msc", "phd"}
+
+
+def _is_postgraduate_degree_requirement(req_norm: str, tokens: set) -> bool:
+    if "post graduate qualification" in req_norm or "postgraduate qualification" in req_norm:
+        return True
+    if "post graduate degree" in req_norm or "postgraduate degree" in req_norm:
+        return True
+    if re.search(r"\b(master|masters|master s|msc|ma|phd|doctorate)\b\s+(degree|qualification)\b", req_norm):
+        return True
+    if re.search(r"\b(degree|qualification)\b\s+(at\s+)?\b(master|masters|master s|msc|ma|phd|doctorate)\b", req_norm):
+        return True
+    if tokens.intersection({"msc", "phd", "doctorate"}) and (
+        "qualification" in tokens or "degree" in tokens
+    ):
+        return True
+    return False
 
 REGULATED_PROCESS_TERMS = (
     "regulatory reporting", "regulatory reports", "regulatory filing",
@@ -2434,7 +2471,17 @@ def _requirement_policy(requirement: str) -> dict:
         "subjects": set(),
     }
 
-    has_degree_token = any(
+    is_degree_project_requirement = bool(re.search(r"\bdegree\s+projects?\b", req_norm))
+    if _is_postgraduate_degree_requirement(req_norm, tokens):
+        policy.update({
+            "type": "postgraduate_degree",
+            "strict": True,
+            "allowed_sections": {"education"},
+            "subjects": _extract_degree_subjects(req_norm),
+        })
+        return policy
+
+    has_degree_token = not is_degree_project_requirement and any(
         (term in tokens) if term in SHORT_DEGREE_TERMS else (term in tokens or term in req_norm)
         for term in DEGREE_TERMS
     )
@@ -2484,6 +2531,22 @@ def _requirement_policy(requirement: str) -> dict:
             "type": "exact_tool",
             "strict": True,
             "allowed_sections": {"skills", "experience", "projects"},
+        })
+        return policy
+
+    raw_req = str(requirement or "").lower()
+    is_early_career_range = (
+        bool(re.search(r"\b0\s*(?:-|–|—|to)\s*1\s+years?\b", raw_req))
+        or "0 1 years" in req_norm
+    )
+    if is_early_career_range and any(
+        term in req_norm
+        for term in ("academic project", "academic projects", "internship", "internships", "placement", "placements", "early professional")
+    ):
+        policy.update({
+            "type": "early_career_experience",
+            "strict": False,
+            "allowed_sections": {"education", "experience", "projects"},
         })
         return policy
 
@@ -2556,9 +2619,16 @@ def _evidence_has_degree_subject(evidence_norm: str, subjects: set) -> bool:
     return False
 
 
+def _evidence_has_postgraduate_degree(evidence_norm: str) -> bool:
+    return any(
+        _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
+        for term in POSTGRADUATE_DEGREE_TERMS
+    )
+
+
 def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
     req_norm = normalize_phrase(requirement)
-    if policy["type"] == "degree":
+    if policy["type"] in {"degree", "postgraduate_degree"}:
         terms = []
         for subject in policy.get("subjects") or []:
             terms.extend(DEGREE_SUBJECT_ALIASES.get(subject, (subject,)))
@@ -2584,6 +2654,13 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
             return None
         return {"confidence": "strong", "section": section, "policy": policy}
 
+    if policy["type"] == "postgraduate_degree":
+        if not _evidence_has_postgraduate_degree(evidence_norm):
+            return None
+        if not _evidence_has_degree_subject(evidence_norm, policy.get("subjects") or set()):
+            return None
+        return {"confidence": "strong", "section": section, "policy": policy}
+
     explicit_terms = _policy_explicit_terms(policy, requirement)
     if policy["strict"] and explicit_terms:
         explicit_hit = any(
@@ -2602,10 +2679,15 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
 
 
 def _split_list_fragments(text: str) -> List[str]:
-    raw_parts = re.split(r",|/|&|\band\b", text, flags=re.IGNORECASE)
+    raw_parts = re.split(r",|/|&|\band\b|\bor\b", text, flags=re.IGNORECASE)
     parts: List[str] = []
     for part in raw_parts:
-        cleaned = str(part or "").strip(" -:;,.()")
+        cleaned = re.sub(
+            r"^(and|or)\s+",
+            "",
+            str(part or "").strip(" -:;,.()"),
+            flags=re.IGNORECASE,
+        )
         if not cleaned:
             continue
         parts.append(cleaned)
@@ -2621,6 +2703,78 @@ def _strip_requirement_lead(text: str) -> str:
     ).strip(" -:;,.")
 
 
+def _looks_like_alternative_list(source: str, right: str) -> bool:
+    source_norm = normalize_phrase(source)
+    right_norm = normalize_phrase(right)
+    return (
+        any(marker in source_norm for marker in ALTERNATIVE_LIST_MARKERS)
+        or f" {right_norm} ".find(" or ") != -1
+    )
+
+
+def extract_alternative_skill_groups(text: str) -> List[set[str]]:
+    groups: List[set[str]] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        for marker in ("such as", "including"):
+            match = re.search(rf"\b{re.escape(marker)}\b(.+)$", line, flags=re.IGNORECASE)
+            if not match:
+                continue
+            right = match.group(1).strip(" -:;,.")
+            if not _looks_like_alternative_list(line, right):
+                continue
+            fragments = _split_list_fragments(right)
+            group = {normalize_phrase(fragment) for fragment in fragments if normalize_phrase(fragment)}
+            if len(group) >= 2:
+                groups.append(group)
+            break
+    return groups
+
+
+def filter_satisfied_alternative_missing_skills(items: List[dict], job_description: str) -> List[dict]:
+    groups = extract_alternative_skill_groups(job_description)
+    if not groups:
+        return items
+
+    item_norms = {id(item): normalize_phrase(item.get("skill") or "") for item in items}
+    suppress: set[str] = set()
+    for group in groups:
+        matching_items = [item for item in items if item_norms.get(id(item)) in group]
+        if not matching_items:
+            continue
+        group_satisfied = any((item.get("status") or "") in {"present", "partial"} for item in matching_items)
+        if group_satisfied:
+            suppress.update(
+                item_norms[id(item)]
+                for item in matching_items
+                if (item.get("status") or "missing") == "missing"
+            )
+    if not suppress:
+        return items
+    return [item for item in items if item_norms.get(id(item)) not in suppress]
+
+
+def _append_alternative_atoms(atoms: List[dict], fragments: List[str], group_id: str) -> bool:
+    added = False
+    for fragment in fragments:
+        norm = normalize_phrase(fragment)
+        if not norm:
+            continue
+        policy = _requirement_policy(fragment)
+        atoms.append({
+            "text": fragment,
+            "normalized": norm,
+            "strict": policy["strict"] or requires_strict_evidence(fragment) or norm in STRICT_TOOL_TERMS,
+            "requirement_type": policy["type"],
+            "group_id": group_id,
+            "group_mode": "any",
+        })
+        added = True
+    return added
+
+
 def decompose_requirement_text(text: str) -> List[dict]:
     """Split bundled JD requirements into atomic sub-requirements."""
     source = str(text or "").strip()
@@ -2628,16 +2782,16 @@ def decompose_requirement_text(text: str) -> List[dict]:
         return []
 
     parent_policy = _requirement_policy(source)
-    if parent_policy["type"] in {"degree", "certification", "years_experience"}:
+    if parent_policy["type"] in {"degree", "postgraduate_degree", "certification", "years_experience", "early_career_experience"}:
         normalized = normalize_phrase(source)
         return [{
             "text": source,
             "normalized": normalized,
-            "strict": True,
+            "strict": parent_policy["strict"],
             "requirement_type": parent_policy["type"],
         }]
 
-    atoms: List[str] = []
+    atoms: List[str | dict] = []
 
     paren_chunks = re.findall(r"\(([^)]+)\)", source)
     for chunk in paren_chunks:
@@ -2652,6 +2806,12 @@ def decompose_requirement_text(text: str) -> List[dict]:
             continue
         left = _strip_requirement_lead(match.group(1))
         right = match.group(2).strip(" -:;,.")
+        if marker in {"such as", "including"} and _looks_like_alternative_list(source, right):
+            fragments = _split_list_fragments(right)
+            group_id = f"any:{normalize_phrase(right)}"
+            if _append_alternative_atoms(atoms, fragments, group_id):
+                marker_matched = True
+                break
         if left:
             atoms.append(left)
         atoms.extend(_split_list_fragments(right))
@@ -2665,7 +2825,11 @@ def decompose_requirement_text(text: str) -> List[dict]:
             right = especially_match.group(2).strip(" -:;,.")
             if left:
                 atoms.extend(_split_list_fragments(left))
-            atoms.extend(_split_list_fragments(right))
+            fragments = _split_list_fragments(right)
+            if _looks_like_alternative_list(source, right):
+                _append_alternative_atoms(atoms, fragments, f"any:{normalize_phrase(right)}")
+            else:
+                atoms.extend(fragments)
             marker_matched = True
 
     if not marker_matched:
@@ -2680,6 +2844,14 @@ def decompose_requirement_text(text: str) -> List[dict]:
     normalized_atoms = []
     seen = set()
     for atom in atoms:
+        if isinstance(atom, dict):
+            norm = atom.get("normalized") or normalize_phrase(atom.get("text"))
+            if not norm or norm == normalized_parent or norm in seen:
+                continue
+            seen.add(norm)
+            normalized_atoms.append(atom)
+            continue
+
         atom = atom.strip()
         if len(atom.split()) == 1:
             atom = atom.replace(".", "")
@@ -2749,12 +2921,49 @@ def aggregate_requirement_evidence(
             "section": section,
             "strict": atom["strict"],
             "requirement_type": atom.get("requirement_type") or _requirement_policy(atom["text"])["type"],
+            "group_id": atom.get("group_id"),
+            "group_mode": atom.get("group_mode"),
         })
 
-    present_count = sum(1 for item in breakdown if item["status"] == "present")
-    partial_count = sum(1 for item in breakdown if item["status"] == "partial")
+    coverage_items = []
+    grouped_items: dict[str, list[dict]] = {}
+    for item in breakdown:
+        group_id = item.get("group_id")
+        if group_id and item.get("group_mode") == "any":
+            grouped_items.setdefault(group_id, []).append(item)
+        else:
+            coverage_items.append(item)
+
+    for group_id, items in grouped_items.items():
+        matched = [item for item in items if item["status"] in {"present", "partial"}]
+        if any(item["status"] == "present" for item in matched):
+            group_status = "present"
+            group_confidence = "strong"
+        elif matched:
+            group_status = "partial"
+            group_confidence = "partial"
+        else:
+            group_status = "missing"
+            group_confidence = "missing"
+        for item in items:
+            item["group_status"] = group_status
+        best = next((item for item in matched if item.get("evidence")), None)
+        coverage_items.append({
+            "requirement": " / ".join(item["requirement"] for item in items),
+            "status": group_status,
+            "confidence": group_confidence,
+            "evidence": best.get("evidence") if best else None,
+            "section": best.get("section") if best else None,
+            "strict": any(item.get("strict") for item in items),
+            "requirement_type": "alternative_group",
+            "group_id": group_id,
+            "group_mode": "any",
+        })
+
+    present_count = sum(1 for item in coverage_items if item["status"] == "present")
+    partial_count = sum(1 for item in coverage_items if item["status"] == "partial")
     matched_count = present_count + partial_count
-    total_count = max(1, len(breakdown))
+    total_count = max(1, len(coverage_items))
 
     if parent_found and matched_count == 0:
         overall_status = "present" if parent_found["confidence"] == "strong" else "partial"
@@ -2764,13 +2973,13 @@ def aggregate_requirement_evidence(
     elif matched_count == total_count and partial_count == 0:
         overall_status = "present"
         overall_confidence = "strong"
-        best = next((item for item in breakdown if item["evidence"]), None)
+        best = next((item for item in coverage_items if item["evidence"]), None)
         best_evidence = best["evidence"] if best else None
         best_section = best["section"] if best else None
     elif matched_count > 0:
         overall_status = "partial"
         overall_confidence = "partial"
-        best = next((item for item in breakdown if item["status"] in ("present", "partial") and item["evidence"]), None)
+        best = next((item for item in coverage_items if item["status"] in ("present", "partial") and item["evidence"]), None)
         best_evidence = best["evidence"] if best else None
         best_section = best["section"] if best else None
     elif ai_present and ai_evidence and not _requirement_policy(requirement)["strict"]:
@@ -3034,6 +3243,7 @@ STRICT_EVIDENCE_TERMS = (
     "docker",
     "kubernetes",
     "c++",
+    "c#",
     "financial markets",
     "securities",
     "equities",
@@ -3058,15 +3268,31 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         return None
 
     policy = _requirement_policy(requirement)
-    if policy["type"] == "degree":
+    if policy["type"] in {"degree", "postgraduate_degree"}:
         has_degree_signal = any(
             _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
             for term in DEGREE_TERMS
             if term not in SHORT_DEGREE_TERMS or f" {term} " in f" {evidence_norm} "
         )
+        if policy["type"] == "postgraduate_degree" and not _evidence_has_postgraduate_degree(evidence_norm):
+            return None
         if has_degree_signal and _evidence_has_degree_subject(evidence_norm, policy.get("subjects") or set()):
             return "strong"
         return None
+
+    if policy["type"] == "early_career_experience":
+        section = infer_evidence_section(evidence_text)
+        if section == "education":
+            education_signals = {"bsc", "bachelor", "bachelors", "degree", "university", "graduate", "graduation"}
+            if set(evidence_norm.split()).intersection(education_signals):
+                return "strong"
+        if section in {"projects", "experience"}:
+            experience_signals = {
+                "project", "projects", "internship", "intern", "placement", "developer",
+                "engineer", "analyst", "built", "developed", "implemented", "collaborated",
+            }
+            if set(evidence_norm.split()).intersection(experience_signals):
+                return "strong"
 
     if policy["type"] == "project_management":
         evidence_tokens = set(evidence_norm.split())
@@ -4905,8 +5131,14 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                         })
                     return out
                 return {
-                    "must_have": _clean_items(parsed.get("must_have")),
-                    "nice_to_have": _clean_items(parsed.get("nice_to_have")),
+                    "must_have": filter_satisfied_alternative_missing_skills(
+                        _clean_items(parsed.get("must_have")),
+                        job_description,
+                    ),
+                    "nice_to_have": filter_satisfied_alternative_missing_skills(
+                        _clean_items(parsed.get("nice_to_have")),
+                        job_description,
+                    ),
                 }
         except Exception as exc:
             logger.warning("Gemini skills match failed, using fallback: %s", exc)
@@ -4956,7 +5188,10 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
             "total_count": aggregate["total_count"],
             "atomic_breakdown": aggregate["atomic_breakdown"],
         })
-    return {"must_have": must_items, "nice_to_have": nice_items}
+    return {
+        "must_have": filter_satisfied_alternative_missing_skills(must_items, job_description),
+        "nice_to_have": filter_satisfied_alternative_missing_skills(nice_items, job_description),
+    }
 
 
 def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text: str) -> dict:
@@ -5096,8 +5331,14 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     ats_raw = parsed.get("ats_keywords") or {}
     return {
         "skills": {
-            "must_have": _clean_skills(skills_raw.get("must_have")),
-            "nice_to_have": _clean_skills(skills_raw.get("nice_to_have")),
+            "must_have": filter_satisfied_alternative_missing_skills(
+                _clean_skills(skills_raw.get("must_have")),
+                job_description,
+            ),
+            "nice_to_have": filter_satisfied_alternative_missing_skills(
+                _clean_skills(skills_raw.get("nice_to_have")),
+                job_description,
+            ),
         },
         "ats_keywords": {
             "hard_skills": _clean_ats(ats_raw.get("hard_skills")),
