@@ -5107,6 +5107,25 @@ async def auth_signup(payload: dict):
     return {"token": token, "user": _user_to_public(user)}
 
 
+def _legacy_account_matches(email: str, password: str) -> bool:
+    account = ACCOUNTS.get(email)
+    return bool(account and secrets.compare_digest(str(account.get("password") or ""), password))
+
+
+def _migrate_legacy_account(email: str, password: str) -> dict:
+    user = db.get_user_by_email(email)
+    password_hash = auth_utils.hash_password(password)
+    if user:
+        db.update_password(user["id"], password_hash)
+    else:
+        user = db.create_user(email=email, password_hash=password_hash)
+    db.mark_email_verified(user["id"])
+    account_limit = int((ACCOUNTS.get(email) or {}).get("daily_limit") or DEFAULT_DAILY_LIMIT)
+    if account_limit > FREE_TIER_SCAN_LIMIT:
+        db.set_tier(user["id"], "paid")
+    return db.get_user_by_id(user["id"]) or user
+
+
 @app.post("/auth/login", dependencies=[Depends(rate_limit.require_auth_rate_limit)])
 async def auth_login(payload: dict):
     email = str((payload or {}).get("email") or "").strip().lower()
@@ -5114,7 +5133,17 @@ async def auth_login(payload: dict):
     if not email or not password:
         raise HTTPException(status_code=400, detail="Email and password required.")
     user = db.get_user_by_email(email)
-    if not user or not auth_utils.verify_password(password, user["password_hash"]):
+    if user and not auth_utils.verify_password(password, user["password_hash"]):
+        if _legacy_account_matches(email, password):
+            user = _migrate_legacy_account(email, password)
+        else:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+    elif not user:
+        if _legacy_account_matches(email, password):
+            user = _migrate_legacy_account(email, password)
+        else:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     token = auth_utils.create_jwt(user["id"], user["email"])
     return {"token": token, "user": _user_to_public(user)}
