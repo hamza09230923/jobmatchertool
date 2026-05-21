@@ -1598,6 +1598,9 @@ def validate_rewrite_skills(rewrite: dict, resume_text: str) -> dict:
     if not isinstance(rewrite, dict):
         return rewrite
     parsed_for_validation = {"_resume_text": resume_text}
+    resume_norm = normalize_phrase(resume_text)
+    resume_tokens = set(resume_norm.split())
+    resume_compact = resume_norm.replace(" ", "")
     additional = [
         str(item).strip()
         for item in (rewrite.get("additional_keywords_to_include") or [])
@@ -1615,7 +1618,16 @@ def validate_rewrite_skills(rewrite: dict, resume_text: str) -> dict:
             if not skill_text:
                 continue
             evidence = find_cv_evidence_for_requirement(skill_text, parsed_for_validation, resume_text)
-            if evidence:
+            alias_present = any(
+                phrase_in_resume(
+                    normalize_phrase(alias),
+                    resume_norm,
+                    resume_tokens,
+                    resume_compact,
+                )
+                for alias in _requirement_aliases(skill_text)
+            )
+            if evidence or alias_present:
                 kept_items.append(skill_text)
             else:
                 removed.append(skill_text)
@@ -1638,6 +1650,136 @@ def validate_rewrite_skills(rewrite: dict, resume_text: str) -> dict:
             "Removed unevidenced generated skills from the rewritten skills section: "
             + ", ".join(removed[:8])
         )
+    return rewrite
+
+
+def gemini_lite_audit_rewrite(rewrite: dict, resume_text: str, job_description: str) -> dict:
+    """Cheap second-pass audit for generated CV claims. Local validators remain final authority."""
+    if not GENAI_CLIENT or not isinstance(rewrite, dict):
+        return {}
+
+    audit_payload = {
+        "rewritten_summary": rewrite.get("rewritten_summary") or "",
+        "skills_section": rewrite.get("skills_section") or [],
+        "experience_section": rewrite.get("experience_section") or [],
+        "projects_section": rewrite.get("projects_section") or [],
+    }
+    prompt = f"""
+You are auditing a generated CV rewrite against the original CV.
+
+Return ONLY valid JSON with this exact schema:
+{{
+  "unsupported_claims": [
+    {{
+      "claim": "exact generated claim or skill",
+      "source_section": "summary|skills_section|experience_section|projects_section",
+      "reason": "short explanation",
+      "severity": "remove|downgrade|keep"
+    }}
+  ],
+  "safe_claims": ["claim text"]
+}}
+
+Rules:
+- Flag a claim as remove if it is not evidenced in the original CV.
+- Flag a claim as downgrade if it sounds stronger than the source CV proves.
+- Do not flag a claim just because it is reworded; only flag unsupported or overclaimed content.
+- Be strict for degrees, certifications, exact tools, regulated processes, formal reporting, compliance, management, and finance/control terms.
+
+ORIGINAL CV:
+{resume_text[:5000]}
+
+JOB DESCRIPTION:
+{job_description[:2500]}
+
+GENERATED CV REWRITE:
+{json.dumps(audit_payload, ensure_ascii=False, indent=2)[:5000]}
+""".strip()
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_LITE_MODEL,
+            contents=prompt,
+            config=gemini_generation_config(0),
+        )
+        parsed = parse_json_response(getattr(response, "text", "") or "")
+    except Exception as exc:
+        logger.warning("Gemini Lite rewrite audit failed: %s", exc)
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def apply_rewrite_audit(rewrite: dict, audit: dict) -> dict:
+    if not isinstance(rewrite, dict) or not isinstance(audit, dict):
+        return rewrite
+
+    unsupported = [
+        item for item in (audit.get("unsupported_claims") or [])
+        if isinstance(item, dict) and str(item.get("severity") or "").lower() in {"remove", "downgrade"}
+    ]
+    if not unsupported:
+        return rewrite
+
+    remove_claims = {
+        normalize_phrase(item.get("claim") or "")
+        for item in unsupported
+        if str(item.get("severity") or "").lower() == "remove"
+    }
+    remove_claims.discard("")
+
+    removed = []
+    if remove_claims:
+        cleaned_sections = []
+        for section in rewrite.get("skills_section") or []:
+            if not isinstance(section, dict):
+                continue
+            kept_items = []
+            for skill in section.get("items") or []:
+                skill_text = str(skill).strip()
+                if normalize_phrase(skill_text) in remove_claims:
+                    removed.append(skill_text)
+                    continue
+                kept_items.append(skill_text)
+            if kept_items:
+                cleaned_sections.append({
+                    "category": str(section.get("category") or "").strip(),
+                    "items": merge_unique(kept_items),
+                })
+        rewrite["skills_section"] = cleaned_sections
+
+    additional = [
+        str(item).strip()
+        for item in (rewrite.get("additional_keywords_to_include") or [])
+        if str(item).strip()
+    ]
+    for claim in removed:
+        note = f"{claim} (add only if accurate)"
+        if normalize_phrase(note) not in {normalize_phrase(item) for item in additional}:
+            additional.append(note)
+    rewrite["additional_keywords_to_include"] = additional[:15]
+
+    audit_notes = []
+    for item in unsupported[:8]:
+        claim = str(item.get("claim") or "").strip()
+        reason = str(item.get("reason") or "").strip()
+        severity = str(item.get("severity") or "").strip()
+        if claim:
+            audit_notes.append(f"{severity}: {claim}" + (f" - {reason}" if reason else ""))
+    if audit_notes:
+        missing = rewrite.setdefault("missing_information", [])
+        missing.append("Gemini Lite rewrite audit flagged unsupported or overclaimed content: " + "; ".join(audit_notes))
+    return rewrite
+
+
+def audit_and_validate_rewrite(rewrite: dict, resume_text: str, job_description: str) -> dict:
+    rewrite = validate_rewrite_skills(rewrite, resume_text)
+    audit = gemini_lite_audit_rewrite(rewrite, resume_text, job_description)
+    rewrite = apply_rewrite_audit(rewrite, audit)
+    rewrite["rewrite_audit"] = {
+        "enabled": bool(GENAI_CLIENT),
+        "model": GEMINI_LITE_MODEL,
+        "unsupported_count": len(audit.get("unsupported_claims") or []) if isinstance(audit, dict) else 0,
+    }
     return rewrite
 
 
@@ -1770,7 +1912,7 @@ Structured analysis:
     text = extract_openai_output_text(payload)
     parsed = parse_json_response(text)
     normalized = normalize_rewrite_response(parsed)
-    normalized = validate_rewrite_skills(normalized, resume_text)
+    normalized = audit_and_validate_rewrite(normalized, resume_text, job_description)
     if not normalized["rewritten_summary"] and not normalized["experience_section"]:
         raise HTTPException(status_code=502, detail="OpenAI rewrite generation returned an invalid response.")
     return normalized
@@ -1894,7 +2036,7 @@ Structured analysis:
     )
     parsed = parse_json_response(getattr(response, "text", "") or "")
     normalized = normalize_rewrite_response(parsed)
-    normalized = validate_rewrite_skills(normalized, resume_text)
+    normalized = audit_and_validate_rewrite(normalized, resume_text, job_description)
     if not normalized["rewritten_summary"] and not normalized["experience_section"]:
         raise HTTPException(status_code=502, detail="CV rewrite generation returned an invalid response.")
     return normalized

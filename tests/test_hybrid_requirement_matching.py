@@ -18,6 +18,15 @@ class FakeClient:
         self.models = FakeModels(text)
 
 
+class RaisingModels:
+    def generate_content(self, **kwargs):
+        raise RuntimeError("network unavailable")
+
+
+class RaisingClient:
+    models = RaisingModels()
+
+
 def sample_resume():
     resume_text = """
     Projects
@@ -287,6 +296,59 @@ def test_rewrite_skill_validator_removes_unevidenced_jd_skills():
     assert "Regulatory Reporting" not in skills
     assert any("Law" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
     assert any("Regulatory Reporting" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
+
+
+def test_gemini_lite_audit_removes_flagged_rewrite_skill(monkeypatch):
+    resume_text = "Skills\nPython, Excel\nExperience\nAutomated Excel reporting."
+    rewrite = {
+        "skills_section": [
+            {"category": "Skills", "items": ["Python", "Excel", "Regulatory Reporting"]}
+        ],
+        "additional_keywords_to_include": [],
+        "missing_information": [],
+    }
+    audit_json = """
+    {
+      "unsupported_claims": [
+        {
+          "claim": "Regulatory Reporting",
+          "source_section": "skills_section",
+          "reason": "Original CV does not mention regulatory reporting.",
+          "severity": "remove"
+        }
+      ],
+      "safe_claims": ["Python", "Excel"]
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(audit_json))
+
+    result = main.audit_and_validate_rewrite(rewrite, resume_text, "Role requires regulatory reporting.")
+    skills = result["skills_section"][0]["items"]
+
+    assert "Python" in skills
+    assert "Excel" in skills
+    assert "Regulatory Reporting" not in skills
+    assert any("Regulatory Reporting" in item for item in result["additional_keywords_to_include"])
+    assert result["rewrite_audit"]["unsupported_count"] == 1
+
+
+def test_rewrite_audit_fallback_keeps_deterministic_validation(monkeypatch):
+    resume_text = "Skills\nPython\nProjects\nBuilt APIs with Python."
+    rewrite = {
+        "skills_section": [
+            {"category": "Skills", "items": ["Python", "Kubernetes"]}
+        ],
+        "additional_keywords_to_include": [],
+        "missing_information": [],
+    }
+    monkeypatch.setattr(main, "GENAI_CLIENT", RaisingClient())
+
+    result = main.audit_and_validate_rewrite(rewrite, resume_text, "Role requires Kubernetes.")
+    skills = result["skills_section"][0]["items"]
+
+    assert "Python" in skills
+    assert "Kubernetes" not in skills
+    assert result["rewrite_audit"]["unsupported_count"] == 0
 
 
 ROLE_FIXTURES = [
