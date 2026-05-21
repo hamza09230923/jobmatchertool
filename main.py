@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import json
 import logging
@@ -35,6 +36,7 @@ import db
 import auth_utils
 import email_service
 import rate_limit
+import analysis_cache
 
 try:
     from google import genai
@@ -87,12 +89,72 @@ GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.0-flash")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.0-flash")
 GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite")
+try:
+    GEMINI_SEED = int(os.getenv("GEMINI_SEED", "1337"))
+except ValueError:
+    GEMINI_SEED = 1337
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_REWRITE_MODEL = os.getenv("OPENAI_REWRITE_MODEL", "gpt-5-mini")
 GENAI_CLIENT = (
     genai.Client(api_key=GEMINI_API_KEY) if genai is not None and GEMINI_API_KEY else None
 )
+SCORER_VERSION = analysis_cache.SCORER_VERSION
+ANALYZE_CACHE_MAX_ENTRIES = analysis_cache.ANALYZE_CACHE_MAX_ENTRIES
+
+
+def gemini_generation_config(temperature: float = 0.0, **kwargs):
+    config_kwargs = {
+        "temperature": temperature,
+        "seed": GEMINI_SEED,
+        "candidate_count": 1,
+    }
+    config_kwargs.update(kwargs)
+    return types.GenerateContentConfig(**config_kwargs)
+
+
+def analyze_cache_key(resume_text: str, job_description: str) -> str:
+    return analysis_cache.analyze_cache_key(resume_text, job_description)
+
+
+def get_cached_analyze_response(cache_key: str) -> dict | None:
+    return analysis_cache.get_cached_response(cache_key)
+
+
+def set_cached_analyze_response(
+    cache_key: str,
+    response: dict,
+    resume_text: str = "",
+    job_description: str = "",
+) -> None:
+    analysis_cache.set_cached_response(cache_key, response, resume_text, job_description)
+
+
+def attach_analyze_request_context(
+    response: dict,
+    user: dict,
+    job_source: str,
+    debug: bool,
+    cache_key: str,
+    cache_hit: bool,
+) -> dict:
+    out = copy.deepcopy(response)
+    breakdown = out.get("role_fit_breakdown")
+    if isinstance(breakdown, dict):
+        jd_meta = breakdown.setdefault("job_description", {})
+        if isinstance(jd_meta, dict):
+            jd_meta["source"] = job_source if job_source in {"paste", "url"} else "paste"
+    if debug:
+        debug_block = out.get("debug") if isinstance(out.get("debug"), dict) else {}
+        debug_block["analysis_cache"] = analysis_cache.debug_metadata(cache_key, cache_hit)
+        debug_block["gemini_seed"] = GEMINI_SEED
+        debug_block["scorer_version"] = SCORER_VERSION
+        out["debug"] = debug_block
+    else:
+        out.pop("debug", None)
+    fresh_user = db.get_user_by_id(user["id"])
+    out["user"] = _user_to_public(fresh_user) if fresh_user else None
+    return out
 
 # ── Auth & rate limiting ──────────────────────────────────────────────────────
 # ACCOUNTS env var format: "email:password:daily_limit,email2:password2:daily_limit"
@@ -614,6 +676,45 @@ SOFT_SKILLS = (
     "time management",
     "time-management",
     "stakeholder management",
+)
+TECH_SKILL_ALIASES = {
+    "react": ("react", "react.js", "reactjs"),
+    "typescript": ("typescript", "type script", "ts"),
+    "javascript": ("javascript", "java script", "js"),
+    "c++": ("c++", "cpp", "c plus plus"),
+}
+DOMAIN_EVIDENCE_GROUPS = (
+    {
+        "targets": (
+            "trading",
+            "finance",
+            "financial",
+            "financial markets",
+            "proprietary trading",
+            "quant",
+            "quantitative finance",
+            "market making",
+        ),
+        "signals": (
+            "trading",
+            "backtesting",
+            "backtest",
+            "rsi",
+            "macd",
+            "kelly",
+            "market data",
+            "financial market",
+            "financial markets",
+            "equity",
+            "equities",
+            "options",
+            "securities",
+            "quant",
+            "strategy optimizer",
+            "strategy optimiser",
+            "strategy optimisation",
+        ),
+    },
 )
 
 SECTION_HEADINGS = {
@@ -1268,7 +1369,7 @@ def gemini_parse_resume(resume_text: str) -> dict:
     response = GENAI_CLIENT.models.generate_content(
         model=GEMINI_PARSE_MODEL,
         contents=f"{prompt}\n\nRESUME:\n{resume_text}",
-        config=types.GenerateContentConfig(temperature=0),
+        config=gemini_generation_config(0),
     )
     return parse_json_response(getattr(response, "text", "") or "")
 
@@ -1335,7 +1436,7 @@ def analyze_cv_sections(
             '      "issues": ["issue 1"],\n'
             '      "jd_skills_present": ["skills from JD found in CV"],\n'
             '      "jd_skills_missing": ["skills from JD not found in CV"],\n'
-            '      "listed_but_unevidenced": ["skills listed but not demonstrated in experience"]\n'
+            '      "listed_but_unevidenced": ["skills listed but not demonstrated in work or projects"]\n'
             '    },\n'
             '    "experience": {\n'
             '      "score": 0-100,\n'
@@ -1377,7 +1478,7 @@ def analyze_cv_sections(
             "RULES:\n"
             "- overall_quality_score: holistic CV quality ignoring JD fit (writing, structure, impact clarity).\n"
             "- For experience.roles: include ALL roles from the parsed data. For each bullet, rate quality as 'strong' (has action verb + metric + impact), 'good' (has action verb or metric), or 'weak' (vague, passive, no metric). For 'weak' bullets, provide a specific rewrite.\n"
-            "- For skills.jd_skills_missing: list skills/tools mentioned in the JD that are absent from the CV skills section.\n"
+            "- For skills.jd_skills_missing: list JD skills/tools absent from the entire CV after checking the skills section, work bullets, project names, project descriptions, and project tech stacks.\n"
             "- For interview_questions: generate 4-6 questions a hiring manager would actually ask based on the CV's gaps, ambiguities, or impressive claims that need substantiation.\n"
             "- For intro.rewrite: write a crisp 3-sentence professional summary tailored to the JD.\n"
             "- If projects section is empty in the CV, set projects score=null and omit issues/strengths.\n"
@@ -1393,7 +1494,7 @@ def analyze_cv_sections(
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_PARSE_MODEL,
             contents=full_prompt,
-            config=types.GenerateContentConfig(temperature=0),
+            config=gemini_generation_config(0),
         )
         result = parse_json_response(getattr(response, "text", "") or "")
         return result if isinstance(result, dict) else {}
@@ -1740,7 +1841,7 @@ Structured analysis:
     response = GENAI_CLIENT.models.generate_content(
         model=GEMINI_REWRITE_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.2),
+        config=gemini_generation_config(0.2),
     )
     parsed = parse_json_response(getattr(response, "text", "") or "")
     normalized = normalize_rewrite_response(parsed)
@@ -1988,7 +2089,7 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
                     f"- Return at most {limit} requirements total.\n\n"
                     f"{job_description[:4000]}"
                 ),
-                config=types.GenerateContentConfig(temperature=0),
+                config=gemini_generation_config(0),
             )
             raw = getattr(response, "text", "") or ""
             parsed = parse_json_response(raw)
@@ -2056,6 +2157,213 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
     return responsibilities
 
 
+ATOMIC_REQUIREMENT_HINTS = (
+    "especially",
+    "including",
+    "such as",
+    "with",
+)
+
+
+STRICT_TOOL_TERMS = {
+    "react",
+    "typescript",
+    "javascript",
+    "docker",
+    "kubernetes",
+    "c++",
+    "cpp",
+    "equities",
+    "equity",
+    "options",
+    "securities",
+    "security",
+    "time series",
+    "timeseries",
+    "lakehouse",
+    "messaging middleware",
+}
+
+
+def _split_list_fragments(text: str) -> List[str]:
+    raw_parts = re.split(r",|/|&|\band\b", text, flags=re.IGNORECASE)
+    parts: List[str] = []
+    for part in raw_parts:
+        cleaned = str(part or "").strip(" -:;,.()")
+        if not cleaned:
+            continue
+        parts.append(cleaned)
+    return merge_unique(parts)
+
+
+def _strip_requirement_lead(text: str) -> str:
+    return re.sub(
+        r"^(excellent|solid|strong|modern|very strong|significant|hands on|hands-on|knowledge of|experience with|experience in|ability to|an interest in|interest in)\s+",
+        "",
+        str(text or "").strip(),
+        flags=re.IGNORECASE,
+    ).strip(" -:;,.")
+
+
+def decompose_requirement_text(text: str) -> List[dict]:
+    """Split bundled JD requirements into atomic sub-requirements."""
+    source = str(text or "").strip()
+    if not source:
+        return []
+
+    atoms: List[str] = []
+
+    paren_chunks = re.findall(r"\(([^)]+)\)", source)
+    for chunk in paren_chunks:
+        atoms.extend(_split_list_fragments(chunk))
+    without_parens = re.sub(r"\([^)]*\)", "", source).strip(" ,;")
+
+    marker_matched = False
+    for marker in ATOMIC_REQUIREMENT_HINTS:
+        pattern = rf"^(.*?)(?:\b{re.escape(marker)}\b)(.+)$"
+        match = re.search(pattern, without_parens, flags=re.IGNORECASE)
+        if not match:
+            continue
+        left = _strip_requirement_lead(match.group(1))
+        right = match.group(2).strip(" -:;,.")
+        if left:
+            atoms.append(left)
+        atoms.extend(_split_list_fragments(right))
+        marker_matched = True
+        break
+
+    if not marker_matched:
+        especially_match = re.search(r"^(.*?)[, ]+\bespecially\b(.+)$", without_parens, flags=re.IGNORECASE)
+        if especially_match:
+            left = _strip_requirement_lead(especially_match.group(1))
+            right = especially_match.group(2).strip(" -:;,.")
+            if left:
+                atoms.extend(_split_list_fragments(left))
+            atoms.extend(_split_list_fragments(right))
+            marker_matched = True
+
+    if not marker_matched:
+        stripped = _strip_requirement_lead(without_parens)
+        split_atoms = _split_list_fragments(stripped)
+        if 1 < len(split_atoms) <= 4:
+            atoms.extend(split_atoms)
+        elif stripped:
+            atoms.append(stripped)
+
+    normalized_parent = normalize_phrase(source)
+    normalized_atoms = []
+    seen = set()
+    for atom in atoms:
+        atom = atom.strip()
+        if len(atom.split()) == 1:
+            atom = atom.replace(".", "")
+        norm = normalize_phrase(atom)
+        if not norm or norm == normalized_parent or norm in seen:
+            continue
+        seen.add(norm)
+        normalized_atoms.append({
+            "text": atom,
+            "normalized": norm,
+            "strict": requires_strict_evidence(atom) or norm in STRICT_TOOL_TERMS,
+        })
+
+    if not normalized_atoms:
+        normalized_atoms.append({
+            "text": source,
+            "normalized": normalized_parent,
+            "strict": requires_strict_evidence(source) or normalized_parent in STRICT_TOOL_TERMS,
+        })
+
+    return normalized_atoms
+
+
+def aggregate_requirement_evidence(
+    requirement: str,
+    parsed_resume: dict,
+    resume_text: str = "",
+    ai_present: bool = False,
+    ai_evidence: str | None = None,
+    ai_confidence: str | None = None,
+) -> dict:
+    """Evaluate one requirement using atomic deterministic checks, with AI as an ambiguity hint."""
+    parent_found = find_cv_evidence_for_requirement(requirement, parsed_resume, resume_text)
+    atoms = decompose_requirement_text(requirement)
+    breakdown = []
+
+    for atom in atoms:
+        found = find_cv_evidence_for_requirement(atom["text"], parsed_resume, resume_text)
+        status = "missing"
+        evidence = None
+        section = None
+        confidence = "missing"
+
+        if found:
+            evidence = found["evidence"]
+            section = found["section"]
+            confidence = found["confidence"]
+            status = "present" if found["confidence"] == "strong" else "partial"
+        elif ai_present and ai_evidence and not atom["strict"]:
+            evidence = ai_evidence
+            section = infer_evidence_section(ai_evidence)
+            confidence = "partial" if ai_confidence not in ("strong", "partial") else ai_confidence
+            status = "partial" if confidence == "partial" else "present"
+
+        breakdown.append({
+            "requirement": atom["text"],
+            "status": status,
+            "confidence": confidence,
+            "evidence": evidence,
+            "section": section,
+            "strict": atom["strict"],
+        })
+
+    present_count = sum(1 for item in breakdown if item["status"] == "present")
+    partial_count = sum(1 for item in breakdown if item["status"] == "partial")
+    matched_count = present_count + partial_count
+    total_count = max(1, len(breakdown))
+
+    if parent_found and matched_count == 0:
+        overall_status = "present" if parent_found["confidence"] == "strong" else "partial"
+        overall_confidence = parent_found["confidence"]
+        best_evidence = parent_found["evidence"]
+        best_section = parent_found["section"]
+    elif matched_count == total_count and partial_count == 0:
+        overall_status = "present"
+        overall_confidence = "strong"
+        best = next((item for item in breakdown if item["evidence"]), None)
+        best_evidence = best["evidence"] if best else None
+        best_section = best["section"] if best else None
+    elif matched_count > 0:
+        overall_status = "partial"
+        overall_confidence = "partial"
+        best = next((item for item in breakdown if item["status"] in ("present", "partial") and item["evidence"]), None)
+        best_evidence = best["evidence"] if best else None
+        best_section = best["section"] if best else None
+    elif ai_present and ai_evidence and not requires_strict_evidence(requirement):
+        overall_status = "present" if ai_confidence == "strong" else "partial"
+        overall_confidence = "strong" if ai_confidence == "strong" else "partial"
+        best_evidence = ai_evidence
+        best_section = infer_evidence_section(ai_evidence)
+    else:
+        overall_status = "missing"
+        overall_confidence = "missing"
+        best_evidence = None
+        best_section = None
+
+    coverage_ratio = matched_count / total_count
+    return {
+        "status": overall_status,
+        "present": overall_status != "missing",
+        "confidence": overall_confidence,
+        "cv_where": best_evidence,
+        "section": best_section,
+        "matched_count": matched_count,
+        "total_count": total_count,
+        "coverage_ratio": round(coverage_ratio, 3),
+        "atomic_breakdown": breakdown,
+    }
+
+
 def extract_resume_evidence_units(raw_sections: dict) -> List[dict]:
     evidence_units: List[dict] = []
     for section, weight in RESPONSIBILITY_SECTION_WEIGHTS.items():
@@ -2071,6 +2379,289 @@ def extract_resume_evidence_units(raw_sections: dict) -> List[dict]:
                 }
             )
     return evidence_units
+
+
+def _as_string_list(value) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _project_tech_stack(project: dict) -> List[str]:
+    tech: List[str] = []
+    for key in ("tech_stack", "technologies", "tools", "stack"):
+        tech.extend(_as_string_list(project.get(key)))
+    return merge_unique(tech)
+
+
+def cv_work_evidence_lines(parsed_resume: dict, limit: int = 80) -> List[str]:
+    lines: List[str] = []
+    for job in (parsed_resume.get("work_experience") or []):
+        if not isinstance(job, dict):
+            continue
+        title = str(job.get("title") or "").strip()
+        company = str(job.get("company") or "").strip()
+        role_bits = [bit for bit in (title, company) if bit]
+        prefix = f"[{' @ '.join(role_bits)}]" if role_bits else "[Experience]"
+        for bullet in (job.get("bullets") or []):
+            if isinstance(bullet, str) and bullet.strip():
+                lines.append(f"{prefix} {bullet.strip()}")
+                if len(lines) >= limit:
+                    return lines
+    return lines
+
+
+def cv_project_evidence_lines(parsed_resume: dict, limit: int = 80) -> List[str]:
+    lines: List[str] = []
+    seen_norms: set = set()
+
+    def _append(line: str) -> None:
+        norm = normalize_phrase(line)
+        if not norm or norm in seen_norms:
+            return
+        seen_norms.add(norm)
+        lines.append(line)
+
+    for project in (parsed_resume.get("projects") or []):
+        if isinstance(project, str):
+            if project.strip():
+                _append(f"[Project] {project.strip()}")
+            continue
+        if not isinstance(project, dict):
+            continue
+        name = str(
+            project.get("name")
+            or project.get("project_name")
+            or project.get("heading")
+            or "Project"
+        ).strip()
+        prefix = f"[Project: {name}]" if name else "[Project]"
+        tech = _project_tech_stack(project)
+        headline_parts = []
+        if name:
+            headline_parts.append(name)
+        for key in ("description", "summary", "details"):
+            val = str(project.get(key) or "").strip()
+            if val:
+                headline_parts.append(val)
+        if tech:
+            headline_parts.append("Tech stack: " + ", ".join(tech[:12]))
+        if headline_parts:
+            _append(f"{prefix} " + " | ".join(headline_parts))
+        for bullet in (project.get("bullets") or []):
+            if isinstance(bullet, str) and bullet.strip():
+                _append(f"{prefix} {bullet.strip()}")
+        if len(lines) >= limit:
+            return lines[:limit]
+    raw_resume = str(parsed_resume.get("_resume_text") or "")
+    if raw_resume:
+        raw_projects = (split_resume_sections_raw(raw_resume) or {}).get("projects", "") or ""
+        for raw_line in split_text_units(raw_projects):
+            _append(f"[Project] {raw_line}")
+            if len(lines) >= limit:
+                return lines[:limit]
+    return lines[:limit]
+
+
+def cv_skills_evidence_line(parsed_resume: dict, limit: int = 80) -> str:
+    skills = []
+    for key in ("skills", "tools", "soft_skills"):
+        skills.extend(_as_string_list(parsed_resume.get(key)))
+    skills = merge_unique(skills)
+    return "SKILLS: " + ", ".join(skills[:limit]) if skills else ""
+
+
+def format_cv_match_evidence(
+    parsed_resume: dict,
+    work_limit: int = 60,
+    project_limit: int = 60,
+) -> str:
+    """Compact CV evidence used by matching prompts. Projects are first-class evidence."""
+    cv_parts: List[str] = []
+    summary = str(parsed_resume.get("summary") or "").strip()
+    if summary:
+        cv_parts.append(f"SUMMARY:\n{summary}")
+    skills_line = cv_skills_evidence_line(parsed_resume)
+    if skills_line:
+        cv_parts.append(skills_line)
+    project_lines = cv_project_evidence_lines(parsed_resume, limit=project_limit)
+    if project_lines:
+        cv_parts.append("PROJECT EVIDENCE:\n" + "\n".join(project_lines))
+    work_lines = cv_work_evidence_lines(parsed_resume, limit=work_limit)
+    if work_lines:
+        cv_parts.append("EXPERIENCE EVIDENCE:\n" + "\n".join(work_lines))
+    return "\n\n".join(cv_parts)
+
+
+def infer_evidence_section(evidence: str) -> str:
+    text = (evidence or "").strip()
+    if text.startswith("[Project"):
+        return "projects"
+    if text.startswith("SKILLS:"):
+        return "skills"
+    if text.startswith("SUMMARY:"):
+        return "summary"
+    return "experience"
+
+
+def _phrase_present_in_normalized_text(phrase_norm: str, text_norm: str) -> bool:
+    tokens = [token for token in phrase_norm.split() if token]
+    if len(tokens) == 1 and len(tokens[0]) <= 3:
+        return tokens[0] in set(text_norm.split())
+    return phrase_in_resume(
+        phrase_norm,
+        text_norm,
+        set(text_norm.split()),
+        text_norm.replace(" ", ""),
+    )
+
+
+def _requirement_aliases(requirement: str) -> List[str]:
+    req_norm = normalize_phrase(requirement)
+    aliases = [req_norm] if req_norm else []
+    for canonical, values in TECH_SKILL_ALIASES.items():
+        normalized_values = [normalize_phrase(v) for v in values]
+        if req_norm == canonical or req_norm in normalized_values:
+            aliases.extend(normalized_values)
+    return merge_unique([alias for alias in aliases if alias])
+
+
+STRICT_EVIDENCE_TERMS = (
+    "typescript",
+    "react",
+    "docker",
+    "kubernetes",
+    "c++",
+    "financial markets",
+    "securities",
+    "equities",
+    "options",
+    "time series",
+    "serialisation",
+    "serialization",
+    "messaging middleware",
+    "lakehouse",
+)
+
+
+def requires_strict_evidence(requirement: str) -> bool:
+    req_norm = normalize_phrase(requirement)
+    return any(term in req_norm for term in STRICT_EVIDENCE_TERMS)
+
+
+def classify_requirement_evidence_match(requirement: str, evidence_text: str) -> str | None:
+    req_norm = normalize_phrase(requirement)
+    evidence_norm = normalize_phrase(evidence_text)
+    if not req_norm or not evidence_norm:
+        return None
+
+    for alias in _requirement_aliases(requirement):
+        alias_norm = normalize_phrase(alias)
+        if not alias_norm or alias_norm in STOPWORDS:
+            continue
+        if _phrase_present_in_normalized_text(alias_norm, evidence_norm):
+            return "strong"
+
+    for group in DOMAIN_EVIDENCE_GROUPS:
+        target_hit = any(
+            _phrase_present_in_normalized_text(normalize_phrase(target), req_norm)
+            for target in group["targets"]
+        )
+        if not target_hit:
+            continue
+        signal_hit = any(
+            _phrase_present_in_normalized_text(normalize_phrase(signal), evidence_norm)
+            for signal in group["signals"]
+        )
+        if signal_hit:
+            return "strong"
+
+    generic_words = {
+        "ability", "abilities", "candidate", "demonstrate", "demonstrated",
+        "excellent", "experience", "experienced", "familiarity", "good",
+        "hands", "interest", "knowledge", "passion", "proven", "skill",
+        "skills", "solid", "strong", "understanding", "working",
+    }
+    req_tokens = [
+        token
+        for token in req_norm.split()
+        if token not in STOPWORDS and token not in generic_words and len(token) > 1
+    ]
+    if 1 <= len(req_tokens) <= 4:
+        evidence_tokens = set(evidence_norm.split())
+        if all(token in evidence_tokens for token in req_tokens):
+            return "strong"
+    return None
+
+
+def find_cv_evidence_for_requirement(
+    requirement: str,
+    parsed_resume: dict,
+    resume_text: str = "",
+) -> dict | None:
+    """Find deterministic CV evidence across skills, work, projects, and raw CV text."""
+    req_norm = normalize_phrase(requirement)
+    if not req_norm:
+        return None
+
+    evidence_lines = []
+    skills_line = cv_skills_evidence_line(parsed_resume)
+    if skills_line:
+        evidence_lines.append(skills_line)
+    evidence_lines.extend(cv_project_evidence_lines(parsed_resume, limit=100))
+    evidence_lines.extend(cv_work_evidence_lines(parsed_resume, limit=100))
+
+    for raw_line in split_text_units(resume_text)[:160]:
+        line = f"[CV] {raw_line}"
+        line_norm = normalize_phrase(line)
+        if not any(normalize_phrase(existing) == line_norm for existing in evidence_lines):
+            evidence_lines.append(line)
+
+    for line in evidence_lines:
+        confidence = classify_requirement_evidence_match(requirement, line)
+        if confidence:
+            return {
+                "evidence": line,
+                "section": infer_evidence_section(line),
+                "confidence": confidence,
+            }
+
+    return None
+
+
+def extract_domain_evidence_notes(
+    resume_text: str,
+    job_description: str,
+    limit: int = 8,
+) -> List[str]:
+    jd_norm = normalize_phrase(job_description)
+    if not jd_norm:
+        return []
+    notes: List[str] = []
+    seen = set()
+    for group in DOMAIN_EVIDENCE_GROUPS:
+        target_hit = any(
+            _phrase_present_in_normalized_text(normalize_phrase(target), jd_norm)
+            for target in group["targets"]
+        )
+        if not target_hit:
+            continue
+        for line in split_text_units(resume_text):
+            line_norm = normalize_phrase(line)
+            if line_norm in seen:
+                continue
+            signal_hit = any(
+                _phrase_present_in_normalized_text(normalize_phrase(signal), line_norm)
+                for signal in group["signals"]
+            )
+            if signal_hit:
+                seen.add(line_norm)
+                notes.append(line.strip())
+                if len(notes) >= limit:
+                    return notes
+    return notes
 
 
 def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
@@ -2099,19 +2690,15 @@ def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
     if summary and isinstance(summary, str):
         _add(summary, "summary", 0.25)
 
-    for job in (parsed_resume.get("work_experience") or []):
-        if not isinstance(job, dict):
-            continue
-        for bullet in (job.get("bullets") or []):
-            if isinstance(bullet, str):
-                _add(bullet, "experience", 1.0)
+    skills_line = cv_skills_evidence_line(parsed_resume)
+    if skills_line:
+        _add(skills_line, "skills", 0.65)
 
-    for proj in (parsed_resume.get("projects") or []):
-        if not isinstance(proj, dict):
-            continue
-        for bullet in (proj.get("bullets") or []):
-            if isinstance(bullet, str):
-                _add(bullet, "projects", 0.8)
+    for line in cv_work_evidence_lines(parsed_resume, limit=100):
+        _add(line, "experience", 1.0)
+
+    for line in cv_project_evidence_lines(parsed_resume, limit=100):
+        _add(line, "projects", 0.85)
 
     return units
 
@@ -2127,14 +2714,14 @@ def score_responsibility_match(
             "missing_responsibilities": [],
             "matched_action_phrases": [],
             "missing_action_phrases": [],
-            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0},
+            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0, "skills": 0},
         }
 
     matched_items: List[dict] = []
     missing_items: List[dict] = []
     matched_action_phrases: List[str] = []
     missing_action_phrases: List[str] = []
-    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0}
+    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0, "skills": 0}
     total_strength = 0.0
 
     for responsibility in responsibilities:
@@ -2153,7 +2740,15 @@ def score_responsibility_match(
             if not direct_phrase and responsibility_norm and responsibility_norm in unit["normalized"]:
                 direct_phrase = True
 
-            if direct_phrase:
+            evidence_confidence = classify_requirement_evidence_match(
+                responsibility["text"],
+                unit["text"],
+            )
+            if evidence_confidence:
+                strength = unit["weight"]
+                similarity = 1.0
+                match_type = "evidence"
+            elif direct_phrase:
                 strength = unit["weight"]
                 similarity = 1.0
                 match_type = "phrase"
@@ -2188,7 +2783,7 @@ def score_responsibility_match(
             missing_action_phrases.extend(responsibility["action_phrases"])
             continue
 
-        evidence_by_section[best_match["section"]] += 1
+        evidence_by_section[best_match["section"]] = evidence_by_section.get(best_match["section"], 0) + 1
         total_strength += best_strength
         matched_items.append(
             {
@@ -2227,7 +2822,7 @@ def score_responsibility_match_semantic(
             "missing_responsibilities": [],
             "matched_action_phrases": [],
             "missing_action_phrases": [],
-            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0},
+            "evidence_by_section": {"experience": 0, "projects": 0, "summary": 0, "skills": 0},
         }
     if not GENAI_CLIENT or not evidence_units:
         return score_responsibility_match(responsibilities, evidence_units)
@@ -2249,7 +2844,7 @@ def score_responsibility_match_semantic(
     missing_items: List[dict] = []
     matched_action_phrases: List[str] = []
     missing_action_phrases: List[str] = []
-    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0}
+    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0, "skills": 0}
     total_strength = 0.0
 
     for i, responsibility in enumerate(responsibilities):
@@ -2268,7 +2863,15 @@ def score_responsibility_match_semantic(
             if not direct_phrase and responsibility_norm and responsibility_norm in unit["normalized"]:
                 direct_phrase = True
 
-            if direct_phrase:
+            evidence_confidence = classify_requirement_evidence_match(
+                responsibility["text"],
+                unit["text"],
+            )
+            if evidence_confidence:
+                strength = unit["weight"]
+                similarity = 1.0
+                match_type = "evidence"
+            elif direct_phrase:
                 strength = unit["weight"]
                 similarity = 1.0
                 match_type = "phrase"
@@ -2324,27 +2927,8 @@ def gemini_responsibility_match(
         ev_units = evidence_units_from_parsed(parsed_resume)
         return score_responsibility_match_semantic(responsibilities, ev_units)
 
-    cv_bullets = []
-    for job in (parsed_resume.get("work_experience") or []):
-        title = job.get("title", "")
-        company = job.get("company", "")
-        for bullet in (job.get("bullets") or []):
-            if isinstance(bullet, str) and bullet.strip():
-                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
-
-    summary = (parsed_resume.get("summary") or "").strip()
-    skills = [str(s) for s in (parsed_resume.get("skills") or [])[:30]]
-
     resp_list = "\n".join(f"{i + 1}. {r['text']}" for i, r in enumerate(responsibilities))
-
-    cv_parts = []
-    if summary:
-        cv_parts.append(f"SUMMARY:\n{summary}")
-    if cv_bullets:
-        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
-    if skills:
-        cv_parts.append("SKILLS: " + ", ".join(skills))
-    cv_section = "\n\n".join(cv_parts)
+    cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
 
     prompt = (
         "You are an expert recruiter matching a CV against job responsibilities.\n"
@@ -2355,7 +2939,7 @@ def gemini_responsibility_match(
         '    {\n'
         '      "index": 1,\n'
         '      "responsibility": "exact text from the numbered list",\n'
-        '      "evidence": "quote the specific CV bullet that proves this, keeping the [Title @ Company] prefix",\n'
+        '      "evidence": "quote the specific CV evidence line that proves this, keeping the [Title @ Company], [Project: Name], or SKILLS prefix",\n'
         '      "confidence": "strong or partial"\n'
         '    }\n'
         '  ],\n'
@@ -2371,22 +2955,24 @@ def gemini_responsibility_match(
         "- Use semantic matching: 'managed client relationships' can match 'led stakeholder engagement across 3 enterprise accounts'\n"
         "\n"
         "CONFIDENCE LEVELS — apply strictly:\n"
-        "- 'strong': The evidence bullet contains the SAME concept or a clearly equivalent term as the responsibility. The candidate has provably done this thing.\n"
+        "- 'strong': The evidence line contains the SAME concept or a clearly equivalent term as the responsibility. The candidate has provably done this thing.\n"
         "    Example STRONG: responsibility 'experience with AWS Lambda' matched by bullet '...using Python and AWS Lambda, reducing manual workload by 70%...'\n"
         "- 'partial': The evidence shows ADJACENT but not equivalent experience — same family of work, smaller scale, related tool, or domain-adjacent.\n"
         "    Example PARTIAL: responsibility 'distributed systems' matched by bullet '...backend data systems and pipelines...' (pipelines are not necessarily distributed systems).\n"
         "    Example PARTIAL: responsibility 'mentoring junior engineers' matched by bullet '...trained two new joiners...' (training != formal mentorship).\n"
         "\n"
         "EVIDENCE QUALITY RULES (CRITICAL — read carefully):\n"
-        "- The evidence MUST contain an explicit signal of the responsibility's core concept. If the bullet only LOOSELY relates, demote to 'partial'. If the bullet doesn't relate at all, the item belongs in 'missing'.\n"
+        "- The evidence MUST contain an explicit signal of the responsibility's core concept. If the line only LOOSELY relates, demote to 'partial'. If the line doesn't relate at all, the item belongs in 'missing'.\n"
         "- Do NOT match 'unit and integration testing' with 'data validation' or 'integrity checks'. Those are different concepts. If the CV's tools list explicitly names testing frameworks (Jest, Pytest, Vitest, JUnit, Testing Library, etc.), use THAT as evidence instead. If neither exists, mark this responsibility as 'missing'.\n"
         "- Do NOT match 'distributed systems' with 'backend services' or 'data pipelines'. Distributed systems means designing for multiple machines/regions/services coordinating — needs explicit signal (microservices, queues, replication, sharding, consensus, etc.).\n"
         "- Do NOT match a specific named technology (Neo4j, Kafka, Snowflake, dbt, Airflow, Terraform, etc.) with a different technology. If the CV doesn't name the exact tool or a near-synonym, the item is 'missing' or at best 'partial' if there's a closely related tool.\n"
         "- If the CV's skills/tools list names a relevant tool (e.g. responsibility says 'unit testing', CV skills list includes 'Vitest, Testing Library'), use the SKILLS line as evidence: 'SKILLS: Vitest, Testing Library, ...' — this is valid evidence.\n"
         "- When in doubt between 'strong' and 'partial' → choose 'partial'. When in doubt between 'partial' and 'missing' → choose 'missing'. False positives mislead the candidate; false negatives just push them to add real evidence.\n"
         "\n"
-        "- Every responsibility index must appear in exactly one of matches or missing\n"
-        "- evidence: quote the CV bullet verbatim including the [Title @ Company] prefix so the candidate knows exactly where it came from. If using skills line, write 'SKILLS: <verbatim line>'.\n"
+        "- Treat PROJECT EVIDENCE as valid first-class evidence, especially where the JD asks for domain interest, finance/trading exposure, or tools demonstrated in projects.\n"
+        "- A trading/backtesting project with signals like RSI, MACD, Kelly sizing, market data, or strategy optimisation is valid evidence of trading/finance interest.\n"
+        "- Every responsibility index must appear in exactly one of matches or missing.\n"
+        "- evidence: quote the CV evidence line verbatim including its prefix so the candidate knows exactly where it came from. If using skills line, write the SKILLS line verbatim.\n"
         "- gap: be specific — e.g. 'No experience leading cross-functional teams, only individual contributor roles shown' not 'needs more leadership'\n"
         "- Return ONLY the JSON object, no markdown fences.\n"
     )
@@ -2396,7 +2982,7 @@ def gemini_responsibility_match(
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0),
+            config=gemini_generation_config(0),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -2421,10 +3007,12 @@ def gemini_responsibility_match(
             None,
         )
 
+    resume_text = str(parsed_resume.get("_resume_text") or "")
     matched_items: List[dict] = []
     missing_items: List[dict] = []
-    total_weight = 0.0
     STRONG_W, PARTIAL_W = 1.0, 0.55
+    ai_match_map: dict[str, dict] = {}
+    ai_gap_map: dict[str, str] = {}
 
     for m in (parsed.get("matches") or []):
         if not isinstance(m, dict):
@@ -2432,20 +3020,10 @@ def gemini_responsibility_match(
         original = _find_original(m)
         if original is None:
             continue
-        confidence = str(m.get("confidence") or "partial").lower().strip()
-        if confidence not in ("strong", "partial"):
-            confidence = "partial"
-        total_weight += STRONG_W if confidence == "strong" else PARTIAL_W
-        matched_items.append({
-            "responsibility": original["text"],
-            "action_phrases": original["action_phrases"],
-            "evidence": str(m.get("evidence") or "").strip(),
-            "section": "experience",
-            "similarity": 1.0 if confidence == "strong" else 0.75,
-            "match_type": "ai",
-            "confidence": confidence,
-            "category": original.get("category", "essential"),
-        })
+        ai_match_map[original["normalized"]] = {
+            "confidence": str(m.get("confidence") or "partial").lower().strip(),
+            "evidence": str(m.get("evidence") or "").strip() or None,
+        }
 
     for m in (parsed.get("missing") or []):
         if not isinstance(m, dict):
@@ -2453,15 +3031,53 @@ def gemini_responsibility_match(
         original = _find_original(m)
         if original is None:
             continue
-        missing_items.append({
+        ai_gap_map[original["normalized"]] = str(m.get("gap") or "").strip()
+
+    for original in responsibilities:
+        ai_match = ai_match_map.get(original["normalized"]) or {}
+        aggregate = aggregate_requirement_evidence(
+            original["text"],
+            parsed_resume,
+            resume_text,
+            ai_present=bool(ai_match),
+            ai_evidence=ai_match.get("evidence"),
+            ai_confidence=ai_match.get("confidence"),
+        )
+        if aggregate["status"] == "missing":
+            missing_items.append({
+                "responsibility": original["text"],
+                "action_phrases": original["action_phrases"],
+                "gap": ai_gap_map.get(original["normalized"]) or "No explicit CV evidence found for this requirement.",
+                "category": original.get("category", "essential"),
+                "atomic_breakdown": aggregate["atomic_breakdown"],
+            })
+            continue
+
+        confidence = "strong" if aggregate["status"] == "present" and aggregate["confidence"] == "strong" else "partial"
+        matched_items.append({
             "responsibility": original["text"],
             "action_phrases": original["action_phrases"],
-            "gap": str(m.get("gap") or "").strip(),
+            "evidence": aggregate["cv_where"],
+            "section": aggregate["section"] or "experience",
+            "similarity": 1.0 if confidence == "strong" else max(0.6, aggregate["coverage_ratio"]),
+            "match_type": "ai_atomic" if ai_match else "local_atomic",
+            "confidence": confidence,
             "category": original.get("category", "essential"),
+            "matched_count": aggregate["matched_count"],
+            "total_count": aggregate["total_count"],
+            "atomic_breakdown": aggregate["atomic_breakdown"],
         })
 
     total = len(responsibilities)
+    total_weight = sum(
+        STRONG_W if item.get("confidence") == "strong" else PARTIAL_W
+        for item in matched_items
+    )
     score = round(max(0.0, min(100.0, 100.0 * total_weight / total)), 2) if total else 0.0
+    evidence_by_section = {"experience": 0, "projects": 0, "summary": 0, "skills": 0}
+    for item in matched_items:
+        section = item.get("section") or "experience"
+        evidence_by_section[section] = evidence_by_section.get(section, 0) + 1
 
     return {
         "score": score,
@@ -2469,7 +3085,7 @@ def gemini_responsibility_match(
         "missing_responsibilities": missing_items,
         "matched_action_phrases": merge_unique([p for item in matched_items for p in item.get("action_phrases", [])]),
         "missing_action_phrases": merge_unique([p for item in missing_items for p in item.get("action_phrases", [])]),
-        "evidence_by_section": {"experience": len(matched_items), "projects": 0, "summary": 0},
+        "evidence_by_section": evidence_by_section,
     }
 
 
@@ -2696,7 +3312,10 @@ def gemini_section_feedback(
     ]
     missing_skills_summary = ""
     skills_detail = breakdown.get("skills_detail") or {}
-    must_missing = [s for s in (skills_detail.get("must_have") or []) if not s.get("present")]
+    must_missing = [
+        s for s in (skills_detail.get("must_have") or [])
+        if (s.get("status") or ("present" if s.get("present") else "missing")) == "missing"
+    ]
     if must_missing:
         names = []
         for s in must_missing[:8]:
@@ -2760,7 +3379,7 @@ EDUCATION:
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_REWRITE_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.2),
+            config=gemini_generation_config(0.2),
         )
         raw = (getattr(response, "text", "") or "").strip()
         # Strip stray markdown fences just in case
@@ -3651,29 +4270,15 @@ async def status():
             "embed": GEMINI_EMBED_MODEL,
             "rewrite": GEMINI_REWRITE_MODEL,
         },
+        "gemini_seed": GEMINI_SEED,
+        "analyze_cache": analysis_cache.status_metadata(),
     }
 
 
 def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
     """Use Gemini to extract skills from JD and semantically match against CV."""
-    cv_bullets = []
-    for job in (parsed_resume.get("work_experience") or []):
-        title = job.get("title", "")
-        company = job.get("company", "")
-        for bullet in (job.get("bullets") or []):
-            if isinstance(bullet, str) and bullet.strip():
-                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
-    skills_list = [str(s) for s in (parsed_resume.get("skills") or [])[:40]]
-    summary = (parsed_resume.get("summary") or "").strip()
-
-    cv_parts = []
-    if summary:
-        cv_parts.append(f"SUMMARY: {summary}")
-    if skills_list:
-        cv_parts.append("SKILLS LISTED: " + ", ".join(skills_list))
-    if cv_bullets:
-        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
-    cv_section = "\n\n".join(cv_parts)
+    resume_text = str(parsed_resume.get("_resume_text") or "")
+    cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
 
     if GENAI_CLIENT and cv_section:
         try:
@@ -3694,7 +4299,9 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                 "}\n\n"
                 "Rules:\n"
                 "- Use semantic matching, not keyword matching.\n"
-                "- cv_where: quote the specific CV bullet (keeping [Title @ Company] prefix) that proves the skill. null if not found.\n"
+                "- Treat PROJECT EVIDENCE as valid first-class evidence. A project name, tech stack, or project bullet can prove a skill even if it is absent from the skills list.\n"
+                "- A trading/backtesting project with signals like RSI, MACD, Kelly sizing, market data, or strategy optimisation proves trading/finance interest.\n"
+                "- cv_where: quote the specific CV evidence line (keeping [Title @ Company], [Project: Name], or SKILLS prefix) that proves the skill. null if not found.\n"
                 "- If a skill appears in both must_have and nice_to_have sections of the JD, put it in must_have only.\n"
                 "- Don't duplicate skills across the two lists.\n"
                 "- Return ONLY the JSON object, no markdown fences.\n"
@@ -3703,7 +4310,7 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
             response = GENAI_CLIENT.models.generate_content(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
-                config=types.GenerateContentConfig(temperature=0),
+                config=gemini_generation_config(0),
             )
             raw = getattr(response, "text", "") or ""
             parsed = parse_json_response(raw)
@@ -3718,10 +4325,22 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                         if not skill or skill.lower() in seen:
                             continue
                         seen.add(skill.lower())
+                        aggregate = aggregate_requirement_evidence(
+                            skill,
+                            parsed_resume,
+                            resume_text,
+                            ai_present=bool(item.get("present")),
+                            ai_evidence=str(item.get("cv_where") or "").strip() or None,
+                            ai_confidence="strong" if item.get("present") else "missing",
+                        )
                         out.append({
                             "skill": skill,
-                            "present": bool(item.get("present")),
-                            "cv_where": str(item.get("cv_where") or "").strip() or None,
+                            "present": aggregate["present"],
+                            "status": aggregate["status"],
+                            "cv_where": aggregate["cv_where"],
+                            "matched_count": aggregate["matched_count"],
+                            "total_count": aggregate["total_count"],
+                            "atomic_breakdown": aggregate["atomic_breakdown"],
                         })
                     return out
                 return {
@@ -3740,15 +4359,42 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
 
     def _text_present(skill):
         norm = normalize_phrase(skill)
-        return phrase_in_resume(norm, resume_text_norm, resume_token_set, resume_compact)
+        if phrase_in_resume(norm, resume_text_norm, resume_token_set, resume_compact):
+            return True
+        return find_cv_evidence_for_requirement(skill, parsed_resume, resume_text) is not None
 
-    must_items = [{"skill": s, "present": _text_present(s), "cv_where": None} for s in must_have_skills]
+    def _text_where(skill):
+        found = find_cv_evidence_for_requirement(skill, parsed_resume, resume_text)
+        return found["evidence"] if found else None
+
+    must_items = []
+    for s in must_have_skills:
+        aggregate = aggregate_requirement_evidence(s, parsed_resume, resume_text)
+        must_items.append({
+            "skill": s,
+            "present": aggregate["present"],
+            "status": aggregate["status"],
+            "cv_where": aggregate["cv_where"],
+            "matched_count": aggregate["matched_count"],
+            "total_count": aggregate["total_count"],
+            "atomic_breakdown": aggregate["atomic_breakdown"],
+        })
     combined = merge_unique(extract_keyphrases(job_description, limit=30) + extract_skill_tokens(job_description, limit=30))
     must_norms = {normalize_phrase(s) for s in must_have_skills}
-    nice_items = [
-        {"skill": s, "present": _text_present(s), "cv_where": None}
-        for s in combined if normalize_phrase(s) not in must_norms
-    ]
+    nice_items = []
+    for s in combined:
+        if normalize_phrase(s) in must_norms:
+            continue
+        aggregate = aggregate_requirement_evidence(s, parsed_resume, resume_text)
+        nice_items.append({
+            "skill": s,
+            "present": aggregate["present"],
+            "status": aggregate["status"],
+            "cv_where": aggregate["cv_where"],
+            "matched_count": aggregate["matched_count"],
+            "total_count": aggregate["total_count"],
+            "atomic_breakdown": aggregate["atomic_breakdown"],
+        })
     return {"must_have": must_items, "nice_to_have": nice_items}
 
 
@@ -3764,24 +4410,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
             "ats_keywords": {"hard_skills": [], "soft_skills": []},
         }
 
-    cv_bullets = []
-    for job in (parsed_resume.get("work_experience") or []):
-        title = job.get("title", "")
-        company = job.get("company", "")
-        for bullet in (job.get("bullets") or []):
-            if isinstance(bullet, str) and bullet.strip():
-                cv_bullets.append(f"[{title} @ {company}] {bullet.strip()}")
-    skills_list = [str(s) for s in (parsed_resume.get("skills") or [])[:40]]
-    summary = (parsed_resume.get("summary") or "").strip()
-
-    cv_parts = []
-    if summary:
-        cv_parts.append(f"SUMMARY: {summary}")
-    if skills_list:
-        cv_parts.append("SKILLS LISTED: " + ", ".join(skills_list))
-    if cv_bullets:
-        cv_parts.append("EXPERIENCE BULLETS:\n" + "\n".join(cv_bullets[:60]))
-    cv_section = "\n\n".join(cv_parts)
+    cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
 
     if not cv_section:
         return {
@@ -3813,7 +4442,9 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         "  }\n"
         "}\n\n"
         "Rules:\n"
-        "- skills: semantic matching only; cv_where quotes the exact CV bullet proving the skill, or null.\n"
+        "- skills: semantic matching only; cv_where quotes the exact CV evidence line proving the skill, or null.\n"
+        "- skills: treat PROJECT EVIDENCE as valid first-class evidence. Project names, tech stacks, and bullets can prove skills or domain interest even if the skills list omits them.\n"
+        "- skills: a trading/backtesting project with signals like RSI, MACD, Kelly sizing, market data, or strategy optimisation proves trading/finance interest.\n"
         "- skills: if a skill is in both required and preferred sections of the JD, put it in must_have only.\n"
         "- ats_keywords: be exhaustive for hard_skills; sort each list by jd_count descending.\n"
         "- ats_keywords: exclude the company name, the exact job title of the post, and generic filler words.\n"
@@ -3830,7 +4461,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0),
+            config=gemini_generation_config(0),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -3852,12 +4483,28 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
             if not skill or skill.lower() in seen:
                 continue
             seen.add(skill.lower())
+            aggregate = aggregate_requirement_evidence(
+                skill,
+                parsed_resume,
+                resume_text,
+                ai_present=bool(item.get("present")),
+                ai_evidence=str(item.get("cv_where") or "").strip() or None,
+                ai_confidence="strong" if item.get("present") else "missing",
+            )
             out.append({
                 "skill": skill,
-                "present": bool(item.get("present")),
-                "cv_where": str(item.get("cv_where") or "").strip() or None,
+                "present": aggregate["present"],
+                "status": aggregate["status"],
+                "cv_where": aggregate["cv_where"],
+                "matched_count": aggregate["matched_count"],
+                "total_count": aggregate["total_count"],
+                "atomic_breakdown": aggregate["atomic_breakdown"],
             })
         return out
+
+    resume_text_norm_for_ats = normalize_phrase(resume_text)
+    resume_token_set_for_ats = set(resume_text_norm_for_ats.split())
+    resume_compact_for_ats = resume_text_norm_for_ats.replace(" ", "")
 
     def _clean_ats(lst):
         out, seen = [], set()
@@ -3870,6 +4517,16 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
             seen.add(skill.lower())
             jd_count = max(1, int(item.get("jd_count") or 1))
             cv_count = max(0, int(item.get("cv_count") or 0))
+            if cv_count == 0:
+                for alias in _requirement_aliases(skill):
+                    if phrase_in_resume(
+                        normalize_phrase(alias),
+                        resume_text_norm_for_ats,
+                        resume_token_set_for_ats,
+                        resume_compact_for_ats,
+                    ):
+                        cv_count = 1
+                        break
             status = "missing" if cv_count == 0 else ("low" if cv_count < max(1, jd_count // 2) else "present")
             out.append({"skill": skill, "jd_count": jd_count, "cv_count": cv_count, "status": status})
         return out
@@ -3932,6 +4589,18 @@ async def analyze(
     if not job_description:
         raise HTTPException(status_code=400, detail="Job description is empty.")
 
+    cache_key = analyze_cache_key(resume_text, job_description)
+    cached_response = get_cached_analyze_response(cache_key)
+    if cached_response is not None:
+        return attach_analyze_request_context(
+            cached_response,
+            user=user,
+            job_source=job_source,
+            debug=debug,
+            cache_key=cache_key,
+            cache_hit=True,
+        )
+
     debug_info = {} if debug else None
 
     # Phase 1: Parse resume — everything else depends on this
@@ -3988,12 +4657,27 @@ async def analyze(
     ats_keywords_result = unified_result["ats_keywords"]
     must_have_items   = skills_result["must_have"]
     nice_to_have_items = skills_result["nice_to_have"]
-    present_must_have  = [s["skill"] for s in must_have_items   if s["present"]]
-    missing_must_have  = [s["skill"] for s in must_have_items   if not s["present"]]
-    present_nice_to_have = [s["skill"] for s in nice_to_have_items if s["present"]]
-    missing_nice_to_have = [s["skill"] for s in nice_to_have_items if not s["present"]]
-    must_coverage  = len(present_must_have)  / max(1, len(must_have_items))
-    nice_coverage  = len(present_nice_to_have) / max(1, len(nice_to_have_items)) if nice_to_have_items else 0.0
+    present_must_have  = [s["skill"] for s in must_have_items if s.get("status") == "present"]
+    partial_must_have  = [s["skill"] for s in must_have_items if s.get("status") == "partial"]
+    missing_must_have  = [s["skill"] for s in must_have_items if s.get("status", "missing") == "missing"]
+    present_nice_to_have = [s["skill"] for s in nice_to_have_items if s.get("status") == "present"]
+    partial_nice_to_have = [s["skill"] for s in nice_to_have_items if s.get("status") == "partial"]
+    missing_nice_to_have = [s["skill"] for s in nice_to_have_items if s.get("status", "missing") == "missing"]
+
+    def _coverage_score(items: list[dict]) -> float:
+        if not items:
+            return 0.0
+        total = 0.0
+        for item in items:
+            status = item.get("status") or ("present" if item.get("present") else "missing")
+            if status == "present":
+                total += 1.0
+            elif status == "partial":
+                total += 0.5
+        return total / len(items)
+
+    must_coverage = _coverage_score(must_have_items)
+    nice_coverage = _coverage_score(nice_to_have_items)
     combined_terms = merge_unique(textrazor_terms + tfidf_terms)
 
     experience_result = compute_experience_match(
@@ -4016,6 +4700,7 @@ async def analyze(
         prefetched_phrases=combined_terms,
     )
     skills_present = merge_unique(present_must_have + present_nice_to_have)
+    skills_partial = merge_unique(partial_must_have + partial_nice_to_have)
     skills_missing = merge_unique(missing_must_have + missing_nice_to_have)
 
     match_score = round(
@@ -4043,6 +4728,7 @@ async def analyze(
         "experience_evidence": experience_result["experience_evidence"],
         "experience_gaps": experience_result["experience_gaps"],
         "skills_present": skills_present,
+        "skills_partial": skills_partial,
         "skills_missing": skills_missing,
         "weights": {
             "responsibility": RESPONSIBILITY_MATCH_WEIGHT,
@@ -4070,8 +4756,10 @@ async def analyze(
             "must_have": must_have_items,
             "nice_to_have": nice_to_have_items,
             "must_have_present": merge_unique(present_must_have),
+            "must_have_partial": merge_unique(partial_must_have),
             "must_have_missing": merge_unique(missing_must_have),
             "nice_to_have_present": merge_unique(present_nice_to_have),
+            "nice_to_have_partial": merge_unique(partial_nice_to_have),
             "nice_to_have_missing": merge_unique(missing_nice_to_have),
             "must_coverage": round(must_coverage * 100, 2),
             "nice_coverage": round(nice_coverage * 100, 2),
@@ -4140,14 +4828,20 @@ async def analyze(
     # Add a "why your score is X" explainer so the frontend can render an actionable
     # callout under the score ring.
     response["score_breakdown"] = build_score_explainer(response)
+    set_cached_analyze_response(cache_key, response, resume_text, job_description)
 
     # Only count the scan now that we know the response is valid.
     # Skip for paid tier; we leave their counter alone.
     if (user.get("tier") or "free") != "paid":
         db.increment_lifetime_scans(user["id"])
-    fresh_user = db.get_user_by_id(user["id"])
-    response["user"] = _user_to_public(fresh_user) if fresh_user else None
-    return response
+    return attach_analyze_request_context(
+        response,
+        user=user,
+        job_source=job_source,
+        debug=debug,
+        cache_key=cache_key,
+        cache_hit=False,
+    )
 
 
 def build_score_explainer(analyze_response: dict) -> dict:
@@ -4202,7 +4896,7 @@ def build_score_explainer(analyze_response: dict) -> dict:
         })
 
     # 3) Missing must-have skills
-    must_missing = [s for s in must if not s.get("present")]
+    must_missing = [s for s in must if (s.get("status") or ("present" if s.get("present") else "missing")) == "missing"]
     if must_missing:
         missing_names = []
         for s in must_missing[:5]:
@@ -4213,6 +4907,19 @@ def build_score_explainer(analyze_response: dict) -> dict:
             "label": f"{len(must_missing)} must-have skill{'s' if len(must_missing) != 1 else ''} missing from CV",
             "points_lost": min(15, len(must_missing) * 2),
             "fix": "Add to your skills/tools section if you have any experience with: " + ", ".join(missing_names) if missing_names else "",
+        })
+
+    must_partial = [s for s in must if (s.get("status") or ("present" if s.get("present") else "missing")) == "partial"]
+    if must_partial:
+        partial_names = []
+        for s in must_partial[:5]:
+            kw = s.get("skill") or s.get("keyword") or ""
+            if kw:
+                partial_names.append(kw)
+        factors_down.append({
+            "label": f"{len(must_partial)} must-have skill{'s' if len(must_partial) != 1 else ''} only partially evidenced",
+            "points_lost": min(10, len(must_partial) * 2),
+            "fix": "Make the missing sub-skills explicit for: " + ", ".join(partial_names) if partial_names else "",
         })
 
     # 4) ATS hard-skill coverage
@@ -4252,9 +4959,12 @@ def build_score_explainer(analyze_response: dict) -> dict:
     if strong:
         factors_up.append(f"{len(strong)} responsibilit{'ies' if len(strong) != 1 else 'y'} clearly evidenced in your experience")
     if must:
-        must_present = [s for s in must if s.get("present")]
+        must_present = [s for s in must if (s.get("status") or ("present" if s.get("present") else "missing")) == "present"]
+        must_partial_up = [s for s in must if (s.get("status") or ("present" if s.get("present") else "missing")) == "partial"]
         if must_present:
             factors_up.append(f"{len(must_present)} of {len(must)} must-have skills already in your CV")
+        if must_partial_up:
+            factors_up.append(f"{len(must_partial_up)} must-have skill{'s' if len(must_partial_up) != 1 else ''} are partially covered and could be strengthened")
     if exp_detail.get("meets_requirement"):
         factors_up.append("Years of experience meets or exceeds the requirement")
 
@@ -4323,11 +5033,13 @@ PARAGRAPH 3 — DEEP DIVE on SECOND major role (~70–95 words, 3–4 sentences)
 PARAGRAPH 4 — Additional projects, skills, and JD-aligned capabilities (~80–110 words)
 - Open with: "Additionally, I have developed expertise in [theme 1], [theme 2], and [theme 3] through projects such as..."
 - Name 1 specific project from the CV's projects section, with what was built and the metric (e.g. "a serverless expense compliance system using AWS Step Functions and DynamoDB, which reduced manual auditing effort by 90%").
+- Choose the project with the strongest JD/domain overlap, not the project with the flashiest metric. If the JD mentions trading, finance, markets, securities, equities, options, or proprietary trading and the CV contains a trading/backtesting/market-data project, paragraph 4 MUST mention that project by name and include the trading evidence (e.g. RSI, MACD, Kelly sizing, strategy optimisation, market data).
 - Close with one tight sentence naming a SHORT list (NO MORE THAN 4 items) of higher-level capability areas the candidate is comfortable with — pick the areas most relevant to the JD. DO NOT list 8+ individual tools. Wrong: "Python, JavaScript, SQL, Node.js, AWS Lambda, RDS, DynamoDB, Step Functions, Firebase, Firestore, REST APIs, FastAPI, MySQL". Right: "I am comfortable using ETL orchestration tools, managing cloud infrastructure, and implementing robust testing practices". Use the format: " - skills directly relevant to [Company]'s requirements for [JD-derived themes]." (single hyphen with spaces, NOT an em-dash, to avoid encoding glitches).
 
 PARAGRAPH 5 — Why this company + conclusion (~75–95 words, 4 sentences + thank you)
 - Sentence 1: "I am particularly drawn to [Company]'s [specific value 1 from JD], [specific value 2 from JD], and [specific value 3 from JD]."
 - Sentence 2: "I am confident that my experience in [candidate's strength 1] and [strength 2], combined with my [trait — e.g. collaborative mindset / analytical approach] and passion for [field/work], makes me a strong fit for the [Role] role."
+- If sentence 2 mentions passion or interest in the target field, that field interest must be evidenced by a concrete CV project, role, or achievement. Otherwise use "eagerness to deepen my exposure to [field/work]" instead.
 - Sentence 3: "I look forward to contributing to your team and supporting [Company]'s mission to [paraphrase from JD]."
 - Then on its own line, with blank line above: "Thank you for your time and consideration."
 
@@ -4338,6 +5050,7 @@ CRITICAL EXTRACTION RULES
 - Extract the CANDIDATE NAME from the top of the CV.
 - Pull measurable achievements (numbers, percentages, counts) only from the CV. Do not invent.
 - Do not over-claim years of experience. If unsure, write "over the past few years" or "across my recent roles" instead of a specific number.
+- Do not assert passion, interest, or domain motivation as a bare claim. If you write "passion for trading", "interest in finance", or similar, anchor it to a concrete CV item in the same paragraph, preferably the most JD-relevant project. If there is no concrete CV evidence, write "I am eager to deepen my exposure to [domain]" instead.
 - Mirror JD vocabulary in paragraphs 3 and 4 — recruiters scan for matched terminology.
 - If the CV has no name, omit it and just write "Sincerely," with nothing after.
 
@@ -4404,6 +5117,13 @@ def gemini_generate_cover_letter(resume_text: str, job_description: str) -> str:
             detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=503, detail=detail)
 
+    domain_notes = extract_domain_evidence_notes(resume_text, job_description)
+    domain_notes_block = (
+        "\n".join(f"- {note}" for note in domain_notes)
+        if domain_notes
+        else "(No special domain evidence detected by the pre-scan.)"
+    )
+
     prompt = f"""{COVER_LETTER_SYSTEM_PROMPT}
 
 ---
@@ -4415,12 +5135,16 @@ JOB DESCRIPTION:
 {job_description}
 
 ---
+JD-RELEVANT CV EVIDENCE TO PRIORITISE:
+{domain_notes_block}
+
+---
 Generate the cover letter now."""
 
     response = GENAI_CLIENT.models.generate_content(
         model=GEMINI_REWRITE_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.4),
+        config=gemini_generation_config(0.4),
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
@@ -4557,7 +5281,7 @@ def gemini_business_fit(resume_text: str, job_description: str) -> dict:
         response = GENAI_CLIENT.models.generate_content(
             model=_model,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0.1),
+            config=gemini_generation_config(0.1),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -4635,7 +5359,7 @@ def gemini_ats_keywords(job_description: str, resume_text: str) -> dict:
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0),
+            config=gemini_generation_config(0),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -4759,7 +5483,7 @@ def gemini_recruiter_view(resume_text: str, job_description: str, role_fit_break
         response = GENAI_CLIENT.models.generate_content(
             model=_model,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0.1),
+            config=gemini_generation_config(0.1),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -4892,7 +5616,7 @@ def gemini_interview_prep(resume_text: str, job_description: str, role_fit_break
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_LITE_MODEL,
             contents=contents,
-            config=types.GenerateContentConfig(temperature=0.2),
+            config=gemini_generation_config(0.2),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -4972,7 +5696,7 @@ def extract_company_name(job_description: str) -> str:
                 "If you cannot determine it, return an empty string.\n\n"
                 f"{job_description[:2000]}"
             ),
-            config=types.GenerateContentConfig(temperature=0),
+            config=gemini_generation_config(0),
         )
         return (getattr(response, "text", "") or "").strip().strip('"\'')[:80]
     except Exception:
@@ -5039,9 +5763,9 @@ def gemini_company_insights(company_name: str, job_description: str) -> dict:
             grounded_response = GENAI_CLIENT.models.generate_content(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
-                config=types.GenerateContentConfig(
+                config=gemini_generation_config(
+                    0.2,
                     tools=[types.Tool(google_search=types.GoogleSearch())],
-                    temperature=0.2,
                 ),
             )
             raw = getattr(grounded_response, "text", "") or ""
@@ -5055,7 +5779,7 @@ def gemini_company_insights(company_name: str, job_description: str) -> dict:
             fallback_response = GENAI_CLIENT.models.generate_content(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
-                config=types.GenerateContentConfig(temperature=0.2),
+                config=gemini_generation_config(0.2),
             )
             raw = getattr(fallback_response, "text", "") or ""
         except Exception as exc:

@@ -3001,6 +3001,10 @@
   margin-top: 6px;
 }
 
+.sk-three-col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .sk-col {
   display: flex;
   flex-direction: column;
@@ -3021,6 +3025,7 @@
 }
 
 .sk-col-header--have    { color: #4ade80; }
+.sk-col-header--partial { color: #fbbf24; }
 .sk-col-header--missing { color: #ff7070; }
 
 .sk-col-count {
@@ -3032,6 +3037,7 @@
 }
 
 .sk-col-count--have    { background: rgba(74,222,128,0.14); color: #4ade80; }
+.sk-col-count--partial { background: rgba(251,191,36,0.14); color: #fbbf24; }
 .sk-col-count--missing { background: rgba(255,112,112,0.14); color: #ff7070; }
 
 .sk-col-empty {
@@ -3058,6 +3064,7 @@
   margin-top: 6px;
 }
 .sk-dot.present  { background: #4ade80; box-shadow: 0 0 5px rgba(74,222,128,0.5); }
+.sk-dot.warn     { background: #fbbf24; box-shadow: 0 0 5px rgba(251,191,36,0.45); }
 .sk-dot.critical { background: #ff7070; box-shadow: 0 0 5px rgba(255,112,112,0.5); }
 .sk-dot.missing  { background: rgba(251,191,36,0.7); }
 
@@ -3084,6 +3091,7 @@
 }
 
 .sk-row--missing .sk-skill  { color: rgba(240,180,180,0.85); }
+.sk-row--partial .sk-skill  { color: rgba(255,239,196,0.95); }
 
 .sk-must-tag {
   font-size: 0.6rem;
@@ -3094,6 +3102,17 @@
   background: rgba(255,112,112,0.12);
   border: 1px solid rgba(255,112,112,0.25);
   color: #ff9090;
+}
+
+.sk-partial-tag {
+  font-size: 0.6rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.24);
+  color: #fbbf24;
 }
 
 .sk-evidence {

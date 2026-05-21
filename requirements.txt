@@ -10,3 +10,4 @@ scikit-learn
 bcrypt==4.0.1
 PyJWT
 httpx
+pytest

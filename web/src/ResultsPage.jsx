@@ -371,8 +371,9 @@ function CombinedMatchPanel({ matched = [], missing = [], atsKeywords = {}, resp
 }
 
 function SkillsMatchPanel({ skillsDetail = {} }) {
-  const mustHave    = skillsDetail.must_have    || [];
-  const niceToHave  = skillsDetail.nice_to_have || [];
+  const mustHave = skillsDetail.must_have || [];
+  const niceToHave = skillsDetail.nice_to_have || [];
+  const allItems = [...mustHave, ...niceToHave];
 
   const parseWhere = (cv_where) => {
     if (!cv_where) return { label: null, text: null };
@@ -381,19 +382,32 @@ function SkillsMatchPanel({ skillsDetail = {} }) {
     return { label: null, text: cv_where };
   };
 
+  const itemStatus = (item) => item.status || (item.present ? "present" : "missing");
+
   const SkillRow = ({ item, isMust }) => {
     const { label, text } = parseWhere(item.cv_where);
+    const status = itemStatus(item);
+    const isPartial = status === "partial";
+    const coverageLabel = item.total_count > 1 ? `${item.matched_count || 0}/${item.total_count} signals matched` : null;
     return (
-      <div className={`sk-row${item.present ? "" : " sk-row--missing"}${isMust && !item.present ? " sk-row--critical" : ""}`}>
-        <span className={`sk-dot ${item.present ? "present" : (isMust ? "critical" : "missing")}`} />
+      <div className={`sk-row${status === "missing" ? " sk-row--missing" : ""}${isMust && status === "missing" ? " sk-row--critical" : ""}${isPartial ? " sk-row--partial" : ""}`}>
+        <span className={`sk-dot ${status === "present" ? "present" : (isPartial ? "warn" : (isMust ? "critical" : "missing"))}`} />
         <div className="sk-row-body">
           <div className="sk-row-top">
             <span className="sk-skill">{item.skill}</span>
-            {isMust && !item.present && <span className="sk-must-tag">Required</span>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {isPartial && <span className="sk-partial-tag">Partial</span>}
+              {isMust && status === "missing" && <span className="sk-must-tag">Required</span>}
+            </div>
           </div>
-          {item.present && text && (
+          {coverageLabel && (
+            <p className="sk-evidence" style={{ marginBottom: text ? 6 : 0, color: "rgba(251,191,36,0.9)" }}>
+              {coverageLabel}
+            </p>
+          )}
+          {(status === "present" || status === "partial") && text && (
             <p className="sk-evidence">
-              {label && <span className="sk-evidence-label">{label} · </span>}
+              {label && <span className="sk-evidence-label">{label} - </span>}
               {text}
             </p>
           )}
@@ -402,40 +416,52 @@ function SkillsMatchPanel({ skillsDetail = {} }) {
     );
   };
 
+  const presentItems = allItems.filter((item) => itemStatus(item) === "present");
+  const partialItems = allItems.filter((item) => itemStatus(item) === "partial");
+  const missingItems = allItems.filter((item) => itemStatus(item) === "missing");
+
   return (
-    <div className="sk-two-col">
+    <div className="sk-two-col sk-three-col">
       <div className="sk-col">
         <div className="sk-col-header sk-col-header--have">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
           What you have
-          <span className="sk-col-count sk-col-count--have">
-            {[...mustHave, ...niceToHave].filter(s => s.present).length}
-          </span>
+          <span className="sk-col-count sk-col-count--have">{presentItems.length}</span>
         </div>
-        {[...mustHave, ...niceToHave].filter(s => s.present).length === 0
+        {presentItems.length === 0
           ? <p className="sk-col-empty">No skills matched.</p>
           : <>
-              {mustHave.filter(s => s.present).map((item, i) => <SkillRow key={i} item={item} isMust={true} />)}
-              {niceToHave.filter(s => s.present).map((item, i) => <SkillRow key={i} item={item} isMust={false} />)}
-            </>
-        }
+              {mustHave.filter((item) => itemStatus(item) === "present").map((item, i) => <SkillRow key={i} item={item} isMust />)}
+              {niceToHave.filter((item) => itemStatus(item) === "present").map((item, i) => <SkillRow key={i} item={item} isMust={false} />)}
+            </>}
+      </div>
+
+      <div className="sk-col">
+        <div className="sk-col-header sk-col-header--partial">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 6v6l4 2" /></svg>
+          Partially evidenced
+          <span className="sk-col-count sk-col-count--partial">{partialItems.length}</span>
+        </div>
+        {partialItems.length === 0
+          ? <p className="sk-col-empty">No partial matches.</p>
+          : <>
+              {mustHave.filter((item) => itemStatus(item) === "partial").map((item, i) => <SkillRow key={i} item={item} isMust />)}
+              {niceToHave.filter((item) => itemStatus(item) === "partial").map((item, i) => <SkillRow key={i} item={item} isMust={false} />)}
+            </>}
       </div>
 
       <div className="sk-col">
         <div className="sk-col-header sk-col-header--missing">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           What you&apos;re missing
-          <span className="sk-col-count sk-col-count--missing">
-            {[...mustHave, ...niceToHave].filter(s => !s.present).length}
-          </span>
+          <span className="sk-col-count sk-col-count--missing">{missingItems.length}</span>
         </div>
-        {[...mustHave, ...niceToHave].filter(s => !s.present).length === 0
+        {missingItems.length === 0
           ? <p className="sk-col-empty">All skills matched.</p>
           : <>
-              {mustHave.filter(s => !s.present).map((item, i) => <SkillRow key={i} item={item} isMust={true} />)}
-              {niceToHave.filter(s => !s.present).map((item, i) => <SkillRow key={i} item={item} isMust={false} />)}
-            </>
-        }
+              {mustHave.filter((item) => itemStatus(item) === "missing").map((item, i) => <SkillRow key={i} item={item} isMust />)}
+              {niceToHave.filter((item) => itemStatus(item) === "missing").map((item, i) => <SkillRow key={i} item={item} isMust={false} />)}
+            </>}
       </div>
     </div>
   );
