@@ -2368,6 +2368,13 @@ def _requirement_policy(requirement: str) -> dict:
         })
         return policy
 
+    if "roadmap" in req_norm or "roadmap ownership" in req_norm:
+        policy.update({
+            "type": "product_ownership",
+            "allowed_sections": {"experience", "projects", "summary"},
+        })
+        return policy
+
     if any(term in req_norm for term in ("communication", "communicate", "written", "verbal", "presentation", "stakeholder")):
         policy.update({
             "type": "communication",
@@ -2929,6 +2936,33 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         }
         if evidence_tokens.intersection(management_signals):
             return "partial"
+
+    if policy["type"] == "communication":
+        evidence_tokens = set(evidence_norm.split())
+        communication_signals = {
+            "communication", "communicated", "communicate", "stakeholder", "stakeholders",
+            "presented", "presentation", "reported", "reports", "documentation",
+            "documented", "explained", "written", "verbal",
+        }
+        if evidence_tokens.intersection(communication_signals):
+            if {"written", "verbal"}.intersection(set(req_norm.split())) and not {"written", "verbal"}.intersection(evidence_tokens):
+                return "partial"
+            return "strong"
+
+    if policy["type"] == "management":
+        evidence_tokens = set(evidence_norm.split())
+        people_management_signals = {
+            "managed", "manage", "manager", "mentored", "mentor", "mentoring",
+            "supervised", "supervise", "led", "lead", "hired", "coached",
+        }
+        if evidence_tokens.intersection(people_management_signals):
+            return "strong"
+
+    if policy["type"] == "product_ownership":
+        evidence_tokens = set(evidence_norm.split())
+        roadmap_signals = {"roadmap", "owned", "ownership", "prioritised", "prioritized", "backlog", "release", "releases"}
+        if "roadmap" in evidence_tokens and evidence_tokens.intersection(roadmap_signals):
+            return "strong"
 
     for alias in _requirement_aliases(requirement):
         alias_norm = normalize_phrase(alias)

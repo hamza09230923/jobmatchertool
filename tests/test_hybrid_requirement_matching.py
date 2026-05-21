@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 import main
 
 
@@ -285,3 +287,353 @@ def test_rewrite_skill_validator_removes_unevidenced_jd_skills():
     assert "Regulatory Reporting" not in skills
     assert any("Law" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
     assert any("Regulatory Reporting" in item and "add only if accurate" in item for item in result["additional_keywords_to_include"])
+
+
+ROLE_FIXTURES = [
+    pytest.param(
+        "law_degree_present",
+        {
+            "_resume_text": "Education\nLLB Law, University of Leeds, 2024",
+            "summary": "",
+            "skills": [],
+            "tools": [],
+            "education": [{"degree": "LLB Law", "institution": "University of Leeds", "graduation_year": "2024"}],
+            "projects": [{"name": "Legal NLP", "tech_stack": ["Python"], "bullets": ["Built a legal case summarisation tool."]}],
+            "work_experience": [],
+        },
+        "Law degree",
+        "present",
+        "education",
+        id="law degree only from education",
+    ),
+    pytest.param(
+        "law_degree_missing_from_project",
+        {
+            "_resume_text": "Projects\nBuilt a legal case summarisation tool using Python.",
+            "summary": "Python developer with legal-tech project exposure.",
+            "skills": ["Python"],
+            "tools": [],
+            "education": [{"degree": "BA English Literature", "institution": "University of Nottingham"}],
+            "projects": [{"name": "Legal NLP", "tech_stack": ["Python"], "bullets": ["Built a legal case summarisation tool."]}],
+            "work_experience": [],
+        },
+        "Law degree",
+        "missing",
+        None,
+        id="law project does not prove law degree",
+    ),
+    pytest.param(
+        "english_degree_present",
+        {
+            "_resume_text": "Education\nBA English Literature, University of Nottingham, 2024",
+            "summary": "",
+            "skills": ["copywriting"],
+            "tools": [],
+            "education": [{"degree": "BA English Literature", "institution": "University of Nottingham"}],
+            "projects": [],
+            "work_experience": [],
+        },
+        "Bachelor's degree in English",
+        "present",
+        "education",
+        id="english degree present",
+    ),
+    pytest.param(
+        "qts_cert_missing_from_project",
+        {
+            "_resume_text": "Projects\nBuilt a QTS exam revision app.",
+            "summary": "",
+            "skills": ["lesson planning"],
+            "tools": [],
+            "education": [{"degree": "BA English Literature", "institution": "University of Nottingham"}],
+            "certifications": [],
+            "projects": [{"name": "QTS Revision App", "tech_stack": ["React"], "bullets": ["Built a QTS exam revision app."]}],
+            "work_experience": [],
+        },
+        "QTS certification",
+        "missing",
+        None,
+        id="teaching certification requires certification or education evidence",
+    ),
+    pytest.param(
+        "qts_cert_present",
+        {
+            "_resume_text": "Certifications\nQualified Teacher Status (QTS)",
+            "summary": "",
+            "skills": [],
+            "tools": [],
+            "education": [],
+            "certifications": ["Qualified Teacher Status (QTS)"],
+            "projects": [],
+            "work_experience": [],
+        },
+        "QTS certification",
+        "present",
+        "certifications",
+        id="teaching certification present",
+    ),
+    pytest.param(
+        "healthcare_domain_not_hipaa",
+        {
+            "_resume_text": "Projects\nBuilt a healthcare appointment scheduling app.",
+            "summary": "Built healthcare scheduling tools.",
+            "skills": ["Python"],
+            "tools": [],
+            "education": [],
+            "projects": [{"name": "Healthcare Scheduler", "tech_stack": ["Python"], "bullets": ["Built a healthcare appointment scheduling app."]}],
+            "work_experience": [],
+        },
+        "HIPAA compliance",
+        "missing",
+        None,
+        id="healthcare project does not prove HIPAA compliance",
+    ),
+    pytest.param(
+        "healthcare_compliance_present",
+        {
+            "_resume_text": "Experience\nImplemented HIPAA compliance checks for patient-data export workflows.",
+            "summary": "",
+            "skills": ["HIPAA compliance"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Healthcare Data Analyst",
+                    "company": "ClinicCo",
+                    "bullets": ["Implemented HIPAA compliance checks for patient-data export workflows."],
+                }
+            ],
+        },
+        "HIPAA compliance",
+        "present",
+        "skills",
+        id="healthcare compliance explicit",
+    ),
+    pytest.param(
+        "docker_not_kubernetes",
+        {
+            "_resume_text": "Skills\nDocker, Python, AWS\nProjects\nContainerised an API with Docker.",
+            "summary": "",
+            "skills": ["Docker", "Python", "AWS"],
+            "tools": [],
+            "education": [],
+            "projects": [{"name": "API", "tech_stack": ["Docker"], "bullets": ["Containerised an API with Docker."]}],
+            "work_experience": [],
+        },
+        "Kubernetes",
+        "missing",
+        None,
+        id="docker does not prove kubernetes",
+    ),
+    pytest.param(
+        "kubernetes_present",
+        {
+            "_resume_text": "Skills\nKubernetes, Docker, Python",
+            "summary": "",
+            "skills": ["Kubernetes", "Docker", "Python"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [],
+        },
+        "Kubernetes",
+        "present",
+        "skills",
+        id="kubernetes exact tool present",
+    ),
+    pytest.param(
+        "sales_analytics_not_sales_experience",
+        {
+            "_resume_text": "Projects\nBuilt a B2B SaaS sales analytics dashboard.",
+            "summary": "Built analytics dashboards for SaaS metrics.",
+            "skills": ["analytics", "dashboards"],
+            "tools": [],
+            "education": [],
+            "projects": [{"name": "Sales Dashboard", "tech_stack": ["React"], "bullets": ["Built a B2B SaaS sales analytics dashboard."]}],
+            "work_experience": [],
+        },
+        "enterprise sales experience",
+        "missing",
+        None,
+        id="sales analytics project does not prove sales experience",
+    ),
+    pytest.param(
+        "stakeholder_communication_present",
+        {
+            "_resume_text": "Experience\nPresented weekly reports to stakeholders and explained performance trends clearly.",
+            "summary": "",
+            "skills": ["stakeholder communication"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Operations Analyst",
+                    "company": "OpsCo",
+                    "bullets": ["Presented weekly reports to stakeholders and explained performance trends clearly."],
+                }
+            ],
+        },
+        "Strong written and verbal communication skills",
+        "partial",
+        "skills",
+        id="communication can use skills or work evidence",
+    ),
+    pytest.param(
+        "people_management_missing_from_teamwork",
+        {
+            "_resume_text": "Experience\nWorked in a seven-person Agile team to deliver a web app.",
+            "summary": "",
+            "skills": ["teamwork"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Developer",
+                    "company": "MHR",
+                    "bullets": ["Worked in a seven-person Agile team to deliver a web app."],
+                }
+            ],
+        },
+        "people management experience",
+        "missing",
+        None,
+        id="teamwork does not prove people management",
+    ),
+    pytest.param(
+        "people_management_present",
+        {
+            "_resume_text": "Experience\nManaged a team of 4 analysts and mentored two junior hires.",
+            "summary": "",
+            "skills": ["people management", "mentoring"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Analytics Lead",
+                    "company": "DataCo",
+                    "bullets": ["Managed a team of 4 analysts and mentored two junior hires."],
+                }
+            ],
+        },
+        "people management experience",
+        "present",
+        "experience",
+        id="people management explicit",
+    ),
+    pytest.param(
+        "product_roadmap_present",
+        {
+            "_resume_text": "Experience\nOwned the product roadmap, prioritised backlog items, and aligned releases with stakeholders.",
+            "summary": "",
+            "skills": ["product roadmap", "stakeholder management"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Associate Product Manager",
+                    "company": "SaaSCo",
+                    "bullets": ["Owned the product roadmap, prioritised backlog items, and aligned releases with stakeholders."],
+                }
+            ],
+        },
+        "roadmap ownership",
+        "present",
+        "experience",
+        id="product roadmap ownership explicit",
+    ),
+    pytest.param(
+        "gdpr_missing_from_privacy_project",
+        {
+            "_resume_text": "Projects\nBuilt a privacy settings page for a consumer app.",
+            "summary": "",
+            "skills": ["privacy design"],
+            "tools": [],
+            "education": [],
+            "projects": [{"name": "Privacy Settings", "tech_stack": ["React"], "bullets": ["Built a privacy settings page for a consumer app."]}],
+            "work_experience": [],
+        },
+        "GDPR compliance",
+        "missing",
+        None,
+        id="privacy project does not prove GDPR compliance",
+    ),
+    pytest.param(
+        "gdpr_present",
+        {
+            "_resume_text": "Experience\nDocumented GDPR compliance requirements for data-retention workflows.",
+            "summary": "",
+            "skills": ["GDPR compliance"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Data Governance Analyst",
+                    "company": "DataCo",
+                    "bullets": ["Documented GDPR compliance requirements for data-retention workflows."],
+                }
+            ],
+        },
+        "GDPR compliance",
+        "present",
+        "skills",
+        id="GDPR compliance explicit",
+    ),
+    pytest.param(
+        "data_quality_present",
+        {
+            "_resume_text": "Experience\nImplemented validation checks and reconciliation controls to improve data integrity.",
+            "summary": "",
+            "skills": ["data validation", "data integrity"],
+            "tools": [],
+            "education": [],
+            "projects": [],
+            "work_experience": [
+                {
+                    "title": "Data Analyst",
+                    "company": "DataCo",
+                    "bullets": ["Implemented validation checks and reconciliation controls to improve data integrity."],
+                }
+            ],
+        },
+        "attention to detail and data integrity",
+        "partial",
+        "skills",
+        id="data quality explicit",
+    ),
+    pytest.param(
+        "cissp_cert_missing_from_security_project",
+        {
+            "_resume_text": "Projects\nBuilt a security dashboard for vulnerability trends.",
+            "summary": "",
+            "skills": ["security dashboards"],
+            "tools": [],
+            "education": [],
+            "certifications": [],
+            "projects": [{"name": "Security Dashboard", "tech_stack": ["Python"], "bullets": ["Built a security dashboard for vulnerability trends."]}],
+            "work_experience": [],
+        },
+        "CISSP certification",
+        "missing",
+        None,
+        id="security project does not prove CISSP certification",
+    ),
+]
+
+
+@pytest.mark.parametrize("name,parsed_resume,requirement,expected_status,expected_section", ROLE_FIXTURES)
+def test_generic_role_evidence_policy_fixtures(name, parsed_resume, requirement, expected_status, expected_section):
+    result = main.aggregate_requirement_evidence(
+        requirement,
+        parsed_resume,
+        parsed_resume.get("_resume_text", ""),
+    )
+
+    assert result["status"] == expected_status, name
+    if expected_section:
+        assert result["section"] == expected_section, name
