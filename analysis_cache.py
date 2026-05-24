@@ -32,6 +32,7 @@ ANALYZE_CACHE_PERSISTENT = os.getenv("ANALYZE_CACHE_PERSISTENT", "1").strip().lo
 }
 
 _memory_cache: OrderedDict[str, dict] = OrderedDict()
+_secondary_memory_cache: OrderedDict[str, dict] = OrderedDict()
 _lock = threading.Lock()
 _initialized = False
 
@@ -57,6 +58,17 @@ def analyze_cache_key(resume_text: str, job_description: str) -> str:
         )
     )
     return _sha256(payload)
+
+
+def secondary_cache_key(kind: str, payload: dict) -> str:
+    normalized_payload = json.dumps(
+        payload or {},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return _sha256("\0".join((SCORER_VERSION, str(kind or ""), normalized_payload)))
 
 
 def _resume_hash(resume_text: str) -> str:
@@ -101,6 +113,22 @@ def init_cache() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_analyze_cache_version_created "
                 "ON analyze_cache(scorer_version, created_at)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS secondary_cache (
+                    cache_key        TEXT PRIMARY KEY,
+                    cache_kind       TEXT NOT NULL,
+                    scorer_version   TEXT NOT NULL,
+                    response_json    TEXT NOT NULL,
+                    created_at       TEXT NOT NULL,
+                    last_accessed_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_secondary_cache_kind_version_created "
+                "ON secondary_cache(cache_kind, scorer_version, created_at)"
+            )
             conn.commit()
             _initialized = True
         finally:
@@ -131,6 +159,15 @@ def _put_memory(cache_key: str, response: dict) -> None:
     _memory_cache.move_to_end(cache_key)
     while len(_memory_cache) > ANALYZE_CACHE_MAX_ENTRIES:
         _memory_cache.popitem(last=False)
+
+
+def _put_secondary_memory(cache_key: str, response: dict) -> None:
+    if not ANALYZE_CACHE_MAX_ENTRIES:
+        return
+    _secondary_memory_cache[cache_key] = copy.deepcopy(response)
+    _secondary_memory_cache.move_to_end(cache_key)
+    while len(_secondary_memory_cache) > ANALYZE_CACHE_MAX_ENTRIES:
+        _secondary_memory_cache.popitem(last=False)
 
 
 def get_cached_response(cache_key: str) -> Optional[dict]:
@@ -216,6 +253,87 @@ def set_cached_response(cache_key: str, response: dict, resume_text: str = "", j
         conn.close()
 
 
+def get_cached_secondary_response(cache_key: str, kind: str) -> Optional[dict]:
+    if not ANALYZE_CACHE_MAX_ENTRIES:
+        return None
+    with _lock:
+        cached = _secondary_memory_cache.get(cache_key)
+        if cached is not None:
+            _secondary_memory_cache.move_to_end(cache_key)
+            return copy.deepcopy(cached)
+
+    if not ANALYZE_CACHE_PERSISTENT:
+        return None
+
+    init_cache()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT response_json, created_at FROM secondary_cache "
+            "WHERE cache_key = ? AND cache_kind = ? AND scorer_version = ?",
+            (cache_key, kind, SCORER_VERSION),
+        ).fetchone()
+        if not row:
+            return None
+        if _is_expired(row["created_at"]):
+            conn.execute("DELETE FROM secondary_cache WHERE cache_key = ?", (cache_key,))
+            conn.commit()
+            return None
+        response = json.loads(row["response_json"])
+        conn.execute(
+            "UPDATE secondary_cache SET last_accessed_at = ? WHERE cache_key = ?",
+            (_now(), cache_key),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _lock:
+        _put_secondary_memory(cache_key, response)
+    return copy.deepcopy(response)
+
+
+def set_cached_secondary_response(cache_key: str, kind: str, response: dict) -> None:
+    if not ANALYZE_CACHE_MAX_ENTRIES:
+        return
+    cached = _sanitize_response(response)
+    with _lock:
+        _put_secondary_memory(cache_key, cached)
+
+    if not ANALYZE_CACHE_PERSISTENT:
+        return
+
+    init_cache()
+    now = _now()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO secondary_cache (
+                cache_key, cache_kind, scorer_version, response_json,
+                created_at, last_accessed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+                cache_kind = excluded.cache_kind,
+                scorer_version = excluded.scorer_version,
+                response_json = excluded.response_json,
+                last_accessed_at = excluded.last_accessed_at
+            """,
+            (
+                cache_key,
+                kind,
+                SCORER_VERSION,
+                json.dumps(cached, separators=(",", ":"), ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def debug_metadata(cache_key: str, cache_hit: bool) -> dict:
     return {
         "hit": cache_hit,
@@ -229,9 +347,11 @@ def debug_metadata(cache_key: str, cache_hit: bool) -> dict:
 def status_metadata() -> dict:
     with _lock:
         entries = len(_memory_cache)
+        secondary_entries = len(_secondary_memory_cache)
     return {
         "max_entries": ANALYZE_CACHE_MAX_ENTRIES,
         "memory_entries": entries,
+        "secondary_memory_entries": secondary_entries,
         "persistent": ANALYZE_CACHE_PERSISTENT,
         "db_path": str(ANALYZE_CACHE_DB),
         "ttl_days": ANALYZE_CACHE_TTL_DAYS,

@@ -101,6 +101,8 @@ GENAI_CLIENT = (
 )
 SCORER_VERSION = analysis_cache.SCORER_VERSION
 ANALYZE_CACHE_MAX_ENTRIES = analysis_cache.ANALYZE_CACHE_MAX_ENTRIES
+_secondary_compute_locks: dict[str, threading.Lock] = {}
+_secondary_compute_locks_guard = threading.Lock()
 
 
 def gemini_generation_config(temperature: float = 0.0, **kwargs):
@@ -6316,6 +6318,54 @@ def build_score_explainer(analyze_response: dict) -> dict:
     }
 
 
+def _secondary_payload_hash_payload(
+    resume_text: str = "",
+    job_description: str = "",
+    role_fit_breakdown: dict | None = None,
+    company_name: str = "",
+) -> dict:
+    return {
+        "resume": analysis_cache._sha256(analysis_cache._normalize_text(resume_text)) if resume_text else "",
+        "job": analysis_cache._sha256(analysis_cache._normalize_text(job_description)) if job_description else "",
+        "role_fit": analysis_cache._sha256(
+            json.dumps(role_fit_breakdown or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+        ) if role_fit_breakdown else "",
+        "company": company_name,
+    }
+
+
+def get_cached_secondary(kind: str, payload: dict) -> tuple[dict | None, str]:
+    cache_key = analysis_cache.secondary_cache_key(kind, payload)
+    return analysis_cache.get_cached_secondary_response(cache_key, kind), cache_key
+
+
+def set_cached_secondary(kind: str, cache_key: str, response: dict) -> None:
+    analysis_cache.set_cached_secondary_response(cache_key, kind, response)
+
+
+def get_secondary_compute_lock(cache_key: str) -> threading.Lock:
+    with _secondary_compute_locks_guard:
+        lock = _secondary_compute_locks.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _secondary_compute_locks[cache_key] = lock
+        return lock
+
+
+def run_cached_secondary(kind: str, payload: dict, compute):
+    cached, cache_key = get_cached_secondary(kind, payload)
+    if cached is not None:
+        return cached
+    lock = get_secondary_compute_lock(cache_key)
+    with lock:
+        cached, _ = get_cached_secondary(kind, payload)
+        if cached is not None:
+            return cached
+        response = compute()
+        set_cached_secondary(kind, cache_key, response)
+        return response
+
+
 @app.post("/rewrite-cv")
 async def rewrite_cv(payload: dict):
     resume_text = clean_text(str((payload or {}).get("resume_text") or ""))
@@ -6889,8 +6939,15 @@ async def business_fit(payload: dict):
         raise HTTPException(status_code=400, detail="Missing resume_text.")
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
-    result = gemini_business_fit(resume_text, job_description)
-    return {"business_fit": result}
+    cache_payload = _secondary_payload_hash_payload(
+        resume_text=resume_text,
+        job_description=job_description,
+    )
+    return run_cached_secondary(
+        "business-fit",
+        cache_payload,
+        lambda: {"business_fit": gemini_business_fit(resume_text, job_description)},
+    )
 
 
 @app.post("/recruiter-view")
@@ -6902,8 +6959,16 @@ async def recruiter_view(payload: dict):
         raise HTTPException(status_code=400, detail="Missing resume_text.")
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
-    result = gemini_recruiter_view(resume_text, job_description, role_fit_breakdown)
-    return {"recruiter_view": result}
+    cache_payload = _secondary_payload_hash_payload(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown if isinstance(role_fit_breakdown, dict) else {},
+    )
+    return run_cached_secondary(
+        "recruiter-view",
+        cache_payload,
+        lambda: {"recruiter_view": gemini_recruiter_view(resume_text, job_description, role_fit_breakdown)},
+    )
 
 
 def gemini_interview_prep(resume_text: str, job_description: str, role_fit_breakdown: dict | None = None) -> dict:
@@ -6999,8 +7064,16 @@ async def interview_prep(payload: dict):
         raise HTTPException(status_code=400, detail="Missing resume_text.")
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
-    result = gemini_interview_prep(resume_text, job_description, role_fit_breakdown)
-    return {"interview_prep": result}
+    cache_payload = _secondary_payload_hash_payload(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown if isinstance(role_fit_breakdown, dict) else {},
+    )
+    return run_cached_secondary(
+        "interview-prep",
+        cache_payload,
+        lambda: {"interview_prep": gemini_interview_prep(resume_text, job_description, role_fit_breakdown)},
+    )
 
 
 def fetch_company_news(company_name: str, max_articles: int = 6) -> list:
@@ -7199,10 +7272,13 @@ async def company_insights(payload: dict, authorization: Optional[str] = Header(
     job_description = clean_text(str((payload or {}).get("job_description") or ""))
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
-    if not GENAI_CLIENT:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is required for company insights.")
-    company_name = extract_company_name(job_description)
-    if not company_name:
-        raise HTTPException(status_code=422, detail="Could not identify company name from job description.")
-    result = gemini_company_insights(company_name, job_description)
-    return {"company_insights": result, "locked": False}
+    cache_payload = _secondary_payload_hash_payload(job_description=job_description)
+    def compute_company_insights():
+        if not GENAI_CLIENT:
+            raise HTTPException(status_code=500, detail="GEMINI_API_KEY is required for company insights.")
+        company_name = extract_company_name(job_description)
+        if not company_name:
+            raise HTTPException(status_code=422, detail="Could not identify company name from job description.")
+        return {"company_insights": gemini_company_insights(company_name, job_description), "locked": False}
+
+    return run_cached_secondary("company-insights", cache_payload, compute_company_insights)

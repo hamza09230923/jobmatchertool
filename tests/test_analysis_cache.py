@@ -38,3 +38,26 @@ def test_cache_key_changes_with_scorer_version(monkeypatch, tmp_path):
     key_b = cache.analyze_cache_key("Resume text", "Job description")
 
     assert key_a != key_b
+
+
+def test_secondary_cache_round_trip_and_versioning(monkeypatch, tmp_path):
+    cache = reload_cache(monkeypatch, tmp_path, version="secondary-a")
+    payload = {"resume": "abc", "job": "def", "role_fit": "ghi"}
+    key_a = cache.secondary_cache_key("recruiter-view", payload)
+
+    cache.set_cached_secondary_response(
+        key_a,
+        "recruiter-view",
+        {"recruiter_view": {"verdict": {"decision": "maybe"}}, "debug": {"drop": True}},
+    )
+    cache = importlib.reload(cache)
+
+    cached = cache.get_cached_secondary_response(key_a, "recruiter-view")
+    assert cached["recruiter_view"]["verdict"]["decision"] == "maybe"
+    assert "debug" not in cached
+
+    cache = reload_cache(monkeypatch, tmp_path, version="secondary-b")
+    key_b = cache.secondary_cache_key("recruiter-view", payload)
+
+    assert key_a != key_b
+    assert cache.get_cached_secondary_response(key_a, "recruiter-view") is None

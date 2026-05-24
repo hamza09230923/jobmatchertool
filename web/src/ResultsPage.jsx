@@ -1595,19 +1595,26 @@ export default function ResultsPage() {
       "Could not run business fit analysis."
     );
 
-    const ciFetch = wrapFetch(
-      fetch(`${API_BASE_URL}/company-insights`, {
-        method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        body: JSON.stringify({ job_description: jobDescription }),
-        signal,
-      }).then(safeJson).then((d) => ({
-        ok: true,
-        data: d.company_insights || null,
-        locked: !!d.locked,
-        upgrade_message: d.upgrade_message || null,
-      })),
-      "Could not load company insights."
-    );
+    const ciFetch = result.user?.tier !== "paid"
+      ? Promise.resolve({
+          ok: true,
+          data: null,
+          locked: true,
+          upgrade_message: "Company research is available on the full plan.",
+        })
+      : wrapFetch(
+          fetch(`${API_BASE_URL}/company-insights`, {
+            method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeader() },
+            body: JSON.stringify({ job_description: jobDescription }),
+            signal,
+          }).then(safeJson).then((d) => ({
+            ok: true,
+            data: d.company_insights || null,
+            locked: !!d.locked,
+            upgrade_message: d.upgrade_message || null,
+          })),
+          "Could not load company insights."
+        );
 
     const rvFetch = wrapFetch(
       fetch(`${API_BASE_URL}/recruiter-view`, {
