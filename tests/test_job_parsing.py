@@ -193,3 +193,142 @@ def test_ats_keyword_filter_rejects_generic_single_word_noise():
     assert main.is_valid_ats_keyword("transaction reporting policy", blob)
     assert main.is_valid_ats_keyword("MiFIR", blob)
     assert main.is_valid_ats_keyword("EMIR", blob)
+
+
+EVERNOTE_JD = """
+About the job
+
+Evernote is a note-taking and organization platform that millions of users rely on for powerful note taking, project planning, personal knowledge management, and more.
+Now part of Bending Spoons, it plays a key role in a portfolio of outstanding digital businesses united by a shared focus on innovation and operational excellence.
+By applying through the Evernote brand, you'll be stepping into the wider Bending Spoons team.
+You may work directly on Evernote or contribute to one of our other leading products.
+
+A few examples of your responsibilities
+
+Build stuff that matters. Take real ownership from idea to production, creating systems used by millions and evolving them into products at scale.
+Amplify your impact with AI. Integrate the most powerful AI tools directly into your development workflow - design, implementation, testing, and documentation - to move faster while maintaining high standards for correctness, reliability, and maintainability.
+Master your toolkit. Work across diverse stacks with end-to-end ownership, choosing the right technologies for each challenge. From monoliths to microservices, gRPC to REST, Kubernetes to Docker, Python to Rust - you'll apply technologies thoughtfully, focusing on depth and purpose rather than trends.
+Simplify relentlessly. Question every layer of complexity. Improve architectures, pipelines, and codebases to build systems that are simpler, more scalable, and easier to maintain.
+
+What we look for
+
+Reasoning ability. Given the necessary knowledge, you can solve complex problems.
+Drive. You're extremely ambitious in everything you do.
+Team spirit. You give generously and without the expectation of receiving in return.
+Proficiency in English. You read, write, and speak proficiently in English.
+
+What we offer
+
+Competitive pay and access to equity in the company.
+All. These. Benefits. Flexible hours, remote working, health insurance, relocation package, generous parental support, and a yearly retreat.
+
+The selection process
+
+All applications go through our careers page, which is the only way to be considered.
+"""
+
+
+def test_evernote_requirement_extraction_excludes_company_and_application_text():
+    requirements = main.extract_local_job_requirements(EVERNOTE_JD)
+    texts = [req["text"] for req in requirements]
+    joined = " ".join(texts).lower()
+
+    assert "note-taking and organization platform" not in joined
+    assert "by applying through the evernote brand" not in joined
+    assert "you may work directly on evernote" not in joined
+    assert "all applications go through" not in joined
+    assert "benefits" not in joined
+    assert any("real ownership from idea to production" in text.lower() for text in texts)
+    assert any("ai tools directly into your development workflow" in text.lower() for text in texts)
+    assert any("grpc to rest" in text.lower() for text in texts)
+    assert any("proficiency in english" in text.lower() for text in texts)
+
+
+def test_evernote_ats_keywords_are_augmented_when_model_under_returns(monkeypatch):
+    fake_json = """
+    {
+      "skills": {"must_have": [], "nice_to_have": []},
+      "ats_keywords": {
+        "hard_skills": [
+          {"skill": "Python", "jd_count": 1, "cv_count": 1},
+          {"skill": "Docker", "jd_count": 1, "cv_count": 1},
+          {"skill": "Kubernetes", "jd_count": 1, "cv_count": 0}
+        ],
+        "soft_skills": [
+          {"skill": "team spirit", "jd_count": 1, "cv_count": 0}
+        ]
+      }
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Skills\nPython, Docker, REST APIs, microservices\nProjects\nBuilt FastAPI services with testing and documentation.",
+        "summary": "",
+        "skills": ["Python", "Docker", "REST APIs", "microservices", "testing", "documentation"],
+        "tools": ["Docker"],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(
+        EVERNOTE_JD,
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    hard = {item["skill"]: item for item in result["ats_keywords"]["hard_skills"]}
+    assert {"Python", "Docker", "Kubernetes", "Rust", "gRPC", "REST", "microservices"}.issubset(hard)
+    assert hard["REST"]["status"] == "present"
+    assert hard["Rust"]["status"] == "missing"
+    assert hard["gRPC"]["status"] == "missing"
+
+
+def test_english_proficiency_does_not_match_unrelated_reading_writing_words():
+    parsed_resume = {
+        "_resume_text": "Projects\nBuilt a CV matching platform that reads PDF files and writes analysis reports.",
+        "summary": "",
+        "skills": ["Python", "PDF parsing"],
+        "tools": [],
+        "education": [],
+        "projects": [
+            {
+                "name": "CV matching platform",
+                "bullets": ["Reads PDF files and writes analysis reports for job descriptions."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Proficiency in English. You read, write, and speak proficiently in English.",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "missing"
+    assert result["matched_count"] == 0
+
+
+def test_million_scale_requirement_is_not_proven_by_small_user_count():
+    parsed_resume = {
+        "_resume_text": "Projects\nBuilt a production app serving 60+ active users.",
+        "summary": "",
+        "skills": ["Python", "FastAPI"],
+        "tools": [],
+        "education": [],
+        "projects": [
+            {
+                "name": "Production app",
+                "bullets": ["Built and deployed a production app serving 60+ active users."],
+            }
+        ],
+        "work_experience": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "creating systems used by millions and evolving them into products at scale",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "missing"

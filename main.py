@@ -418,6 +418,21 @@ LANGUAGE_SKILLS = (
     "sql",
 )
 
+NATURAL_LANGUAGE_SKILLS = (
+    "english",
+    "spanish",
+    "french",
+    "german",
+    "italian",
+    "polish",
+    "portuguese",
+    "mandarin",
+    "arabic",
+    "hindi",
+    "japanese",
+    "korean",
+)
+
 
 TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.#-]{1,}")
 CLEAN_EDGE_RE = re.compile(r"^[^A-Za-z0-9+#]+|[^A-Za-z0-9+#]+$")
@@ -682,6 +697,13 @@ SOFT_SKILLS = (
     "stakeholder management",
 )
 TECH_SKILL_ALIASES = {
+    "python": ("python", "python3"),
+    "rust": ("rust",),
+    "docker": ("docker",),
+    "kubernetes": ("kubernetes", "k8s"),
+    "grpc": ("grpc", "gRPC"),
+    "rest": ("rest", "restful", "rest api", "rest apis"),
+    "microservices": ("microservices", "microservice"),
     "react": ("react", "react.js", "reactjs"),
     "typescript": ("typescript", "type script", "ts"),
     "javascript": ("javascript", "java script", "js"),
@@ -2281,7 +2303,7 @@ def extract_seniority_terms(text: str) -> List[str]:
 
 
 _COMPANY_SUBJECT_RE = re.compile(
-    r'^\s*(\([A-Za-z]+:[A-Za-z]+\)|we\b|our\b)',
+    r'^\s*(\([A-Za-z]+:[A-Za-z]+\)|we\b|our\b|at\s+[A-Z][A-Za-z0-9& .-]+\b)',
     re.IGNORECASE,
 )
 _COMPANY_DESC_SIGNALS = (
@@ -2291,6 +2313,17 @@ _COMPANY_DESC_SIGNALS = (
     "is one of", "has one of", "manage a combined", "manages a combined",
     "assets under management", "around the world", "part of blackrock",
     "with offices in", "track record of",
+    "note taking platform", "organization platform", "digital businesses",
+    "portfolio of outstanding", "serves a huge number of customers",
+    "shareowners", "own and operate", "company culture",
+)
+_JD_META_SIGNALS = (
+    "by applying", "stepping into", "you may work directly", "part of a high performing",
+    "what we offer", "selection process", "all applications", "careers page",
+    "apply now", "before you apply", "permanent or fixed term",
+    "salary", "compensation", "benefits", "access to equity", "tax cut",
+    "remote working", "flexible hours", "start date", "relocation", "parental",
+    "health insurance", "reasonable accommodations", "offer stage",
 )
 _CANDIDATE_HINTS = (
     "you will", "you'll", "you are", "you should", "you must",
@@ -2309,6 +2342,8 @@ ROLE_REQUIREMENT_SIGNALS = (
     "collaborate", "communicate", "stakeholder", "technical direction",
     "technical vision", "delivery", "architecture", "agile", "creating",
     "pipeline", "pipelines",
+    "ownership", "end-to-end ownership", "ai tools", "workflow",
+    "correctness", "reliability", "maintainability", "scalable",
     "microsoft excel", "powerpoint", "microsoft word",
 )
 
@@ -2322,6 +2357,7 @@ ESSENTIAL_SECTION_HEADERS = (
     "requirements", "qualifications", "essential", "skills you will have",
     "how you'll spend your time", "how you ll spend your time",
     "responsibilities", "job responsibilities", "about you",
+    "what we look for",
 )
 
 EXCLUDED_JD_SECTION_HEADERS = (
@@ -2334,13 +2370,22 @@ EXCLUDED_JD_SECTION_HEADERS = (
     "about the fca",
     "about the fca and team",
     "about the company",
+    "about the job",
     "company overview",
     "about us",
+    "what we offer",
+    "commitment contract",
+    "commitment and contract",
+    "location",
+    "the selection process",
+    "selection process",
+    "before you apply",
     "equal opportunity employer",
 )
 
 CANDIDATE_JD_SECTION_HEADERS = (
     "description",
+    "a few examples of your responsibilities",
     "key responsibilities",
     "role responsibilities",
     "responsibilities",
@@ -2409,7 +2454,36 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "mifir", "emir", "sftr", "mifid", "rts", "excel", "powerpoint", "word",
     "python", "sql", "aws", "docker", "kubernetes", "react", "typescript",
     "javascript", "java", "c++", "c#", "scala", "spark", "hadoop",
+    "rust", "grpc", "rest", "microservices", "monoliths", "testing",
+    "documentation", "correctness", "reliability", "maintainability",
+    "scalability",
 }
+
+LOCAL_ATS_HARD_KEYWORDS = (
+    "Python",
+    "Rust",
+    "gRPC",
+    "REST",
+    "Kubernetes",
+    "Docker",
+    "microservices",
+    "monoliths",
+    "testing",
+    "documentation",
+    "correctness",
+    "reliability",
+    "maintainability",
+    "scalability",
+    "AI tools",
+)
+
+LOCAL_ATS_SOFT_KEYWORDS = (
+    "reasoning ability",
+    "ownership",
+    "team spirit",
+    "collaborative",
+    "drive",
+)
 
 
 def _candidate_requirement_text_blob(job_description: str) -> str:
@@ -2457,6 +2531,14 @@ def is_valid_ats_keyword(keyword: str, candidate_jd_blob: str) -> bool:
     return len(tokens) <= 3 and all(token in candidate_tokens for token in tokens)
 
 
+def _count_normalized_phrase(phrase: str, text_norm: str) -> int:
+    phrase_norm = normalize_phrase(phrase)
+    if not phrase_norm or not text_norm:
+        return 0
+    pattern = rf"(?<![a-z0-9+#]){re.escape(phrase_norm)}(?![a-z0-9+#])"
+    return len(re.findall(pattern, text_norm))
+
+
 def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
     if any(header in line_norm for header in NICE_SECTION_HEADERS):
         return "nice_to_have"
@@ -2472,6 +2554,12 @@ def _should_keep_requirement_line(text: str) -> bool:
     if _COMPANY_SUBJECT_RE.match(text):
         return False
     if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
+        return False
+    if any(sig in norm for sig in _JD_META_SIGNALS):
+        return False
+    if re.match(r"^[a-z0-9 &.-]{2,60}\s+is\s+(?:a|an|one of|part of|the)\b", norm) and not any(
+        hint in norm for hint in _CANDIDATE_HINTS
+    ):
         return False
     if re.match(
         r"^(?:blackrock|gip|gis|global infrastructure solutions|global infrastructure partners|the firm)\b",
@@ -2693,6 +2781,12 @@ ATOMIC_REQUIREMENT_HINTS = (
 
 
 STRICT_TOOL_TERMS = {
+    "python",
+    "rust",
+    "grpc",
+    "rest",
+    "rest api",
+    "microservices",
     "react",
     "typescript",
     "javascript",
@@ -2807,6 +2901,26 @@ def _requirement_policy(requirement: str) -> dict:
         "allowed_sections": {"skills", "experience", "projects", "summary", "education", "certifications"},
         "subjects": set(),
     }
+
+    language_hit = tokens.intersection(NATURAL_LANGUAGE_SKILLS)
+    if language_hit and (
+        {"proficiency", "proficient", "fluency", "fluent", "language", "spoken", "speaking", "written", "writing", "read", "reading"}.intersection(tokens)
+        or re.search(r"\bproficiency\s+in\s+\w+\b", req_norm)
+    ):
+        policy.update({
+            "type": "language",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "education", "summary"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("used by millions", "millions of users", "millions", "products at scale")):
+        policy.update({
+            "type": "large_scale_systems",
+            "strict": True,
+            "allowed_sections": {"experience", "projects", "summary"},
+        })
+        return policy
 
     is_degree_project_requirement = bool(re.search(r"\bdegree\s+projects?\b", req_norm))
     if _is_postgraduate_degree_requirement(req_norm, tokens):
@@ -2972,6 +3086,10 @@ def _evidence_has_postgraduate_degree(evidence_norm: str) -> bool:
 
 def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
     req_norm = normalize_phrase(requirement)
+    if policy["type"] == "language":
+        return [term for term in NATURAL_LANGUAGE_SKILLS if term in req_norm]
+    if policy["type"] == "large_scale_systems":
+        return ["million", "millions"]
     if policy["type"] in {"degree", "postgraduate_degree"}:
         terms = []
         for subject in policy.get("subjects") or []:
@@ -3004,6 +3122,21 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
         if not _evidence_has_degree_subject(evidence_norm, policy.get("subjects") or set()):
             return None
         return {"confidence": "strong", "section": section, "policy": policy}
+
+    if policy["type"] == "language":
+        req_tokens = set(normalize_phrase(requirement).split())
+        evidence_tokens = set(evidence_norm.split())
+        language_tokens = req_tokens.intersection(NATURAL_LANGUAGE_SKILLS)
+        proficiency_tokens = {"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}
+        if language_tokens and language_tokens.issubset(evidence_tokens) and evidence_tokens.intersection(proficiency_tokens):
+            return {"confidence": "strong", "section": section, "policy": policy}
+        return None
+
+    if policy["type"] == "large_scale_systems":
+        evidence_tokens = set(evidence_norm.split())
+        if evidence_tokens.intersection({"million", "millions"}):
+            return {"confidence": "strong", "section": section, "policy": policy}
+        return None
 
     explicit_terms = _policy_explicit_terms(policy, requirement)
     if policy["strict"] and explicit_terms:
@@ -3126,7 +3259,15 @@ def decompose_requirement_text(text: str) -> List[dict]:
         return []
 
     parent_policy = _requirement_policy(source)
-    if parent_policy["type"] in {"degree", "postgraduate_degree", "certification", "years_experience", "early_career_experience"}:
+    if parent_policy["type"] in {
+        "degree",
+        "postgraduate_degree",
+        "certification",
+        "years_experience",
+        "early_career_experience",
+        "language",
+        "large_scale_systems",
+    }:
         normalized = normalize_phrase(source)
         return [{
             "text": source,
@@ -3582,6 +3723,12 @@ def _requirement_aliases(requirement: str) -> List[str]:
 
 
 STRICT_EVIDENCE_TERMS = (
+    "python",
+    "rust",
+    "grpc",
+    "rest",
+    "rest api",
+    "microservices",
     "typescript",
     "react",
     "docker",
@@ -3696,10 +3843,16 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
     if policy["type"] == "language":
         req_tokens = set(req_norm.split())
         evidence_tokens = set(evidence_norm.split())
-        language_tokens = req_tokens - {"fluency", "fluent", "language", "proficiency"}
+        language_tokens = req_tokens.intersection(NATURAL_LANGUAGE_SKILLS)
         if language_tokens and language_tokens.issubset(evidence_tokens):
-            if evidence_tokens.intersection({"fluent", "fluency", "native", "proficient", "proficiency"}):
+            if evidence_tokens.intersection({"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}):
                 return "strong"
+
+    if policy["type"] == "large_scale_systems":
+        evidence_tokens = set(evidence_norm.split())
+        if evidence_tokens.intersection({"million", "millions"}):
+            return "strong"
+        return None
 
     if policy["type"] == "product_ownership":
         evidence_tokens = set(evidence_norm.split())
@@ -5892,8 +6045,42 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
                 break
         return out
 
+    def _augment_ats_with_local_keywords(items, candidates, limit):
+        out = list(items or [])
+        seen = {normalize_phrase(item.get("skill") or "") for item in out if isinstance(item, dict)}
+        for skill in candidates:
+            norm_skill = normalize_phrase(skill)
+            if not norm_skill or norm_skill in seen:
+                continue
+            if not is_valid_ats_keyword(skill, candidate_jd_blob_for_ats):
+                continue
+            jd_count = _count_normalized_phrase(skill, candidate_jd_blob_for_ats)
+            if jd_count <= 0:
+                continue
+            cv_count = 0
+            for alias in _requirement_aliases(skill):
+                alias_count = _count_normalized_phrase(alias, resume_text_norm_for_ats)
+                if alias_count:
+                    cv_count = max(cv_count, alias_count)
+            status = "missing" if cv_count == 0 else ("low" if cv_count < max(1, jd_count // 2) else "present")
+            out.append({"skill": skill, "jd_count": jd_count, "cv_count": cv_count, "status": status})
+            seen.add(norm_skill)
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
     skills_raw = parsed.get("skills") or {}
     ats_raw = parsed.get("ats_keywords") or {}
+    hard_ats = _augment_ats_with_local_keywords(
+        _clean_ats(ats_raw.get("hard_skills"), 12),
+        LOCAL_ATS_HARD_KEYWORDS,
+        12,
+    )
+    soft_ats = _augment_ats_with_local_keywords(
+        _clean_ats(ats_raw.get("soft_skills"), 8),
+        LOCAL_ATS_SOFT_KEYWORDS,
+        8,
+    )
     return {
         "skills": {
             "must_have": filter_satisfied_alternative_missing_skills(
@@ -5906,8 +6093,8 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
             ),
         },
         "ats_keywords": {
-            "hard_skills": _clean_ats(ats_raw.get("hard_skills"), 12),
-            "soft_skills": _clean_ats(ats_raw.get("soft_skills"), 8),
+            "hard_skills": hard_ats,
+            "soft_skills": soft_ats,
         },
     }
 
