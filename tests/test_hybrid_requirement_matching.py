@@ -1049,3 +1049,300 @@ def test_generic_role_evidence_policy_fixtures(name, parsed_resume, requirement,
     assert result["status"] == expected_status, name
     if expected_section:
         assert result["section"] == expected_section, name
+
+
+def parsed_resume(
+    *,
+    resume_text="",
+    summary="",
+    skills=None,
+    tools=None,
+    education=None,
+    certifications=None,
+    projects=None,
+    work_experience=None,
+):
+    return {
+        "_resume_text": resume_text,
+        "summary": summary,
+        "skills": skills or [],
+        "tools": tools or [],
+        "education": education or [],
+        "certifications": certifications or [],
+        "projects": projects or [],
+        "work_experience": work_experience or [],
+    }
+
+
+FALSE_POSITIVE_REQUIREMENT_FIXTURES = [
+    pytest.param(
+        "aws_dashboard_not_certification",
+        parsed_resume(
+            resume_text="Projects\nAWS Cost Dashboard: Built a dashboard showing monthly cloud spend.",
+            skills=["AWS", "Python"],
+            projects=[{"name": "AWS Cost Dashboard", "tech_stack": ["AWS", "Python"], "bullets": ["Built a dashboard showing monthly cloud spend."]}],
+        ),
+        "AWS Solutions Architect certification",
+        id="AWS project does not prove AWS certification",
+    ),
+    pytest.param(
+        "acca_tracker_not_qualification",
+        parsed_resume(
+            resume_text="Projects\nACCA Study Tracker: Built a revision planner for accounting exams.",
+            skills=["accounting basics", "Python"],
+            projects=[{"name": "ACCA Study Tracker", "tech_stack": ["Python"], "bullets": ["Built a revision planner for accounting exams."]}],
+        ),
+        "ACCA qualification",
+        id="ACCA study project does not prove ACCA qualification",
+    ),
+    pytest.param(
+        "cpa_calculator_not_certification",
+        parsed_resume(
+            resume_text="Projects\nBuilt a tax calculator for CPA exam practice questions.",
+            projects=[{"name": "Tax Calculator", "tech_stack": ["JavaScript"], "bullets": ["Built a tax calculator for CPA exam practice questions."]}],
+        ),
+        "CPA certification",
+        id="CPA practice project does not prove CPA certification",
+    ),
+    pytest.param(
+        "business_project_not_mba",
+        parsed_resume(
+            resume_text="Projects\nBuilt a business strategy case-study recommender.",
+            education=[{"degree": "BSc Computer Science", "institution": "Nottingham"}],
+            projects=[{"name": "Strategy Recommender", "tech_stack": ["Python"], "bullets": ["Built a business strategy case-study recommender."]}],
+        ),
+        "MBA degree",
+        id="business project does not prove MBA",
+    ),
+    pytest.param(
+        "healthcare_app_not_nursing_degree",
+        parsed_resume(
+            resume_text="Projects\nBuilt a healthcare appointment scheduling app.",
+            education=[{"degree": "BSc Computer Science", "institution": "Nottingham"}],
+            projects=[{"name": "Healthcare Scheduler", "tech_stack": ["React"], "bullets": ["Built a healthcare appointment scheduling app."]}],
+        ),
+        "Nursing degree",
+        id="healthcare app does not prove nursing degree",
+    ),
+    pytest.param(
+        "project_template_not_pmp",
+        parsed_resume(
+            resume_text="Projects\nBuilt a PMP-style project plan template generator.",
+            projects=[{"name": "Project Planner", "tech_stack": ["Python"], "bullets": ["Built a PMP-style project plan template generator."]}],
+        ),
+        "PMP certification",
+        id="PMP template does not prove PMP certification",
+    ),
+    pytest.param(
+        "stock_dashboard_not_financial_statements",
+        degree_resume(),
+        "financial statement preparation",
+        id="market project does not prove financial statement preparation",
+    ),
+    pytest.param(
+        "report_automation_not_regulatory_reporting",
+        parsed_resume(
+            resume_text="Projects\nAutomated weekly operational report exports using Excel macros.",
+            skills=["Excel", "report automation"],
+            projects=[{"name": "Report Automation", "tech_stack": ["Excel"], "bullets": ["Automated weekly operational report exports using Excel macros."]}],
+        ),
+        "regulatory reporting",
+        id="generic report automation does not prove regulatory reporting",
+    ),
+    pytest.param(
+        "react_web_not_react_native",
+        parsed_resume(
+            resume_text="Projects\nBuilt a React web dashboard.",
+            skills=["React", "JavaScript"],
+            projects=[{"name": "Web Dashboard", "tech_stack": ["React"], "bullets": ["Built a React web dashboard."]}],
+        ),
+        "React Native",
+        id="React web does not prove React Native",
+    ),
+    pytest.param(
+        "javascript_not_typescript",
+        parsed_resume(
+            resume_text="Skills\nJavaScript, React",
+            skills=["JavaScript", "React"],
+        ),
+        "TypeScript",
+        id="JavaScript does not prove TypeScript",
+    ),
+    pytest.param(
+        "docker_compose_not_terraform",
+        parsed_resume(
+            resume_text="Projects\nContainerised a Flask API with Docker Compose.",
+            skills=["Docker", "Python"],
+            projects=[{"name": "API Containerisation", "tech_stack": ["Docker"], "bullets": ["Containerised a Flask API with Docker Compose."]}],
+        ),
+        "Terraform",
+        id="Docker Compose does not prove Terraform",
+    ),
+    pytest.param(
+        "mentoring_bot_not_line_management",
+        parsed_resume(
+            resume_text="Projects\nBuilt a mentoring chatbot for onboarding FAQs.",
+            skills=["mentoring content", "Python"],
+            projects=[{"name": "Mentoring Bot", "tech_stack": ["Python"], "bullets": ["Built a mentoring chatbot for onboarding FAQs."]}],
+        ),
+        "line management experience",
+        id="mentoring chatbot does not prove line management",
+    ),
+    pytest.param(
+        "language_app_not_french_fluency",
+        parsed_resume(
+            resume_text="Projects\nBuilt a French restaurant booking vocabulary app.",
+            skills=["React"],
+            projects=[{"name": "French Vocabulary App", "tech_stack": ["React"], "bullets": ["Built a French restaurant booking vocabulary app."]}],
+        ),
+        "French fluency",
+        id="French app does not prove French fluency",
+    ),
+    pytest.param(
+        "security_dashboard_not_iso27001",
+        parsed_resume(
+            resume_text="Projects\nBuilt a dashboard for vulnerability trend analysis.",
+            skills=["security dashboards"],
+            projects=[{"name": "Security Dashboard", "tech_stack": ["Python"], "bullets": ["Built a dashboard for vulnerability trend analysis."]}],
+        ),
+        "ISO 27001 certification",
+        id="security dashboard does not prove ISO 27001 certification",
+    ),
+]
+
+
+@pytest.mark.parametrize("name,parsed_resume,requirement", FALSE_POSITIVE_REQUIREMENT_FIXTURES)
+def test_false_positive_requirement_fixtures_stay_missing(name, parsed_resume, requirement):
+    result = main.aggregate_requirement_evidence(
+        requirement,
+        parsed_resume,
+        parsed_resume.get("_resume_text", ""),
+    )
+
+    assert result["status"] == "missing", name
+
+
+FALSE_NEGATIVE_REQUIREMENT_FIXTURES = [
+    pytest.param(
+        "sql_skill_present",
+        parsed_resume(resume_text="Skills\nSQL, Python", skills=["SQL", "Python"]),
+        "SQL",
+        "skills",
+        id="SQL skill is detected",
+    ),
+    pytest.param(
+        "react_typescript_present",
+        parsed_resume(resume_text="Skills\nReact, TypeScript", skills=["React", "TypeScript"]),
+        "React and TypeScript",
+        "skills",
+        id="React and TypeScript are both detected",
+    ),
+    pytest.param(
+        "aws_lambda_present",
+        parsed_resume(
+            resume_text="Projects\nBuilt a serverless parser with AWS Lambda and S3.",
+            skills=["AWS Lambda", "S3"],
+            projects=[{"name": "Serverless Parser", "tech_stack": ["AWS Lambda", "S3"], "bullets": ["Built a serverless parser with AWS Lambda and S3."]}],
+        ),
+        "AWS Lambda",
+        "skills",
+        id="AWS Lambda exact tool is detected",
+    ),
+    pytest.param(
+        "cicd_present",
+        parsed_resume(
+            resume_text="Experience\nCreated CI/CD pipelines with GitHub Actions for deployment.",
+            tools=["GitHub Actions"],
+            work_experience=[{"title": "Developer", "company": "DevCo", "bullets": ["Created CI/CD pipelines with GitHub Actions for deployment."]}],
+        ),
+        "CI/CD pipelines",
+        "experience",
+        id="CI/CD pipeline evidence is detected",
+    ),
+    pytest.param(
+        "line_management_present",
+        parsed_resume(
+            resume_text="Experience\nLine managed 3 analysts and ran quarterly performance reviews.",
+            skills=["line management"],
+            work_experience=[{"title": "Analytics Lead", "company": "DataCo", "bullets": ["Line managed 3 analysts and ran quarterly performance reviews."]}],
+        ),
+        "line management experience",
+        "experience",
+        id="line management is detected",
+    ),
+    pytest.param(
+        "pmp_cert_present",
+        parsed_resume(
+            resume_text="Certifications\nProject Management Professional (PMP)",
+            certifications=["Project Management Professional (PMP)"],
+        ),
+        "PMP certification",
+        "certifications",
+        id="PMP certification is detected",
+    ),
+    pytest.param(
+        "msc_present",
+        parsed_resume(
+            resume_text="Education\nMSc Computer Science, University of Nottingham, 2026",
+            education=[{"degree": "MSc Computer Science", "institution": "University of Nottingham", "graduation_year": "2026"}],
+        ),
+        "Postgraduate degree in Computer Science",
+        "education",
+        id="MSc Computer Science is detected",
+    ),
+    pytest.param(
+        "regulatory_reporting_present",
+        parsed_resume(
+            resume_text="Experience\nPrepared regulatory reporting packs for FCA submissions.",
+            skills=["regulatory reporting"],
+            work_experience=[{"title": "Reporting Analyst", "company": "BankCo", "bullets": ["Prepared regulatory reporting packs for FCA submissions."]}],
+        ),
+        "regulatory reporting",
+        "skills",
+        id="regulatory reporting is detected",
+    ),
+    pytest.param(
+        "kubernetes_present",
+        parsed_resume(resume_text="Skills\nKubernetes, Docker", skills=["Kubernetes", "Docker"]),
+        "Kubernetes",
+        "skills",
+        id="Kubernetes is detected",
+    ),
+    pytest.param(
+        "figma_present",
+        parsed_resume(resume_text="Skills\nFigma, user research", skills=["Figma", "user research"]),
+        "Figma",
+        "skills",
+        id="Figma is detected",
+    ),
+    pytest.param(
+        "spanish_fluency_present",
+        parsed_resume(resume_text="Skills\nFluent Spanish and English", skills=["Fluent Spanish", "English"]),
+        "Spanish fluency",
+        "skills",
+        id="Spanish fluency is detected",
+    ),
+    pytest.param(
+        "gdpr_work_present",
+        parsed_resume(
+            resume_text="Experience\nMaintained GDPR compliance documentation for data subject request workflows.",
+            skills=["GDPR compliance"],
+            work_experience=[{"title": "Data Governance Analyst", "company": "DataCo", "bullets": ["Maintained GDPR compliance documentation for data subject request workflows."]}],
+        ),
+        "GDPR compliance",
+        "skills",
+        id="GDPR compliance is detected",
+    ),
+]
+
+
+@pytest.mark.parametrize("name,parsed_resume,requirement,expected_section", FALSE_NEGATIVE_REQUIREMENT_FIXTURES)
+def test_false_negative_requirement_fixtures_are_found(name, parsed_resume, requirement, expected_section):
+    result = main.aggregate_requirement_evidence(
+        requirement,
+        parsed_resume,
+        parsed_resume.get("_resume_text", ""),
+    )
+
+    assert result["status"] == "present", name
+    assert result["section"] == expected_section, name

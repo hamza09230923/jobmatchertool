@@ -1732,6 +1732,13 @@ def apply_rewrite_audit(rewrite: dict, audit: dict) -> dict:
     remove_claims.discard("")
 
     removed = []
+
+    def should_remove_text(text: str) -> bool:
+        text_norm = normalize_phrase(text)
+        if not text_norm:
+            return False
+        return any(claim == text_norm or claim in text_norm for claim in remove_claims)
+
     if remove_claims:
         cleaned_sections = []
         for section in rewrite.get("skills_section") or []:
@@ -1750,6 +1757,29 @@ def apply_rewrite_audit(rewrite: dict, audit: dict) -> dict:
                     "items": merge_unique(kept_items),
                 })
         rewrite["skills_section"] = cleaned_sections
+
+        for section_key in ("experience_section", "projects_section"):
+            cleaned_items = []
+            for item in rewrite.get(section_key) or []:
+                if not isinstance(item, dict):
+                    continue
+                bullets = []
+                for bullet in item.get("bullets") or []:
+                    bullet_text = str(bullet).strip()
+                    if should_remove_text(bullet_text):
+                        removed.append(bullet_text)
+                        continue
+                    if bullet_text:
+                        bullets.append(bullet_text)
+                heading = str(item.get("heading") or "").strip()
+                if heading or bullets:
+                    cleaned_items.append({"heading": heading, "bullets": bullets[:8]})
+            rewrite[section_key] = cleaned_items
+
+        summary = str(rewrite.get("rewritten_summary") or "").strip()
+        if summary and should_remove_text(summary):
+            removed.append(summary)
+            rewrite["rewritten_summary"] = ""
 
     additional = [
         str(item).strip()
@@ -2706,6 +2736,8 @@ DEGREE_SUBJECT_ALIASES = {
     "mathematics": ("mathematics", "maths", "math"),
     "economics": ("economics",),
     "business": ("business", "business administration", "management"),
+    "business administration": ("business administration", "mba"),
+    "nursing": ("nursing",),
 }
 
 POSTGRADUATE_DEGREE_TERMS = (
@@ -2751,7 +2783,7 @@ CONTROL_GOVERNANCE_TERMS = (
 )
 
 REPORTING_STRICT_TERMS = (
-    "financial statements", "balance sheet", "income statement",
+    "financial statement", "financial statements", "balance sheet", "income statement",
     "quarterly reporting", "annual reporting", "management reporting",
     "external reporting",
 )
@@ -2875,6 +2907,13 @@ def _requirement_policy(requirement: str) -> dict:
             "type": "management",
             "strict": True,
             "allowed_sections": {"experience"},
+        })
+        return policy
+
+    if any(term in req_norm for term in ("fluency", "fluent", "language proficiency")):
+        policy.update({
+            "type": "language",
+            "allowed_sections": {"skills", "experience", "education", "summary"},
         })
         return policy
 
@@ -3639,13 +3678,28 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
             return "strong"
 
     if policy["type"] == "management":
+        section = infer_evidence_section(evidence_text)
+        if section != "experience":
+            return None
         evidence_tokens = set(evidence_norm.split())
         people_management_signals = {
             "managed", "manage", "manager", "mentored", "mentor", "mentoring",
             "supervised", "supervise", "led", "lead", "hired", "coached",
         }
-        if evidence_tokens.intersection(people_management_signals):
+        people_scope_signals = {
+            "team", "teams", "people", "direct", "reports", "analyst", "analysts",
+            "engineer", "engineers", "staff", "hires", "performance", "reviews",
+        }
+        if evidence_tokens.intersection(people_management_signals) and evidence_tokens.intersection(people_scope_signals):
             return "strong"
+
+    if policy["type"] == "language":
+        req_tokens = set(req_norm.split())
+        evidence_tokens = set(evidence_norm.split())
+        language_tokens = req_tokens - {"fluency", "fluent", "language", "proficiency"}
+        if language_tokens and language_tokens.issubset(evidence_tokens):
+            if evidence_tokens.intersection({"fluent", "fluency", "native", "proficient", "proficiency"}):
+                return "strong"
 
     if policy["type"] == "product_ownership":
         evidence_tokens = set(evidence_norm.split())
