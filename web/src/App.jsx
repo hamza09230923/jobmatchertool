@@ -239,7 +239,7 @@ function HeroShowcase() {
         <div className="hero-showcase__orb hero-showcase__orb--b" ref={ghostBRef} />
       </div>
       <div className="hero-showcase__caption">
-        <span>Powered by SHORTLISTLY.AI</span>
+        <span>SHORTLISTLY.AI</span>
         <strong>CV-to-job fit, made specific.</strong>
       </div>
     </div>

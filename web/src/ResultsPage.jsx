@@ -1565,7 +1565,7 @@ export default function ResultsPage() {
   useEffect(() => {
     if (!result || !jobDescription) return;
     if (isSample) {
-      const note = "This is a sample analysis — run your own scan to see this section populated with live Gemini insights.";
+      const note = "This is a sample analysis — run your own scan to see this section populated with live insights.";
       setFitError(note);
       setCompanyInsightsError(note);
       setInterviewPrepError(note);
