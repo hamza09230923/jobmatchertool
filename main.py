@@ -1325,26 +1325,20 @@ def compute_employment_gaps_from_jobs(jobs: list[dict], min_gap_months: int = 3)
 
 
 def parse_resume(resume_text: str, debug_info: dict | None = None) -> dict:
-    if GENAI_CLIENT:
-        try:
-            parsed = gemini_parse_resume(resume_text)
-            if not isinstance(parsed, dict):
-                parsed = {}
-            # Always recompute employment_gaps deterministically from work_experience —
-            # the model frequently produces reversed dates and negative durations.
-            jobs = parsed.get("work_experience") or []
-            parsed["employment_gaps"] = compute_employment_gaps_from_jobs(jobs)
-            if debug_info is not None:
-                debug_info["parse_method"] = "gemini"
-            return parsed
-        except Exception as exc:
-            logger.warning("Gemini parse failed, falling back to heuristics: %s", exc)
-            if debug_info is not None:
-                debug_info["parse_error"] = str(exc)
-    if debug_info is not None:
-        debug_info["parse_method"] = "heuristic"
-    return fallback_parse_resume(resume_text)
-
+    try:
+        parsed = gemini_parse_resume(resume_text)
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected Gemini resume parse shape")
+        jobs = parsed.get("work_experience") or []
+        parsed["employment_gaps"] = compute_employment_gaps_from_jobs(jobs)
+        if debug_info is not None:
+            debug_info["parse_method"] = "gemini"
+        return parsed
+    except Exception as exc:
+        logger.warning("Gemini parse failed; API-backed analysis is required: %s", exc)
+        if debug_info is not None:
+            debug_info["parse_error"] = str(exc)
+        raise
 
 def gemini_parse_resume(resume_text: str) -> dict:
     if not GENAI_CLIENT:
@@ -2681,9 +2675,11 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
 
 
 def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[dict]:
-    """Extract essential + nice-to-have requirements from a JD using Gemini; regex fallback."""
+    """Extract essential + nice-to-have requirements from a JD using Gemini."""
     effective_limit = max(limit, 35)
     local_requirements = extract_local_job_requirements(job_description, limit=effective_limit)
+    if not GENAI_CLIENT:
+        raise RuntimeError("Gemini API is required for requirement extraction.")
     if GENAI_CLIENT:
         try:
             response = GENAI_CLIENT.models.generate_content(
@@ -2697,7 +2693,8 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
                     "{\"requirements\": [{\"text\": \"...\", \"category\": \"essential\"}, {\"text\": \"...\", \"category\": \"nice_to_have\"}, ...]}\n\n"
                     "STRICT rules:\n"
                     "- Include ONLY things the candidate must HAVE or DEMONSTRATE — skills, experience, qualifications, behaviours.\n"
-                    "- Exclude entirely: company benefits, perks, salary, equity, flexible working, onboarding, about-the-company text, job duties/tasks.\n"
+                    "- Include candidate-owned delivery expectations, technical responsibilities, and demonstrable behaviours.\n"
+                    "- Exclude entirely: company benefits, perks, salary, equity, flexible working, onboarding, about-the-company text, application process, contract/location text, and selection process text.\n"
                     "- Each requirement should be a concise standalone statement.\n"
                     "- Remove bullet markers, numbers, and leading dashes.\n"
                     f"- Return at most {limit} requirements total.\n\n"
@@ -2734,42 +2731,10 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
                     if result:
                         return merge_job_requirements(result, local_requirements, limit=effective_limit)
         except Exception as exc:
-            logger.warning("Gemini requirement extraction failed, using regex: %s", exc)
+            logger.warning("Gemini requirement extraction failed; API-backed analysis is required: %s", exc)
+            raise
 
-    # Regex fallback
-    responsibilities: List[dict] = []
-    seen: set = set()
-    for line in split_text_units(job_description):
-        for sentence in re.split(r"(?<=[.!?])\s+", line):
-            for clause in re.split(r",|\band\b", sentence, flags=re.IGNORECASE):
-                clause_text = clause.strip().strip("-*• ").strip()
-                if len(clause_text.split()) < 4:
-                    continue
-                normalized = normalize_phrase(clause_text)
-                tokens = normalized.split()
-                starts_imperative = bool(tokens) and tokens[0] in _ACTION_VERBS_SET
-                has_candidate_signal = any(h in normalized for h in _CANDIDATE_HINTS)
-                if not starts_imperative and not has_candidate_signal:
-                    continue
-                action_phrases = extract_action_phrases(clause_text)
-                if not action_phrases and not has_candidate_signal:
-                    continue
-                if _COMPANY_SUBJECT_RE.match(clause_text):
-                    continue
-                if any(sig in normalized for sig in _COMPANY_DESC_SIGNALS):
-                    continue
-                if normalized in seen:
-                    continue
-                seen.add(normalized)
-                responsibilities.append({
-                    "text": clause_text,
-                    "normalized": normalized,
-                    "action_phrases": action_phrases,
-                    "category": "essential",
-                })
-                if len(responsibilities) >= effective_limit:
-                    return merge_job_requirements(responsibilities, local_requirements, limit=effective_limit)
-    return merge_job_requirements(responsibilities, local_requirements, limit=effective_limit)
+    raise RuntimeError("Gemini returned no candidate-owned requirements.")
 
 
 ATOMIC_REQUIREMENT_HINTS = (
@@ -2911,14 +2876,6 @@ def _requirement_policy(requirement: str) -> dict:
             "type": "language",
             "strict": True,
             "allowed_sections": {"skills", "experience", "education", "summary"},
-        })
-        return policy
-
-    if any(term in req_norm for term in ("used by millions", "millions of users", "millions", "products at scale")):
-        policy.update({
-            "type": "large_scale_systems",
-            "strict": True,
-            "allowed_sections": {"experience", "projects", "summary"},
         })
         return policy
 
@@ -3088,8 +3045,6 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
     req_norm = normalize_phrase(requirement)
     if policy["type"] == "language":
         return [term for term in NATURAL_LANGUAGE_SKILLS if term in req_norm]
-    if policy["type"] == "large_scale_systems":
-        return ["million", "millions"]
     if policy["type"] in {"degree", "postgraduate_degree"}:
         terms = []
         for subject in policy.get("subjects") or []:
@@ -3129,12 +3084,6 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
         language_tokens = req_tokens.intersection(NATURAL_LANGUAGE_SKILLS)
         proficiency_tokens = {"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}
         if language_tokens and language_tokens.issubset(evidence_tokens) and evidence_tokens.intersection(proficiency_tokens):
-            return {"confidence": "strong", "section": section, "policy": policy}
-        return None
-
-    if policy["type"] == "large_scale_systems":
-        evidence_tokens = set(evidence_norm.split())
-        if evidence_tokens.intersection({"million", "millions"}):
             return {"confidence": "strong", "section": section, "policy": policy}
         return None
 
@@ -3266,7 +3215,6 @@ def decompose_requirement_text(text: str) -> List[dict]:
         "years_experience",
         "early_career_experience",
         "language",
-        "large_scale_systems",
     }:
         normalized = normalize_phrase(source)
         return [{
@@ -3848,12 +3796,6 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
             if evidence_tokens.intersection({"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}):
                 return "strong"
 
-    if policy["type"] == "large_scale_systems":
-        evidence_tokens = set(evidence_norm.split())
-        if evidence_tokens.intersection({"million", "millions"}):
-            return "strong"
-        return None
-
     if policy["type"] == "product_ownership":
         evidence_tokens = set(evidence_norm.split())
         roadmap_signals = {"roadmap", "owned", "ownership", "prioritised", "prioritized", "backlog", "release", "releases"}
@@ -4238,9 +4180,10 @@ def gemini_responsibility_match(
     parsed_resume: dict,
 ) -> dict:
     """Use Gemini to intelligently match JD responsibilities against CV evidence."""
-    if not GENAI_CLIENT or not responsibilities:
-        ev_units = evidence_units_from_parsed(parsed_resume)
-        return score_responsibility_match_semantic(responsibilities, ev_units)
+    if not GENAI_CLIENT:
+        raise RuntimeError("Gemini API is required for responsibility matching.")
+    if not responsibilities:
+        return score_responsibility_match_semantic(responsibilities, [])
 
     resp_list = "\n".join(f"{i + 1}. {r['text']}" for i, r in enumerate(responsibilities))
     cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
@@ -4304,9 +4247,8 @@ def gemini_responsibility_match(
         if not isinstance(parsed, dict):
             raise ValueError("Unexpected response shape")
     except Exception as exc:
-        logger.warning("Gemini responsibility match failed, using embedding fallback: %s", exc)
-        ev_units = evidence_units_from_parsed(parsed_resume)
-        return score_responsibility_match_semantic(responsibilities, ev_units)
+        logger.warning("Gemini responsibility match failed; API-backed analysis is required: %s", exc)
+        raise
 
     def _find_original(item: dict) -> dict | None:
         idx = item.get("index")
@@ -5911,18 +5853,12 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     Returns {"skills": {...}, "ats_keywords": {...}}.
     """
     if not GENAI_CLIENT:
-        return {
-            "skills": gemini_skills_match(job_description, parsed_resume),
-            "ats_keywords": {"hard_skills": [], "soft_skills": []},
-        }
+        raise RuntimeError("Gemini API is required for skills and ATS analysis.")
 
     cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
 
     if not cv_section:
-        return {
-            "skills": gemini_skills_match(job_description, parsed_resume),
-            "ats_keywords": {"hard_skills": [], "soft_skills": []},
-        }
+        raise RuntimeError("Parsed CV evidence is required for skills and ATS analysis.")
 
     prompt = (
         "You are matching a candidate's CV against a job description. Complete TWO tasks in one response.\n\n"
@@ -5976,11 +5912,8 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         if not isinstance(parsed, dict):
             raise ValueError("Unexpected response shape")
     except Exception as exc:
-        logger.warning("gemini_skills_and_ats failed, using fallback: %s", exc)
-        return {
-            "skills": gemini_skills_match(job_description, parsed_resume),
-            "ats_keywords": {"hard_skills": [], "soft_skills": []},
-        }
+        logger.warning("gemini_skills_and_ats failed; API-backed analysis is required: %s", exc)
+        raise
 
     def _clean_skills(lst):
         out, seen = [], set()
@@ -6158,7 +6091,15 @@ async def analyze(
     debug_info = {} if debug else None
 
     # Phase 1: Parse resume — everything else depends on this
-    parsed_resume = await asyncio.to_thread(parse_resume, resume_text, debug_info)
+    try:
+        parsed_resume = await asyncio.to_thread(parse_resume, resume_text, debug_info)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI analysis failed while parsing the CV: {exc}",
+        )
     parsed_resume["_resume_text"] = resume_text
 
     # Local computation — no API calls
@@ -6176,7 +6117,13 @@ async def analyze(
         or parsed_resume.get("years_experience")
         or extract_resume_years(resume_text)
     )
-    responsibility_candidates = extract_job_responsibilities(job_description)
+    try:
+        responsibility_candidates = extract_job_responsibilities(job_description)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI analysis failed while extracting job requirements: {exc}",
+        )
 
     # Phase 2: All independent API calls run in parallel (70 s hard cap, 20 s before frontend timeout)
     try:
@@ -6204,9 +6151,13 @@ async def analyze(
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
-            detail="Analysis timed out — the AI service is under load. Please try again in a moment.",
+            detail="Analysis timed out; the AI service is under load. Please try again in a moment.",
         )
-
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI analysis failed. Please try again in a moment. Details: {exc}",
+        )
     skills_result = unified_result["skills"]
     ats_keywords_result = unified_result["ats_keywords"]
     must_have_items   = skills_result["must_have"]
