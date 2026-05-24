@@ -94,6 +94,24 @@ function PanelSkeleton({ label = "Loading…" }) {
   );
 }
 
+function ResultsLoadingScreen({ label = "Loading full analysis..." }) {
+  return (
+    <div className="rp-loading">
+      <div className="rp-loading-orbit">
+        <div className="az-loading-ring az-ring-1" />
+        <div className="az-loading-ring az-ring-2" />
+        <div className="az-loading-center">CV</div>
+      </div>
+      <div className="rp-loading-text">{label}</div>
+      <div className="rp-loading-step">Preparing recruiter analysis, company intelligence, and interview prep</div>
+      <div className="rp-loading-track">
+        <div className="rp-loading-fill" />
+      </div>
+      <p className="rp-loading-sub">The results page will appear when every section is ready.</p>
+    </div>
+  );
+}
+
 function ChipList({ items, tone = "default", emptyLabel }) {
   if (!items?.length) {
     return <p className="results-empty-note">{emptyLabel}</p>;
@@ -1536,6 +1554,9 @@ export default function ResultsPage() {
   const [recruiterView, setRecruiterView] = useState(null);
   const [interviewPrep, setInterviewPrep] = useState(null);
   const [interviewPrepError, setInterviewPrepError] = useState("");
+  const [supplementaryReady, setSupplementaryReady] = useState(
+    () => Boolean(isSample) || !result || !jobDescription,
+  );
 
   useEffect(() => {
     if (!result) { navigate("/analyze"); return; }
@@ -1548,6 +1569,7 @@ export default function ResultsPage() {
       setFitError(note);
       setCompanyInsightsError(note);
       setInterviewPrepError(note);
+      setSupplementaryReady(true);
       return;
     }
     const resumeText = result.resume_text;
@@ -1605,7 +1627,10 @@ export default function ResultsPage() {
       "Could not load interview prep."
     );
 
+    let cancelled = false;
+
     Promise.all([bfFetch, ciFetch, rvFetch, ipFetch]).then(([bf, ci, rv, ip]) => {
+      if (cancelled) return;
       clearTimeout(timeoutId);
       if (bf.ok) setBusinessFit(bf.data); else setFitError(bf.error);
       if (ci.ok) {
@@ -1619,9 +1644,11 @@ export default function ResultsPage() {
       }
       if (rv.ok) setRecruiterView(rv.data);
       if (ip.ok) setInterviewPrep(ip.data); else setInterviewPrepError(ip.error);
+      setSupplementaryReady(true);
     });
 
     return () => {
+      cancelled = true;
       clearTimeout(timeoutId);
       controller.abort();
     };
@@ -1633,15 +1660,17 @@ export default function ResultsPage() {
     </div>
   );
 
+  if (!supplementaryReady) {
+    return <ResultsLoadingScreen />;
+  }
+
 
   const {
     match_score: matchScore = 0,
     role_fit_breakdown: breakdown = {},
     section_feedback: sectionFeedback = {},
     resume_text: resumeText = "",
-    cv_highlights: cvHighlights = [],
     candidate_profile: candidateProfile = null,
-    cv_sections_analysis: cvSectionsAnalysis = null,
     ats_keywords: atsKeywords = {},
     score_breakdown: scoreBreakdown = null,
   } = result;
@@ -2109,7 +2138,6 @@ export default function ResultsPage() {
               </div>
             </section>
 
-            <CvHighlightPanel highlights={cvHighlights} />
           </>
         )}
 

@@ -2299,6 +2299,8 @@ EXCLUDED_JD_SECTION_HEADERS = (
     "our hybrid work model",
     "hybrid work model",
     "about blackrock",
+    "about the fca",
+    "about the fca and team",
     "about the company",
     "company overview",
     "about us",
@@ -2308,6 +2310,7 @@ EXCLUDED_JD_SECTION_HEADERS = (
 CANDIDATE_JD_SECTION_HEADERS = (
     "description",
     "key responsibilities",
+    "role responsibilities",
     "responsibilities",
     "preferred qualifications skills",
     "preferred qualifications",
@@ -2357,6 +2360,69 @@ def _extract_role_title_seniority(job_description: str) -> str | None:
         if pattern.search(title_window):
             return term
     return None
+
+
+ATS_NOISE_TERMS = {
+    "role", "candidate", "candidates", "team", "teams", "business", "division",
+    "location", "company", "firm", "client", "clients", "work", "working",
+    "support", "supports", "management", "solutions", "global", "professional",
+    "professionals", "investment professional", "associate", "about", "background",
+    "benefits", "hybrid", "office", "travel", "around the world",
+    "data", "policy", "policies", "regime", "regimes", "analysis", "technical",
+    "industry", "engagement", "requirements", "guidelines", "rules", "advice",
+    "support", "users", "audiences", "priorities", "judgement", "insights",
+}
+
+ATS_SINGLE_TOKEN_ALLOWLIST = {
+    "mifir", "emir", "sftr", "mifid", "rts", "excel", "powerpoint", "word",
+    "python", "sql", "aws", "docker", "kubernetes", "react", "typescript",
+    "javascript", "java", "c++", "c#", "scala", "spark", "hadoop",
+}
+
+
+def _candidate_requirement_text_blob(job_description: str) -> str:
+    """JD text from candidate-facing sections only, used as a strict ATS keyword source."""
+    lines: List[str] = []
+    active_section = "candidate"
+    for raw_line in str(job_description or "").splitlines():
+        line = raw_line.strip().strip("-*â€¢ ").strip()
+        if not line:
+            continue
+        line_norm = normalize_phrase(line)
+        section_type = _classify_jd_section_heading(line_norm)
+        if section_type:
+            active_section = section_type
+            continue
+        if active_section == "excluded":
+            continue
+        lines.append(line)
+    return normalize_phrase(" ".join(lines))
+
+
+def is_valid_ats_keyword(keyword: str, candidate_jd_blob: str) -> bool:
+    norm = normalize_phrase(keyword)
+    if not norm:
+        return False
+    tokens = norm.split()
+    if len(tokens) > 6:
+        return False
+    if len(tokens) == 1 and norm not in ATS_SINGLE_TOKEN_ALLOWLIST:
+        return False
+    if norm in STOPWORDS or norm in ATS_NOISE_TERMS:
+        return False
+    if all(token in STOPWORDS or token in ATS_NOISE_TERMS for token in tokens):
+        return False
+    if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
+        return False
+    if re.match(
+        r"^(?:blackrock|gip|gis|global infrastructure solutions|global infrastructure partners|the firm)\b",
+        norm,
+    ):
+        return False
+    if norm in candidate_jd_blob:
+        return True
+    candidate_tokens = set(candidate_jd_blob.split())
+    return len(tokens) <= 3 and all(token in candidate_tokens for token in tokens)
 
 
 def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
@@ -2417,7 +2483,7 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
             category = "essential"
             active_section = section_type
             continue
-        if active_section == "excluded" and not any(hint in line_norm for hint in _CANDIDATE_HINTS):
+        if active_section == "excluded":
             continue
         next_category = _infer_requirement_category_from_context(line_norm, category)
         if next_category != category and len(line_norm.split()) <= 6:
@@ -2434,8 +2500,7 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
             ] or [line]
 
         for clause in clauses:
-            atoms = decompose_requirement_text(clause)
-            candidates = [a["text"] for a in atoms] if len(atoms) > 1 else [clause]
+            candidates = [clause]
             added_for_clause = False
             for candidate in candidates:
                 req = _requirement_dict(candidate, category)
@@ -2472,6 +2537,22 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
         norm = cleaned["normalized"]
         if not norm or norm in seen:
             continue
+        norm_tokens = norm.split()
+        replace_indexes: list[int] = []
+        subsumed = False
+        for idx, existing in enumerate(merged):
+            existing_norm = existing.get("normalized") or normalize_phrase(existing.get("text") or "")
+            existing_tokens = existing_norm.split()
+            if len(norm_tokens) >= 3 and norm in existing_norm:
+                subsumed = True
+                break
+            if len(existing_tokens) >= 3 and existing_norm in norm and len(norm_tokens) > len(existing_tokens):
+                replace_indexes.append(idx)
+        if subsumed:
+            continue
+        for idx in reversed(replace_indexes):
+            seen.discard(merged[idx].get("normalized") or normalize_phrase(merged[idx].get("text") or ""))
+            merged.pop(idx)
         seen.add(norm)
         merged.append(cleaned)
         if len(merged) >= limit:
@@ -5642,7 +5723,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         "For each skill, check whether the CV demonstrates it semantically "
         "(e.g. 'AWS Lambda' counts for 'serverless', 'led a team of 5' counts for 'team leadership').\n\n"
         "TASK 2 — ATS KEYWORDS:\n"
-        "Extract EVERY keyword from the JD that an ATS would use to rank candidates. "
+        "Extract only the high-signal keywords from candidate-facing JD requirements/responsibilities. "
         "For each keyword count exact appearances in the JD (jd_count) and CV (cv_count, case-insensitive). "
         "Categorise into hard_skills (technical, tools, methodologies, certifications, domain terms) "
         "and soft_skills (behavioural, interpersonal, leadership qualities).\n\n"
@@ -5662,8 +5743,10 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         "- skills: treat PROJECT EVIDENCE as valid first-class evidence. Project names, tech stacks, and bullets can prove skills or domain interest even if the skills list omits them.\n"
         "- skills: a trading/backtesting project with signals like RSI, MACD, Kelly sizing, market data, or strategy optimisation proves trading/finance interest.\n"
         "- skills: if a skill is in both required and preferred sections of the JD, put it in must_have only.\n"
-        "- ats_keywords: be exhaustive for hard_skills; sort each list by jd_count descending.\n"
-        "- ats_keywords: exclude the company name, the exact job title of the post, and generic filler words.\n"
+        "- ats_keywords: return at most 12 hard_skills and 8 soft_skills.\n"
+        "- ats_keywords: exclude company background, company names, exact job title, generic nouns, perks, benefits, and boilerplate.\n"
+        "- ats_keywords: every keyword must be a candidate-owned skill, tool, domain experience, qualification, or behaviour.\n"
+        "- ats_keywords: sort each list by importance to the candidate fit, then jd_count descending.\n"
         "- Return ONLY the JSON object, no markdown fences.\n"
     )
     contents = (
@@ -5721,16 +5804,20 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     resume_text_norm_for_ats = normalize_phrase(resume_text)
     resume_token_set_for_ats = set(resume_text_norm_for_ats.split())
     resume_compact_for_ats = resume_text_norm_for_ats.replace(" ", "")
+    candidate_jd_blob_for_ats = _candidate_requirement_text_blob(job_description)
 
-    def _clean_ats(lst):
+    def _clean_ats(lst, limit):
         out, seen = [], set()
         for item in (lst or []):
             if not isinstance(item, dict):
                 continue
             skill = str(item.get("skill") or "").strip()
-            if not skill or skill.lower() in seen:
+            norm_skill = normalize_phrase(skill)
+            if not skill or norm_skill in seen:
                 continue
-            seen.add(skill.lower())
+            if not is_valid_ats_keyword(skill, candidate_jd_blob_for_ats):
+                continue
+            seen.add(norm_skill)
             jd_count = max(1, int(item.get("jd_count") or 1))
             cv_count = max(0, int(item.get("cv_count") or 0))
             if cv_count == 0:
@@ -5745,6 +5832,8 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
                         break
             status = "missing" if cv_count == 0 else ("low" if cv_count < max(1, jd_count // 2) else "present")
             out.append({"skill": skill, "jd_count": jd_count, "cv_count": cv_count, "status": status})
+            if len(out) >= limit:
+                break
         return out
 
     skills_raw = parsed.get("skills") or {}
@@ -5761,8 +5850,8 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
             ),
         },
         "ats_keywords": {
-            "hard_skills": _clean_ats(ats_raw.get("hard_skills")),
-            "soft_skills": _clean_ats(ats_raw.get("soft_skills")),
+            "hard_skills": _clean_ats(ats_raw.get("hard_skills"), 12),
+            "soft_skills": _clean_ats(ats_raw.get("soft_skills"), 8),
         },
     }
 

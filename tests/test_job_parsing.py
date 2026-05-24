@@ -1,4 +1,19 @@
+from types import SimpleNamespace
+
 import main
+
+
+class FakeModels:
+    def __init__(self, text: str):
+        self._text = text
+
+    def generate_content(self, **kwargs):
+        return SimpleNamespace(text=self._text)
+
+
+class FakeClient:
+    def __init__(self, text: str):
+        self.models = FakeModels(text)
 
 
 BLACKROCK_JD = """
@@ -88,3 +103,93 @@ def test_principal_investing_phrase_is_not_seniority_term():
     )
 
     assert "principal" not in terms
+
+
+def test_ats_keywords_are_limited_to_candidate_facing_requirements(monkeypatch):
+    fake_json = """
+    {
+      "skills": {"must_have": [], "nice_to_have": []},
+      "ats_keywords": {
+        "hard_skills": [
+          {"skill": "BlackRock", "jd_count": 5, "cv_count": 0},
+          {"skill": "assets under management", "jd_count": 1, "cv_count": 0},
+          {"skill": "financial models", "jd_count": 1, "cv_count": 0},
+          {"skill": "Microsoft Excel", "jd_count": 1, "cv_count": 1}
+        ],
+        "soft_skills": [
+          {"skill": "around the world", "jd_count": 1, "cv_count": 0},
+          {"skill": "communication skills", "jd_count": 1, "cv_count": 1}
+        ]
+      }
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Experience\nBuilt financial models in Microsoft Excel and presented analysis with clear communication skills.",
+        "summary": "",
+        "skills": ["Microsoft Excel", "communication skills"],
+        "tools": ["Microsoft Excel"],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(
+        BLACKROCK_JD,
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+    hard = [item["skill"] for item in result["ats_keywords"]["hard_skills"]]
+    soft = [item["skill"] for item in result["ats_keywords"]["soft_skills"]]
+
+    assert hard == ["financial models", "Microsoft Excel"]
+    assert soft == ["communication skills"]
+
+
+FCA_JD = """
+About The FCA And Team
+
+Market Oversight is responsible for overseeing primary and secondary market participants through the listing, prospectus, and market abuse regimes.
+The Transaction & Position Reporting team is responsible for the supervision & policy of the MiFID (RTS 22/23/24), EMIR & SFTR reporting regimes.
+
+Role Responsibilities
+
+Contributing to the development of transaction reporting policy rules and guidelines, drafting consultations and coordinating industry engagement as part of our ongoing reviews of the UK MiFIR, EMIR & SFTR regimes
+Using data to identify trends, outliers and insights to support policy development
+Providing technical advice and support to users of the data across the FCA
+
+Minimum
+
+Skills required
+
+Prior experience developing and implementing policies or regulations in a public authority, firm or other relevant organisation
+Clear written communication skills, demonstrated through experience writing regulatory documents
+
+Essential
+
+Effective communication skills, with ability to explain complex, technical matters clearly and succinctly to a range of audiences
+Effective interpersonal skills with capacity to work collaboratively and engage a range of stakeholders
+"""
+
+
+def test_fca_requirement_extraction_excludes_team_background_and_fragments():
+    requirements = main.extract_local_job_requirements(FCA_JD)
+    texts = [req["text"] for req in requirements]
+    joined = " ".join(texts).lower()
+
+    assert "market oversight is responsible" not in joined
+    assert "team is responsible" not in joined
+    assert "effective communication skills" in joined
+    assert "ability to explain complex" not in texts
+    assert any("transaction reporting policy rules" in text.lower() for text in texts)
+
+
+def test_ats_keyword_filter_rejects_generic_single_word_noise():
+    blob = main._candidate_requirement_text_blob(FCA_JD)
+
+    assert not main.is_valid_ats_keyword("data", blob)
+    assert not main.is_valid_ats_keyword("policy", blob)
+    assert not main.is_valid_ats_keyword("regimes", blob)
+    assert not main.is_valid_ats_keyword("technical", blob)
+    assert main.is_valid_ats_keyword("transaction reporting policy", blob)
+    assert main.is_valid_ats_keyword("MiFIR", blob)
+    assert main.is_valid_ats_keyword("EMIR", blob)
