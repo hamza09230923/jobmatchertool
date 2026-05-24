@@ -633,6 +633,7 @@ ACTION_VERB_BASE = {
 SENIORITY_ALIASES = {
     "jr": "junior",
     "junior": "junior",
+    "associate": "associate",
     "mid": "mid",
     "midlevel": "mid",
     "mid-level": "mid",
@@ -645,6 +646,7 @@ SENIORITY_ALIASES = {
 }
 SENIORITY_LEVELS = {
     "junior": 1,
+    "associate": 2,
     "mid": 2,
     "senior": 3,
     "lead": 4,
@@ -2236,7 +2238,11 @@ def extract_seniority_terms(text: str) -> List[str]:
     terms: List[str] = []
     seen = set()
     for raw, canonical in SENIORITY_ALIASES.items():
-        if raw in normalized and canonical not in seen:
+        if not re.search(rf"\b{re.escape(raw)}\b", normalized):
+            continue
+        if raw == "principal" and re.search(r"\bprincipal\s+(?:investing|investment|investor)\b", normalized):
+            continue
+        if canonical not in seen:
             seen.add(canonical)
             terms.append(canonical)
     return terms
@@ -2250,6 +2256,9 @@ _COMPANY_DESC_SIGNALS = (
     "is a leading", "is an industry", "is dedicated to", "dedicated to helping",
     "solutions provider", "our portfolio", "our comprehensive", "our mission",
     "our vision", "our customers", "helping customers",
+    "is one of", "has one of", "manage a combined", "manages a combined",
+    "assets under management", "around the world", "part of blackrock",
+    "with offices in", "track record of",
 )
 _CANDIDATE_HINTS = (
     "you will", "you'll", "you are", "you should", "you must",
@@ -2261,13 +2270,14 @@ _ACTION_VERBS_SET = set(ACTION_VERBS)
 
 ROLE_REQUIREMENT_SIGNALS = (
     "experience", "knowledge", "skills", "ability", "proficiency",
-    "proficient", "familiar", "awareness", "comfortable", "expertise",
+    "proficient", "familiar", "awareness", "comfortable", "expertise", "expert",
     "responsible", "accountable", "expected to", "you will", "you'll",
     "you ll", "you can", "you are able", "lead", "mentor", "manage",
     "design", "develop", "test", "testing", "deploy", "scale", "secure", "monitor",
     "collaborate", "communicate", "stakeholder", "technical direction",
     "technical vision", "delivery", "architecture", "agile", "creating",
     "pipeline", "pipelines",
+    "microsoft excel", "powerpoint", "microsoft word",
 )
 
 NICE_SECTION_HEADERS = (
@@ -2281,6 +2291,72 @@ ESSENTIAL_SECTION_HEADERS = (
     "how you'll spend your time", "how you ll spend your time",
     "responsibilities", "job responsibilities", "about you",
 )
+
+EXCLUDED_JD_SECTION_HEADERS = (
+    "background",
+    "our benefits",
+    "benefits",
+    "our hybrid work model",
+    "hybrid work model",
+    "about blackrock",
+    "about the company",
+    "company overview",
+    "about us",
+    "equal opportunity employer",
+)
+
+CANDIDATE_JD_SECTION_HEADERS = (
+    "description",
+    "key responsibilities",
+    "responsibilities",
+    "preferred qualifications skills",
+    "preferred qualifications",
+    "qualifications skills",
+    "qualifications",
+    "skills",
+    "requirements",
+)
+
+ROLE_TITLE_SENIORITY_PATTERNS = (
+    (re.compile(r"\bassociate(?:\s*[- ]?\s*level)?\b", re.IGNORECASE), "associate"),
+    (re.compile(r"\bjunior\b", re.IGNORECASE), "junior"),
+    (re.compile(r"\bmid(?:\s*[- ]?\s*level)?\b", re.IGNORECASE), "mid"),
+    (re.compile(r"\bsenior\b", re.IGNORECASE), "senior"),
+    (re.compile(r"\blead\b", re.IGNORECASE), "lead"),
+    (re.compile(r"\bprincipal\b", re.IGNORECASE), "principal"),
+    (re.compile(r"\bstaff\b", re.IGNORECASE), "principal"),
+)
+
+
+def _classify_jd_section_heading(line_norm: str) -> str | None:
+    if not line_norm or len(line_norm.split()) > 8:
+        return None
+    if line_norm in EXCLUDED_JD_SECTION_HEADERS:
+        return "excluded"
+    if line_norm in CANDIDATE_JD_SECTION_HEADERS:
+        return "candidate"
+    return None
+
+
+def _extract_role_title_seniority(job_description: str) -> str | None:
+    lines = [line.strip() for line in str(job_description or "").splitlines() if line.strip()]
+    for idx, line in enumerate(lines):
+        norm = normalize_phrase(line)
+        if norm in {"corporate title", "title", "role title", "job title"} and idx + 1 < len(lines):
+            title_line = lines[idx + 1]
+            for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
+                if pattern.search(title_line):
+                    return term
+    for line in lines[:12]:
+        if "corporate title" in normalize_phrase(line):
+            for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
+                if pattern.search(line):
+                    return term
+    title_window = " ".join(lines[:8])
+    for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
+        if pattern.search(title_window):
+            return term
+    return None
 
 
 def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
@@ -2298,6 +2374,11 @@ def _should_keep_requirement_line(text: str) -> bool:
     if _COMPANY_SUBJECT_RE.match(text):
         return False
     if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
+        return False
+    if re.match(
+        r"^(?:blackrock|gip|gis|global infrastructure solutions|global infrastructure partners|the firm)\b",
+        norm,
+    ) and not any(hint in norm for hint in _CANDIDATE_HINTS):
         return False
     if any(noise in norm for noise in ("salary", "benefit", "pension", "healthcare", "annual leave", "dress code")):
         return False
@@ -2324,12 +2405,20 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
     requirements: List[dict] = []
     seen: set[str] = set()
     category = "essential"
+    active_section = "candidate"
 
     for raw_line in str(job_description or "").splitlines():
         line = raw_line.strip().strip("-*â€¢ ").strip()
         if not line:
             continue
         line_norm = normalize_phrase(line)
+        section_type = _classify_jd_section_heading(line_norm)
+        if section_type:
+            category = "essential"
+            active_section = section_type
+            continue
+        if active_section == "excluded" and not any(hint in line_norm for hint in _CANDIDATE_HINTS):
+            continue
         next_category = _infer_requirement_category_from_context(line_norm, category)
         if next_category != category and len(line_norm.split()) <= 6:
             category = next_category
@@ -2377,16 +2466,14 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
         if not isinstance(req, dict):
             continue
         text = str(req.get("text") or "").strip()
-        norm = req.get("normalized") or normalize_phrase(text)
-        if not text or not norm or norm in seen:
+        cleaned = _requirement_dict(text, req.get("category") or "essential")
+        if not cleaned:
+            continue
+        norm = cleaned["normalized"]
+        if not norm or norm in seen:
             continue
         seen.add(norm)
-        merged.append({
-            "text": text,
-            "normalized": norm,
-            "action_phrases": req.get("action_phrases") or extract_action_phrases(text),
-            "category": req.get("category") if req.get("category") in {"essential", "nice_to_have"} else "essential",
-        })
+        merged.append(cleaned)
         if len(merged) >= limit:
             break
     return merged
@@ -4056,7 +4143,7 @@ def compute_title_alignment(job_description: str, resume_text: str) -> dict:
 SENIORITY_LABELS = {
     0: "unspecified",
     1: "junior",
-    2: "mid",
+    2: "associate/mid",
     3: "senior",
     4: "lead",
     5: "principal",
@@ -4070,6 +4157,16 @@ LEADERSHIP_EVIDENCE_TERMS = (
 
 
 def infer_role_seniority(job_description: str) -> dict:
+    explicit_title_term = _extract_role_title_seniority(job_description)
+    if explicit_title_term:
+        terms = [explicit_title_term]
+        level = SENIORITY_LEVELS.get(explicit_title_term, 0)
+        return {
+            "level": level,
+            "label": SENIORITY_LABELS.get(level, "unspecified"),
+            "terms": terms,
+        }
+
     terms = extract_seniority_terms(job_description)
     norm = normalize_phrase(job_description)
     if "technical direction" in norm or "technical vision" in norm or "accountable for the technical delivery" in norm:

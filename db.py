@@ -11,7 +11,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(os.getenv("USERS_DB", "users.db"))
+DB_PATH = Path(os.getenv("USERS_DB", "users.db")).expanduser()
 _lock = threading.Lock()
 
 SCHEMA = """
@@ -35,6 +35,8 @@ CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(password_reset_token);
 
 
 def _connect() -> sqlite3.Connection:
+    if DB_PATH.parent != Path("."):
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

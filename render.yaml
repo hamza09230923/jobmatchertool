@@ -4,10 +4,18 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    plan: free
+    plan: starter
+    disk:
+      name: shortlistly-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: ALLOWED_ORIGINS
         value: https://shortlistly.co.uk,http://localhost:5173,http://localhost:5175
+      - key: USERS_DB
+        value: /var/data/users.db
+      - key: JWT_SECRET
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: TEXTRAZOR_API_KEY
@@ -33,6 +41,6 @@ services:
       - key: ADMIN_TOKEN
         sync: false
       - key: SCAN_COUNTS_FILE
-        value: scan_counts.json
+        value: /var/data/scan_counts.json
       - key: FEEDBACK_FILE
-        value: feedback.json
+        value: /var/data/feedback.json
