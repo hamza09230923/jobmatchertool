@@ -151,7 +151,11 @@ def test_ats_keywords_are_limited_to_candidate_facing_requirements(monkeypatch):
     hard = [item["skill"] for item in result["ats_keywords"]["hard_skills"]]
     soft = [item["skill"] for item in result["ats_keywords"]["soft_skills"]]
 
-    assert hard == ["financial models", "Microsoft Excel"]
+    assert "financial models" in hard
+    assert "Microsoft Excel" in hard
+    assert "Word" in hard
+    assert "BlackRock" not in hard
+    assert "assets under management" not in hard
     assert soft == ["communication skills"]
 
 
@@ -203,6 +207,151 @@ def test_ats_keyword_filter_rejects_generic_single_word_noise():
     assert main.is_valid_ats_keyword("transaction reporting policy", blob)
     assert main.is_valid_ats_keyword("MiFIR", blob)
     assert main.is_valid_ats_keyword("EMIR", blob)
+
+
+AUDIT_ASSOCIATE_JD = """
+About us
+Example Audit LLP is a growing professional services firm based in London.
+
+What You'll Be Doing
+Perform external audits for not-for-profit organisations.
+Undertake audit planning in accordance with auditing standards.
+Prepare statutory accounts and consolidated accounts from accounting records.
+Complete the audit file, management letter and letter of representation.
+
+What We're Looking For
+ACA or ACCA qualified
+Experience of external audits from planning through to full audit completion
+Audit; planning; preparation of statutory accounts
+Excel, Word, Outlook
+Sage; ProAudit desirable
+Team player with ethical judgement
+"""
+
+
+def test_accounting_ats_keywords_are_not_empty_when_model_under_returns(monkeypatch):
+    fake_json = """
+    {
+      "skills": {
+        "must_have": [
+          {"skill": "external audits", "present": false, "cv_where": null},
+          {"skill": "preparation of statutory accounts", "present": false, "cv_where": null},
+          {"skill": "Excel", "present": true, "cv_where": "SKILLS: Excel"},
+          {"skill": "Outlook", "present": false, "cv_where": null}
+        ],
+        "nice_to_have": [
+          {"skill": "Sage", "present": false, "cv_where": null},
+          {"skill": "ProAudit", "present": false, "cv_where": null}
+        ]
+      },
+      "ats_keywords": {"hard_skills": [], "soft_skills": []}
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Experience\nBuilt Excel reporting templates and maintained financial data.",
+        "summary": "",
+        "skills": ["Excel", "financial data"],
+        "tools": ["Excel"],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(
+        AUDIT_ASSOCIATE_JD,
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    hard = {item["skill"]: item for item in result["ats_keywords"]["hard_skills"]}
+    assert {"external audits", "statutory accounts", "Excel", "Outlook", "Sage", "ProAudit"}.issubset(hard)
+    assert hard["Excel"]["status"] == "present"
+    assert hard["Outlook"]["status"] == "missing"
+
+
+def test_single_word_tool_match_uses_token_boundary_not_substring():
+    text_norm = main.normalize_phrase("Built keyword coverage and workload reporting.")
+    tokens = set(text_norm.split())
+
+    assert not main.phrase_in_resume("word", text_norm, tokens, text_norm.replace(" ", ""))
+    assert not main.phrase_in_resume("outlook", text_norm, tokens, text_norm.replace(" ", ""))
+
+
+def test_office_tool_bundle_does_not_invent_word_or_outlook():
+    parsed_resume = {
+        "_resume_text": "Experience\nBuilt keyword coverage and Excel-based reporting templates.",
+        "summary": "",
+        "skills": ["Excel"],
+        "tools": ["Excel"],
+        "work_experience": [
+            {
+                "title": "Administrator",
+                "company": "Example",
+                "bullets": ["Built keyword coverage and Excel-based reporting templates."],
+            }
+        ],
+        "projects": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Excel, Word, Outlook proficiency",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "partial"
+    breakdown = {item["requirement"]: item["status"] for item in result["atomic_breakdown"]}
+    assert breakdown["Excel"] == "present"
+    assert breakdown["Word"] == "missing"
+    assert breakdown["Outlook proficiency"] == "missing"
+
+
+def test_generic_planning_requirement_from_model_is_rejected():
+    generated = [{"text": "Experience in planning", "category": "essential"}]
+    supplemental = [{"text": "Audit planning in accordance with auditing standards", "category": "essential"}]
+
+    result = main.merge_job_requirements(generated, supplemental)
+    texts = [item["text"] for item in result]
+
+    assert "Experience in planning" not in texts
+    assert "Audit planning in accordance with auditing standards" in texts
+
+
+def test_why_company_section_is_excluded_from_candidate_requirements():
+    jd = """
+    What You'll Be Doing
+    Prepare statutory accounts and complete audit files.
+
+    Why ExampleCo?
+    You'll work alongside experienced professionals who will support your continued development.
+    """
+
+    requirements = main.extract_local_job_requirements(jd)
+    texts = [item["text"] for item in requirements]
+    joined = " ".join(texts).lower()
+
+    assert any("statutory accounts" in text.lower() for text in texts)
+    assert "continued development" not in joined
+    assert "experienced professionals" not in joined
+
+
+def test_audit_document_terms_require_exact_audit_evidence():
+    parsed_resume = {
+        "_resume_text": "Skills\nData storytelling, stakeholder reporting, representation learning",
+        "summary": "",
+        "skills": ["Data storytelling", "stakeholder reporting", "representation learning"],
+        "tools": [],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "drafting of Audit Highlights Memorandum, management letter and letter of representation",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "missing"
 
 
 GENERIC_SOFTWARE_JD = """
@@ -374,4 +523,3 @@ def test_english_proficiency_does_not_match_unrelated_reading_writing_words():
 
     assert result["status"] == "missing"
     assert result["matched_count"] == 0
-

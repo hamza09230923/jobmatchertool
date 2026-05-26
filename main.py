@@ -697,6 +697,12 @@ SOFT_SKILLS = (
     "stakeholder management",
 )
 TECH_SKILL_ALIASES = {
+    "microsoft excel": ("microsoft excel", "excel"),
+    "excel": ("excel", "microsoft excel"),
+    "microsoft word": ("microsoft word", "word"),
+    "word": ("word", "microsoft word"),
+    "microsoft outlook": ("microsoft outlook", "outlook"),
+    "outlook": ("outlook", "microsoft outlook"),
     "python": ("python", "python3"),
     "rust": ("rust",),
     "docker": ("docker",),
@@ -1088,10 +1094,12 @@ def phrase_in_resume(
 ) -> bool:
     if not phrase_norm:
         return False
-    if phrase_norm in resume_text_norm:
-        return True
     tokens = [t for t in phrase_norm.split() if t]
     if len(tokens) == 1 and tokens[0] in resume_token_set:
+        return True
+    if len(tokens) == 1:
+        return False
+    if phrase_norm in resume_text_norm:
         return True
     compact_phrase = phrase_norm.replace(" ", "")
     if compact_phrase and compact_phrase in resume_compact:
@@ -2318,6 +2326,8 @@ _JD_META_SIGNALS = (
     "salary", "compensation", "benefits", "access to equity", "tax cut",
     "remote working", "flexible hours", "start date", "relocation", "parental",
     "health insurance", "reasonable accommodations", "offer stage",
+    "experienced professionals who will support your continued development",
+    "continued development", "meaningful personal connections",
 )
 _CANDIDATE_HINTS = (
     "you will", "you'll", "you are", "you should", "you must",
@@ -2338,6 +2348,8 @@ ROLE_REQUIREMENT_SIGNALS = (
     "pipeline", "pipelines",
     "ownership", "end-to-end ownership", "ai tools", "workflow",
     "correctness", "reliability", "maintainability", "scalable",
+    "audit", "auditing", "accounting", "statutory accounts",
+    "external audits", "consolidated accounts",
     "microsoft excel", "powerpoint", "microsoft word",
 )
 
@@ -2380,6 +2392,13 @@ EXCLUDED_JD_SECTION_HEADERS = (
 CANDIDATE_JD_SECTION_HEADERS = (
     "description",
     "a few examples of your responsibilities",
+    "what you'll be doing",
+    "what you ll be doing",
+    "what we're looking for",
+    "what we re looking for",
+    "what you'll bring",
+    "what you ll bring",
+    "role overview",
     "key responsibilities",
     "role responsibilities",
     "responsibilities",
@@ -2405,6 +2424,8 @@ ROLE_TITLE_SENIORITY_PATTERNS = (
 def _classify_jd_section_heading(line_norm: str) -> str | None:
     if not line_norm or len(line_norm.split()) > 8:
         return None
+    if line_norm.startswith("why ") and len(line_norm.split()) <= 4:
+        return "excluded"
     if line_norm in EXCLUDED_JD_SECTION_HEADERS:
         return "excluded"
     if line_norm in CANDIDATE_JD_SECTION_HEADERS:
@@ -2451,6 +2472,8 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "rust", "grpc", "rest", "microservices", "monoliths", "testing",
     "documentation", "correctness", "reliability", "maintainability",
     "scalability",
+    "audit", "auditing", "accounting", "aca", "acca", "outlook", "sage",
+    "proaudit", "cpd", "charities", "charity",
 }
 
 LOCAL_ATS_HARD_KEYWORDS = (
@@ -2469,6 +2492,27 @@ LOCAL_ATS_HARD_KEYWORDS = (
     "maintainability",
     "scalability",
     "AI tools",
+    "ACA",
+    "ACCA",
+    "external audits",
+    "audit planning",
+    "audit completion",
+    "statutory accounts",
+    "consolidated accounts",
+    "accounting standards",
+    "auditing standards",
+    "working papers",
+    "audit file",
+    "management letter",
+    "letter of representation",
+    "CPD",
+    "Excel",
+    "Word",
+    "Outlook",
+    "Sage",
+    "ProAudit",
+    "not-for-profit organisations",
+    "charities",
 )
 
 LOCAL_ATS_SOFT_KEYWORDS = (
@@ -2533,6 +2577,29 @@ def _count_normalized_phrase(phrase: str, text_norm: str) -> int:
     return len(re.findall(pattern, text_norm))
 
 
+def _looks_like_soft_ats_keyword(skill: str) -> bool:
+    norm = normalize_phrase(skill)
+    soft_terms = set(normalize_phrase(term) for term in SOFT_SKILLS)
+    soft_terms.update({
+        "team player",
+        "teamwork",
+        "collaborative",
+        "collaboration",
+        "communication",
+        "stakeholder collaboration",
+        "ethical judgement",
+        "professional attitude",
+        "work ethic",
+        "self motivated",
+        "deadline management",
+        "multi tasker",
+        "multitasker",
+        "personable",
+        "conscientious",
+    })
+    return norm in soft_terms or any(term in norm for term in soft_terms if len(term.split()) > 1)
+
+
 def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
     if any(header in line_norm for header in NICE_SECTION_HEADERS):
         return "nice_to_have"
@@ -2544,6 +2611,8 @@ def _infer_requirement_category_from_context(line_norm: str, current_category: s
 def _should_keep_requirement_line(text: str) -> bool:
     norm = normalize_phrase(text)
     if len(norm.split()) < 3:
+        return False
+    if norm in {"experience in planning", "planning", "strong planning"}:
         return False
     if _COMPANY_SUBJECT_RE.match(text):
         return False
@@ -2752,6 +2821,11 @@ STRICT_TOOL_TERMS = {
     "rest",
     "rest api",
     "microservices",
+    "excel",
+    "word",
+    "outlook",
+    "sage",
+    "proaudit",
     "react",
     "typescript",
     "javascript",
@@ -2847,6 +2921,13 @@ REPORTING_STRICT_TERMS = (
     "external reporting",
 )
 
+AUDIT_STRICT_TERMS = (
+    "audit file", "audit highlights memorandum", "management letter",
+    "letter of representation", "finalisation checklist", "finalisation checklists",
+    "audit regulation", "auditing standards", "accounting standards",
+    "statutory accounts", "consolidated accounts", "working papers", "cpd",
+)
+
 
 def _extract_degree_subjects(req_norm: str) -> set:
     subjects = set()
@@ -2931,6 +3012,14 @@ def _requirement_policy(requirement: str) -> dict:
             "type": "reporting",
             "strict": True,
             "allowed_sections": {"skills", "experience", "projects"},
+        })
+        return policy
+
+    if any(term in req_norm for term in AUDIT_STRICT_TERMS):
+        policy.update({
+            "type": "audit_specific",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects", "certifications"},
         })
         return policy
 
@@ -3056,6 +3145,19 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
         return [term for term in CONTROL_GOVERNANCE_TERMS if term in req_norm] or list(CONTROL_GOVERNANCE_TERMS)
     if policy["type"] == "reporting":
         return [term for term in REPORTING_STRICT_TERMS if term in req_norm] or list(REPORTING_STRICT_TERMS)
+    if policy["type"] == "audit_specific":
+        return [term for term in AUDIT_STRICT_TERMS if term in req_norm] or list(AUDIT_STRICT_TERMS)
+    if policy["type"] == "exact_tool":
+        explicit_tool_terms = {
+            "python", "rust", "grpc", "rest", "rest api", "microservices",
+            "excel", "word", "outlook", "sage", "proaudit", "react",
+            "typescript", "javascript", "docker", "kubernetes", "c++", "c#",
+            "cpp", "lakehouse", "messaging middleware",
+        }
+        return [
+            term for term in explicit_tool_terms
+            if _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
+        ]
     return []
 
 
@@ -3677,6 +3779,11 @@ STRICT_EVIDENCE_TERMS = (
     "rest",
     "rest api",
     "microservices",
+    "excel",
+    "word",
+    "outlook",
+    "sage",
+    "proaudit",
     "typescript",
     "react",
     "docker",
@@ -5981,7 +6088,18 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
 
     def _augment_ats_with_local_keywords(items, candidates, limit):
         out = list(items or [])
-        seen = {normalize_phrase(item.get("skill") or "") for item in out if isinstance(item, dict)}
+        seen = set()
+        for item in out:
+            if not isinstance(item, dict):
+                continue
+            existing_skill = str(item.get("skill") or "")
+            existing_norm = normalize_phrase(existing_skill)
+            if existing_norm:
+                seen.add(existing_norm)
+            for alias in _requirement_aliases(existing_skill):
+                alias_norm = normalize_phrase(alias)
+                if alias_norm:
+                    seen.add(alias_norm)
         for skill in candidates:
             norm_skill = normalize_phrase(skill)
             if not norm_skill or norm_skill in seen:
@@ -6005,26 +6123,39 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
 
     skills_raw = parsed.get("skills") or {}
     ats_raw = parsed.get("ats_keywords") or {}
+    cleaned_must = filter_satisfied_alternative_missing_skills(
+        _clean_skills(skills_raw.get("must_have")),
+        job_description,
+    )
+    cleaned_nice = filter_satisfied_alternative_missing_skills(
+        _clean_skills(skills_raw.get("nice_to_have")),
+        job_description,
+    )
+    extracted_skill_candidates = [
+        str(item.get("skill") or "").strip()
+        for item in [*cleaned_must, *cleaned_nice]
+        if str(item.get("skill") or "").strip()
+    ]
     hard_ats = _augment_ats_with_local_keywords(
         _clean_ats(ats_raw.get("hard_skills"), 12),
-        LOCAL_ATS_HARD_KEYWORDS,
+        [
+            *(skill for skill in extracted_skill_candidates if not _looks_like_soft_ats_keyword(skill)),
+            *LOCAL_ATS_HARD_KEYWORDS,
+        ],
         12,
     )
     soft_ats = _augment_ats_with_local_keywords(
         _clean_ats(ats_raw.get("soft_skills"), 8),
-        LOCAL_ATS_SOFT_KEYWORDS,
+        [
+            *(skill for skill in extracted_skill_candidates if _looks_like_soft_ats_keyword(skill)),
+            *LOCAL_ATS_SOFT_KEYWORDS,
+        ],
         8,
     )
     return {
         "skills": {
-            "must_have": filter_satisfied_alternative_missing_skills(
-                _clean_skills(skills_raw.get("must_have")),
-                job_description,
-            ),
-            "nice_to_have": filter_satisfied_alternative_missing_skills(
-                _clean_skills(skills_raw.get("nice_to_have")),
-                job_description,
-            ),
+            "must_have": cleaned_must,
+            "nice_to_have": cleaned_nice,
         },
         "ats_keywords": {
             "hard_skills": hard_ats,
