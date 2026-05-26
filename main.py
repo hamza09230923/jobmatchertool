@@ -5710,6 +5710,7 @@ async def status():
             "rewrite": GEMINI_REWRITE_MODEL,
         },
         "gemini_seed": GEMINI_SEED,
+        "users_db": db.status_metadata(),
         "analyze_cache": analysis_cache.status_metadata(),
     }
 

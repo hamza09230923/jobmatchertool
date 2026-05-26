@@ -1,4 +1,8 @@
-"""SQLite-backed user store. Single-file DB at users.db (override with USERS_DB env var)."""
+"""SQLite-backed user store.
+
+Uses USERS_DB when set. On Render, prefer the mounted /var/data disk if it
+exists, so account storage remains persistent even if the env var is missing.
+"""
 from __future__ import annotations
 
 import logging
@@ -11,7 +15,17 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(os.getenv("USERS_DB", "users.db")).expanduser()
+def resolve_db_path() -> Path:
+    configured = os.getenv("USERS_DB")
+    if configured:
+        return Path(configured).expanduser()
+    render_disk = Path("/var/data")
+    if render_disk.exists():
+        return render_disk / "users.db"
+    return Path("users.db")
+
+
+DB_PATH = resolve_db_path()
 _lock = threading.Lock()
 
 SCHEMA = """
@@ -207,6 +221,20 @@ def list_users(limit: int = 100) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def status_metadata() -> dict:
+    """Expose safe DB diagnostics for deployment verification."""
+    try:
+        exists = DB_PATH.exists()
+    except OSError:
+        exists = False
+    return {
+        "db_path": str(DB_PATH),
+        "exists": exists,
+        "persistent_path": str(DB_PATH).replace("\\", "/").startswith("/var/data/"),
+        "users_db_env_set": bool(os.getenv("USERS_DB")),
+    }
 
 
 def delete_user_by_id(user_id: int) -> bool:
