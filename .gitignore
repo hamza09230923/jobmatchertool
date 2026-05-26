@@ -43,4 +43,5 @@ users.db-journal
 # One-shot debug scripts
 audit_analyze.py
 tmp_live_*.json
+tmp_*
 

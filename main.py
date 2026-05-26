@@ -687,7 +687,9 @@ RESPONSIBILITY_HINTS = (
 )
 SOFT_SKILLS = (
     "communication",
+    "communication skills",
     "teamwork",
+    "team player",
     "leadership",
     "problem solving",
     "problem-solving",
@@ -695,6 +697,14 @@ SOFT_SKILLS = (
     "time management",
     "time-management",
     "stakeholder management",
+    "stakeholder collaboration",
+    "collaboration",
+    "ethical judgement",
+    "professional attitude",
+    "work ethic",
+    "self-motivated",
+    "deadline management",
+    "multitasking",
 )
 TECH_SKILL_ALIASES = {
     "microsoft excel": ("microsoft excel", "excel"),
@@ -2474,6 +2484,8 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "scalability",
     "audit", "auditing", "accounting", "aca", "acca", "outlook", "sage",
     "proaudit", "cpd", "charities", "charity",
+    "communication", "teamwork", "leadership", "collaboration",
+    "adaptability", "deadlines", "multitasking",
 }
 
 LOCAL_ATS_HARD_KEYWORDS = (
@@ -2520,7 +2532,20 @@ LOCAL_ATS_SOFT_KEYWORDS = (
     "ownership",
     "team spirit",
     "collaborative",
+    "collaboration",
     "drive",
+    "communication skills",
+    "stakeholder management",
+    "stakeholder collaboration",
+    "leadership",
+    "team player",
+    "ethical judgement",
+    "professional attitude",
+    "work ethic",
+    "self-motivated",
+    "deadline management",
+    "multitasking",
+    "problem solving",
 )
 
 
@@ -2598,6 +2623,120 @@ def _looks_like_soft_ats_keyword(skill: str) -> bool:
         "conscientious",
     })
     return norm in soft_terms or any(term in norm for term in soft_terms if len(term.split()) > 1)
+
+
+def _display_ats_keyword(phrase: str) -> str:
+    norm = normalize_phrase(phrase)
+    display = {
+        "aca": "ACA",
+        "acca": "ACCA",
+        "cpd": "CPD",
+        "excel": "Excel",
+        "word": "Word",
+        "outlook": "Outlook",
+        "sage": "Sage",
+        "proaudit": "ProAudit",
+        "python": "Python",
+        "grpc": "gRPC",
+        "rest": "REST",
+        "aws": "AWS",
+        "sql": "SQL",
+    }
+    return display.get(norm, str(phrase or "").strip())
+
+
+def _known_ats_hard_terms() -> List[str]:
+    terms: List[str] = []
+    terms.extend(LOCAL_ATS_HARD_KEYWORDS)
+    terms.extend(STRICT_TOOL_TERMS)
+    terms.extend(REGULATED_PROCESS_TERMS)
+    terms.extend(CONTROL_GOVERNANCE_TERMS)
+    terms.extend(REPORTING_STRICT_TERMS)
+    terms.extend(AUDIT_STRICT_TERMS)
+    terms.extend(
+        (
+            "audit",
+            "auditing",
+            "accounting",
+            "external audits",
+            "financial reporting",
+            "statutory accounts",
+            "audit planning",
+            "audit completion",
+            "not-for-profit organisations",
+            "charities",
+            "charity",
+            "stakeholder reporting",
+            "data analysis",
+            "data modelling",
+            "project management",
+            "risk assessment",
+            "internal controls",
+        )
+    )
+    return merge_unique([_display_ats_keyword(term) for term in terms if str(term).strip()])
+
+
+def _known_ats_soft_terms() -> List[str]:
+    terms: List[str] = []
+    terms.extend(LOCAL_ATS_SOFT_KEYWORDS)
+    terms.extend(SOFT_SKILLS)
+    terms.extend(
+        (
+            "personable",
+            "conscientious",
+            "able to work to deadlines",
+            "work under pressure",
+            "multi-tasker",
+            "support junior members",
+            "develop junior members",
+            "ethical judgement",
+            "professional attitude",
+            "good work ethic",
+            "self motivated",
+            "self-motivated",
+        )
+    )
+    return merge_unique([_display_ats_keyword(term) for term in terms if str(term).strip()])
+
+
+def _local_ats_keyword_candidates(job_description: str) -> dict:
+    """Deterministically recover hard/soft ATS terms from candidate-facing JD text."""
+    candidate_blob = _candidate_requirement_text_blob(job_description)
+    hard: List[str] = []
+    soft: List[str] = []
+
+    for term in _known_ats_hard_terms():
+        if is_valid_ats_keyword(term, candidate_blob) and _count_normalized_phrase(term, candidate_blob) > 0:
+            hard.append(_display_ats_keyword(term))
+    for term in _known_ats_soft_terms():
+        if is_valid_ats_keyword(term, candidate_blob) and _count_normalized_phrase(term, candidate_blob) > 0:
+            soft.append(_display_ats_keyword(term))
+
+    for req in extract_local_job_requirements(job_description, limit=80):
+        text = str(req.get("text") or "")
+        for fragment in re.split(r";|,|/|\band\b|\bor\b", text, flags=re.IGNORECASE):
+            cleaned = re.sub(
+                r"^(?:must have|should have|required|essential|desirable|able to|ability to|experience of|experience in|experience with|strong|good|excellent)\s+",
+                "",
+                fragment.strip(" -:.()"),
+                flags=re.IGNORECASE,
+            ).strip(" -:.()")
+            norm = normalize_phrase(cleaned)
+            if not norm or len(norm.split()) > 6:
+                continue
+            display = _display_ats_keyword(cleaned)
+            if not is_valid_ats_keyword(display, candidate_blob):
+                continue
+            if _looks_like_soft_ats_keyword(display):
+                soft.append(display)
+            elif len(norm.split()) > 1 or norm in ATS_SINGLE_TOKEN_ALLOWLIST:
+                hard.append(display)
+
+    return {
+        "hard": merge_unique(hard),
+        "soft": merge_unique(soft),
+    }
 
 
 def _infer_requirement_category_from_context(line_norm: str, current_category: str) -> str:
@@ -6136,10 +6275,12 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         for item in [*cleaned_must, *cleaned_nice]
         if str(item.get("skill") or "").strip()
     ]
+    local_ats_candidates = _local_ats_keyword_candidates(job_description)
     hard_ats = _augment_ats_with_local_keywords(
         _clean_ats(ats_raw.get("hard_skills"), 12),
         [
             *(skill for skill in extracted_skill_candidates if not _looks_like_soft_ats_keyword(skill)),
+            *local_ats_candidates["hard"],
             *LOCAL_ATS_HARD_KEYWORDS,
         ],
         12,
@@ -6148,6 +6289,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         _clean_ats(ats_raw.get("soft_skills"), 8),
         [
             *(skill for skill in extracted_skill_candidates if _looks_like_soft_ats_keyword(skill)),
+            *local_ats_candidates["soft"],
             *LOCAL_ATS_SOFT_KEYWORDS,
         ],
         8,

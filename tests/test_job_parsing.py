@@ -156,7 +156,8 @@ def test_ats_keywords_are_limited_to_candidate_facing_requirements(monkeypatch):
     assert "Word" in hard
     assert "BlackRock" not in hard
     assert "assets under management" not in hard
-    assert soft == ["communication skills"]
+    assert "communication skills" in soft
+    assert "around the world" not in soft
 
 
 FCA_JD = """
@@ -267,6 +268,43 @@ def test_accounting_ats_keywords_are_not_empty_when_model_under_returns(monkeypa
     assert {"external audits", "statutory accounts", "Excel", "Outlook", "Sage", "ProAudit"}.issubset(hard)
     assert hard["Excel"]["status"] == "present"
     assert hard["Outlook"]["status"] == "missing"
+
+
+def test_ats_keywords_extract_hard_and_soft_skills_when_model_returns_none(monkeypatch):
+    jd = """
+    About us
+    ExampleCo builds internal platforms.
+
+    Requirements
+    Python, SQL, and stakeholder reporting.
+    Project management and risk assessment experience.
+    Communication skills, teamwork, leadership, and adaptability.
+    """
+    fake_json = """
+    {
+      "skills": {"must_have": [], "nice_to_have": []},
+      "ats_keywords": {"hard_skills": [], "soft_skills": []}
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Skills\nPython, SQL, communication skills\nExperience\nProduced stakeholder reporting.",
+        "summary": "",
+        "skills": ["Python", "SQL", "communication skills"],
+        "tools": ["Python", "SQL"],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(jd, parsed_resume, parsed_resume["_resume_text"])
+    hard = {item["skill"]: item for item in result["ats_keywords"]["hard_skills"]}
+    soft = {item["skill"]: item for item in result["ats_keywords"]["soft_skills"]}
+
+    assert {"Python", "SQL", "stakeholder reporting", "project management", "risk assessment"}.issubset(hard)
+    assert {"communication skills", "teamwork", "leadership", "adaptability"}.issubset(soft)
+    assert hard["Python"]["status"] == "present"
+    assert hard["risk assessment"]["status"] == "missing"
+    assert soft["communication skills"]["status"] == "present"
 
 
 def test_single_word_tool_match_uses_token_boundary_not_substring():

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 
-SCORER_VERSION = os.getenv("SCORER_VERSION", "2026-05-26.strict-jd-v6")
+SCORER_VERSION = os.getenv("SCORER_VERSION", "2026-05-26.strict-jd-v7")
 
 try:
     ANALYZE_CACHE_MAX_ENTRIES = max(0, int(os.getenv("ANALYZE_CACHE_MAX_ENTRIES", "256")))
