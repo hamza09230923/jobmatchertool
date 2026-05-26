@@ -85,10 +85,10 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.0-flash")
+GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.5-flash-lite")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
-GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.0-flash")
-GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite")
+GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.5-flash-lite")
+GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-2.5-flash-lite")
 try:
     GEMINI_SEED = int(os.getenv("GEMINI_SEED", "1337"))
 except ValueError:
@@ -5976,6 +5976,8 @@ async def status():
             "parse": GEMINI_PARSE_MODEL,
             "embed": GEMINI_EMBED_MODEL,
             "rewrite": GEMINI_REWRITE_MODEL,
+            "lite": GEMINI_LITE_MODEL,
+            "openai_rewrite": OPENAI_REWRITE_MODEL,
         },
         "gemini_seed": GEMINI_SEED,
         "users_db": db.status_metadata(),

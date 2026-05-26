@@ -21,19 +21,19 @@ services:
       - key: TEXTRAZOR_API_KEY
         sync: false
       - key: GEMINI_PARSE_MODEL
-        value: gemini-2.0-flash
+        value: gemini-2.5-flash-lite
       - key: GEMINI_EMBED_MODEL
         value: gemini-embedding-001
       - key: GEMINI_REWRITE_MODEL
-        value: gemini-2.0-flash
+        value: gemini-2.5-flash-lite
       - key: GEMINI_LITE_MODEL
-        value: gemini-2.0-flash-lite
+        value: gemini-2.5-flash-lite
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
       - key: OPENAI_REWRITE_MODEL
-        value: gpt-4o-mini
+        value: gpt-5-mini
       - key: ACCOUNTS
         sync: false
       - key: DEFAULT_DAILY_LIMIT
