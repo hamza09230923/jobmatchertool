@@ -2402,6 +2402,9 @@ EXCLUDED_JD_SECTION_HEADERS = (
 CANDIDATE_JD_SECTION_HEADERS = (
     "description",
     "a few examples of your responsibilities",
+    "what you'll do",
+    "what you ll do",
+    "what you will do",
     "what you'll be doing",
     "what you ll be doing",
     "what we're looking for",
@@ -3201,7 +3204,24 @@ def _requirement_policy(requirement: str) -> dict:
         })
         return policy
 
-    if any(term in req_norm for term in ("people management", "line management", "managed team", "manage team", "mentoring", "mentor")):
+    if any(
+        term in req_norm
+        for term in (
+            "people management",
+            "line management",
+            "managed team",
+            "manage team",
+            "mentoring",
+            "mentor",
+            "supervise",
+            "supervising",
+            "review junior",
+            "review the work of junior",
+            "delegate",
+            "junior members",
+            "support and develop junior",
+        )
+    ):
         policy.update({
             "type": "management",
             "strict": True,
@@ -3532,8 +3552,10 @@ def decompose_requirement_text(text: str) -> List[dict]:
         norm = normalize_phrase(atom)
         if not norm or norm == normalized_parent or norm in seen:
             continue
+        if parent_policy["type"] == "management" and norm in {"brief"}:
+            continue
         seen.add(norm)
-        policy = _requirement_policy(atom)
+        policy = parent_policy if parent_policy["type"] == "management" else _requirement_policy(atom)
         normalized_atoms.append({
             "text": atom,
             "normalized": norm,

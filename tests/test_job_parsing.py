@@ -307,6 +307,47 @@ def test_ats_keywords_extract_hard_and_soft_skills_when_model_returns_none(monke
     assert soft["communication skills"]["status"] == "present"
 
 
+def test_ats_recovery_ignores_company_about_text_even_when_keywords_present(monkeypatch):
+    jd = """
+    About us
+    ExampleCo is known for leadership, teamwork, Python, AWS, and risk assessment across the industry.
+
+    What You'll Do
+    Build monthly reporting packs in Excel.
+
+    What We're Looking For
+    Clear communication skills and stakeholder management.
+    """
+    fake_json = """
+    {
+      "skills": {"must_have": [], "nice_to_have": []},
+      "ats_keywords": {"hard_skills": [], "soft_skills": []}
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Skills\nExcel, communication skills",
+        "summary": "",
+        "skills": ["Excel", "communication skills"],
+        "tools": ["Excel"],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(jd, parsed_resume, parsed_resume["_resume_text"])
+    hard = {item["skill"] for item in result["ats_keywords"]["hard_skills"]}
+    soft = {item["skill"] for item in result["ats_keywords"]["soft_skills"]}
+
+    assert "Excel" in hard
+    assert "Python" not in hard
+    assert "AWS" not in hard
+    assert "risk assessment" not in hard
+    assert "communication skills" in soft
+    assert "stakeholder management" in soft
+    assert "leadership" not in soft
+    assert "teamwork" not in soft
+
+
 def test_single_word_tool_match_uses_token_boundary_not_substring():
     text_norm = main.normalize_phrase("Built keyword coverage and workload reporting.")
     tokens = set(text_norm.split())
@@ -342,6 +383,61 @@ def test_office_tool_bundle_does_not_invent_word_or_outlook():
     assert breakdown["Excel"] == "present"
     assert breakdown["Word"] == "missing"
     assert breakdown["Outlook proficiency"] == "missing"
+
+
+def test_supervising_juniors_is_not_proven_by_collaboration():
+    parsed_resume = {
+        "_resume_text": "Experience\nCollaborated through code reviews, sprint planning, stand-ups and retrospectives in a structured team environment.",
+        "summary": "",
+        "skills": ["collaboration"],
+        "tools": [],
+        "work_experience": [
+            {
+                "title": "Developer",
+                "company": "Example",
+                "bullets": [
+                    "Collaborated through code reviews, sprint planning, stand-ups and retrospectives in a structured team environment."
+                ],
+            }
+        ],
+        "projects": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Brief, supervise and review the work of junior members of the team",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+        ai_present=True,
+        ai_evidence="[Developer @ Example] Collaborated through code reviews, sprint planning, stand-ups and retrospectives in a structured team environment.",
+        ai_confidence="strong",
+    )
+
+    assert result["status"] == "missing"
+
+
+def test_supervising_juniors_matches_explicit_people_management():
+    parsed_resume = {
+        "_resume_text": "Experience\nSupervised two junior analysts, reviewed their workpapers, and provided weekly feedback.",
+        "summary": "",
+        "skills": [],
+        "tools": [],
+        "work_experience": [
+            {
+                "title": "Senior Analyst",
+                "company": "Example",
+                "bullets": ["Supervised two junior analysts, reviewed their workpapers, and provided weekly feedback."],
+            }
+        ],
+        "projects": [],
+    }
+
+    result = main.aggregate_requirement_evidence(
+        "Brief, supervise and review the work of junior members of the team",
+        parsed_resume,
+        parsed_resume["_resume_text"],
+    )
+
+    assert result["status"] == "present"
 
 
 def test_generic_planning_requirement_from_model_is_rejected():
