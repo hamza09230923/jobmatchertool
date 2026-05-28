@@ -348,6 +348,81 @@ def test_ats_recovery_ignores_company_about_text_even_when_keywords_present(monk
     assert "teamwork" not in soft
 
 
+def test_ba_style_requirements_do_not_keep_candidate_section_heading():
+    jd = """
+    About the job
+    A Career Without Limits
+
+    As the nation's flag carrier, we take great pride in connecting Britain with the world.
+
+    The role: Flight Data Software Engineer
+
+    Develop and maintain British Airways Flight Data Software System and solutions around business needs.
+
+    What You'll Do
+    Contribute in the development, design and maintenance of Amazon Web Services platform, written in Python and TypeScript, running in containers and serverless functions.
+    Develop prognostics and alerts to diagnose and predict aircraft issues.
+    Create visualisations support the understanding of aircraft conditions.
+    Support incident investigation of aircraft and present information that provides root cause understanding, which may involve analysing historical flight data.
+    Collaborate with Technical Engineers on the development of airborne software.
+    Maintenance of data decode documentation.
+    Maintain Flight Data Recording hardware and 3rd party software.
+    Interface with Flight Operations, Corporate Safety, Analytics Teams and other parts of IAG and its companies in developing solutions.
+
+    What You'll Bring To British Airways
+    Engineering, Scientific or IT Degree with programming skills or an experienced programmer - Essential
+    Software certifications e.g., AWS Certified, A Cloud Guru - Desirable
+    Usage of programming languages Python, SQL, TypeScript, Net -Essential
+    Interest in developing responsive web applications - Essential.
+    Working with Git source control and deployment pipelines.
+    Capable of supporting windows applications - Essential
+    Must be capable of understanding primitive data types on a binary level - Essential.
+
+    Why British Airways?
+    Join a world-class airline.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = [item["text"] for item in requirements]
+    joined = "\n".join(texts).lower()
+
+    assert not any("what you'll bring" in text.lower() for text in texts)
+    assert "software certifications" in joined
+    assert "usage of programming languages python, sql, typescript, net" in joined
+    assert "windows applications" in joined
+    assert "primitive data types" in joined
+    assert not any("join a world-class airline" in text.lower() for text in texts)
+
+
+def test_ba_style_ats_keywords_are_skills_not_sentence_fragments():
+    jd = """
+    What You'll Do
+    Contribute in the development, design and maintenance of Amazon Web Services platform, written in Python and TypeScript, running in containers and serverless functions.
+    Develop prognostics and alerts to diagnose and predict aircraft issues.
+    Support incident investigation of aircraft, which may involve analysing historical flight data.
+    Interface with Flight Operations, Corporate Safety, Analytics Teams and other parts of IAG and its companies in developing solutions.
+
+    What You'll Bring To British Airways
+    Software certifications e.g., AWS Certified, A Cloud Guru - Desirable
+    Usage of programming languages Python, SQL, TypeScript, Net -Essential
+    Working with Git source control and deployment pipelines.
+    Capable of supporting windows applications - Essential
+    Must be capable of understanding primitive data types on a binary level - Essential.
+    """
+
+    keywords = main._local_ats_keyword_candidates(jd)
+    hard = {item for item in keywords["hard"]}
+
+    assert {"Python", "AWS", "TypeScript", "SQL", ".NET", "Git"}.issubset(hard)
+    assert "AWS Certified" in hard
+    assert "deployment pipelines" in hard
+    assert "responsive web applications" not in hard
+    assert "Contribute in the development" not in hard
+    assert "maintenance of Amazon Web Services platform" not in hard
+    assert "other parts of IAG" not in hard
+    assert "data pipelines" not in hard
+
+
 def test_single_word_tool_match_uses_token_boundary_not_substring():
     text_norm = main.normalize_phrase("Built keyword coverage and workload reporting.")
     tokens = set(text_norm.split())

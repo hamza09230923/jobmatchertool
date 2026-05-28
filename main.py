@@ -2850,6 +2850,11 @@ ROLE_REQUIREMENT_SIGNALS = (
     "collaborate", "communicate", "stakeholder", "technical direction",
     "technical vision", "delivery", "architecture", "agile", "creating",
     "pipeline", "pipelines",
+    "source control", "deployment pipeline", "deployment pipelines",
+    "programming language", "programming languages", "programming skills",
+    "certification", "certifications", "degree", "capable",
+    "responsive web applications", "windows applications",
+    "primitive data types", "binary level", "serverless", "containers",
     "ownership", "end-to-end ownership", "ai tools", "workflow",
     "correctness", "reliability", "maintainability", "scalable",
     "audit", "auditing", "accounting", "statutory accounts",
@@ -2929,7 +2934,7 @@ ROLE_TITLE_SENIORITY_PATTERNS = (
 
 
 def _classify_jd_section_heading(line_norm: str) -> str | None:
-    if not line_norm or len(line_norm.split()) > 8:
+    if not line_norm or len(line_norm.split()) > 10:
         return None
     if line_norm.startswith("why ") and len(line_norm.split()) <= 4:
         return "excluded"
@@ -2937,6 +2942,10 @@ def _classify_jd_section_heading(line_norm: str) -> str | None:
         return "excluded"
     if line_norm in CANDIDATE_JD_SECTION_HEADERS:
         return "candidate"
+    if any(line_norm.startswith(f"{header} ") for header in CANDIDATE_JD_SECTION_HEADERS if header.startswith("what ")):
+        return "candidate"
+    if any(line_norm.startswith(f"{header} ") for header in EXCLUDED_JD_SECTION_HEADERS):
+        return "excluded"
     return None
 
 
@@ -2970,6 +2979,7 @@ ATS_NOISE_TERMS = {
     "data", "policy", "policies", "regime", "regimes", "analysis", "technical",
     "industry", "engagement", "requirements", "guidelines", "rules", "advice",
     "support", "users", "audiences", "priorities", "judgement", "insights",
+    "corporate safety", "analytics teams", "iag",
 }
 
 ATS_SINGLE_TOKEN_ALLOWLIST = {
@@ -2981,12 +2991,35 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "scalability",
     "audit", "auditing", "accounting", "aca", "acca", "outlook", "sage",
     "proaudit", "cpd", "charities", "charity",
+    "net", "binary", "git",
     "communication", "teamwork", "leadership", "collaboration",
     "adaptability", "deadlines", "multitasking",
 }
 
 LOCAL_ATS_HARD_KEYWORDS = (
     "Python",
+    "Amazon Web Services",
+    "AWS",
+    "AWS Certified",
+    "A Cloud Guru",
+    "SQL",
+    "TypeScript",
+    ".NET",
+    "Git",
+    "source control",
+    "deployment pipelines",
+    "containers",
+    "serverless functions",
+    "responsive web applications",
+    "Windows applications",
+    "primitive data types",
+    "binary level",
+    "flight data",
+    "airborne software",
+    "aircraft issues",
+    "prognostics",
+    "alerts",
+    "visualisations",
     "Rust",
     "gRPC",
     "REST",
@@ -3088,7 +3121,9 @@ def is_valid_ats_keyword(keyword: str, candidate_jd_blob: str) -> bool:
     if norm in candidate_jd_blob:
         return True
     candidate_tokens = set(candidate_jd_blob.split())
-    return len(tokens) <= 3 and all(token in candidate_tokens for token in tokens)
+    if _looks_like_soft_ats_keyword(norm) and len(tokens) <= 3 and all(token in candidate_tokens for token in tokens):
+        return True
+    return False
 
 
 def _count_normalized_phrase(phrase: str, text_norm: str) -> int:
@@ -3137,9 +3172,57 @@ def _display_ats_keyword(phrase: str) -> str:
         "grpc": "gRPC",
         "rest": "REST",
         "aws": "AWS",
+        "amazon web services": "Amazon Web Services",
         "sql": "SQL",
+        "typescript": "TypeScript",
+        "net": ".NET",
+        "git": "Git",
     }
     return display.get(norm, str(phrase or "").strip())
+
+
+ATS_FRAGMENT_NOISE_PREFIXES = (
+    "contribute in",
+    "contribute to",
+    "written in",
+    "running in",
+    "working with",
+    "interest in",
+    "usage of",
+    "support ",
+    "maintain ",
+    "maintenance of",
+    "interface with",
+    "predict ",
+    "capable of",
+    "other parts of",
+    "its companies",
+    "an experienced",
+    "software certifications e g",
+    "what you",
+)
+
+
+def _looks_like_noisy_ats_fragment(phrase: str) -> bool:
+    norm = normalize_phrase(phrase)
+    if not norm:
+        return True
+    if any(norm.startswith(prefix) for prefix in ATS_FRAGMENT_NOISE_PREFIXES):
+        return True
+    if " to " in f" {norm} " and not any(term in norm for term in ("source control", "deployment pipelines")):
+        return True
+    if norm in ATS_NOISE_TERMS:
+        return True
+    tokens = norm.split()
+    if tokens and tokens[0] in _ACTION_VERBS_SET:
+        return True
+    if len(tokens) > 4 and not any(
+        _phrase_present_in_normalized_text(normalize_phrase(term), norm)
+        for term in _known_ats_hard_terms()
+        if len(normalize_phrase(term).split()) >= 2
+    ):
+        return True
+    return False
 
 
 def _known_ats_hard_terms() -> List[str]:
@@ -3219,8 +3302,16 @@ def _local_ats_keyword_candidates(job_description: str) -> dict:
                 fragment.strip(" -:.()"),
                 flags=re.IGNORECASE,
             ).strip(" -:.()")
+            cleaned = re.sub(
+                r"\s*[-–—]?\s*(?:essential|desirable|required)\s*$",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            ).strip(" -:.()")
             norm = normalize_phrase(cleaned)
             if not norm or len(norm.split()) > 6:
+                continue
+            if _looks_like_noisy_ats_fragment(cleaned):
                 continue
             display = _display_ats_keyword(cleaned)
             if not is_valid_ats_keyword(display, candidate_blob):
@@ -3247,6 +3338,8 @@ def _infer_requirement_category_from_context(line_norm: str, current_category: s
 def _should_keep_requirement_line(text: str) -> bool:
     norm = normalize_phrase(text)
     if len(norm.split()) < 3:
+        return False
+    if _classify_jd_section_heading(norm):
         return False
     if norm in {"experience in planning", "planning", "strong planning"}:
         return False
