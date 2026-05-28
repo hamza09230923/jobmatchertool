@@ -1179,6 +1179,70 @@ FALSE_POSITIVE_REQUIREMENT_FIXTURES = [
         id="Docker Compose does not prove Terraform",
     ),
     pytest.param(
+        "content_calendar_not_cms",
+        parsed_resume(
+            resume_text="Experience\nMaintained a shared content calendar in Microsoft Excel.",
+            skills=["content calendars", "Microsoft Excel"],
+            work_experience=[
+                {
+                    "title": "Communications Intern",
+                    "company": "Charity",
+                    "bullets": ["Maintained a shared content calendar in Microsoft Excel."],
+                }
+            ],
+        ),
+        "Content management system experience is essential",
+        id="content calendar does not prove CMS",
+    ),
+    pytest.param(
+        "email_engagement_not_google_analytics",
+        parsed_resume(
+            resume_text="Experience\nSummarised reader feedback and email engagement notes.",
+            skills=["reader feedback", "email engagement"],
+            work_experience=[
+                {
+                    "title": "Communications Intern",
+                    "company": "Charity",
+                    "bullets": ["Summarised reader feedback and email engagement notes."],
+                }
+            ],
+        ),
+        "Google Analytics or similar reporting tools experience",
+        id="email notes do not prove Google Analytics/reporting tool",
+    ),
+    pytest.param(
+        "style_consistency_not_indesign",
+        parsed_resume(
+            resume_text="Experience\nManaged weekly deadlines, style consistency, and image captions.",
+            skills=["style guides", "copyediting"],
+            work_experience=[
+                {
+                    "title": "Editor",
+                    "company": "Student Newspaper",
+                    "bullets": ["Managed weekly deadlines, style consistency, and image captions."],
+                }
+            ],
+        ),
+        "Adobe InDesign experience is desirable",
+        id="style editing does not prove Adobe InDesign",
+    ),
+    pytest.param(
+        "case_studies_not_confidential_student_data",
+        parsed_resume(
+            resume_text="Experience\nInterviewed volunteers and converted notes into concise case studies.",
+            skills=["interviewing", "case studies"],
+            work_experience=[
+                {
+                    "title": "Communications Intern",
+                    "company": "Charity",
+                    "bullets": ["Interviewed volunteers and converted notes into concise case studies."],
+                }
+            ],
+        ),
+        "Handle confidential student and partner information responsibly",
+        id="case studies do not prove confidential information handling",
+    ),
+    pytest.param(
         "validation_checks_not_incident_investigation",
         parsed_resume(
             resume_text="Experience\nImplemented validation checks across operational data, improving reliability by 40%.",
@@ -1349,6 +1413,24 @@ FALSE_NEGATIVE_REQUIREMENT_FIXTURES = [
         "Spanish fluency",
         "skills",
         id="Spanish fluency is detected",
+    ),
+    pytest.param(
+        "written_english_present",
+        parsed_resume(
+            resume_text="Profile\nStrong written English, proofreading, copyediting, and research synthesis.",
+            summary="Strong written English, proofreading, copyediting, and research synthesis.",
+            skills=["written English", "proofreading", "copyediting"],
+        ),
+        "Excellent written English",
+        "skills",
+        id="written English is detected",
+    ),
+    pytest.param(
+        "cms_present",
+        parsed_resume(resume_text="Skills\nWordPress CMS, copyediting", skills=["WordPress CMS", "copyediting"]),
+        "Content management system experience",
+        "skills",
+        id="CMS is detected as content management system",
     ),
     pytest.param(
         "gdpr_work_present",

@@ -155,6 +155,42 @@ def test_no_invention_validator_removes_invented_tool_and_metric():
     assert result["rewrite_audit"]["deterministic_removed_count"] == 1
 
 
+def test_no_invention_validator_removes_editorial_tools_and_certifications():
+    rewrite = {
+        "skills_section": [
+            {
+                "category": "Editorial tools",
+                "items": ["Copyediting", "CMS", "SEO", "Google Analytics", "Adobe InDesign", "QTS"],
+            }
+        ],
+        "experience_section": [
+            {
+                "heading": "Communications Intern | Charity | 2025",
+                "bullets": [
+                    "Drafted and proofread weekly newsletters.",
+                    "Improved engagement by 45% using Google Analytics and SEO.",
+                ],
+            }
+        ],
+        "additional_keywords_to_include": [],
+        "missing_information": [],
+    }
+    resume_text = "Skills\nCopyediting, proofreading\nExperience\nDrafted and proofread weekly newsletters."
+
+    result = main.validate_rewrite_no_inventions(rewrite, resume_text)
+    skills = result["skills_section"][0]["items"]
+    bullets = result["experience_section"][0]["bullets"]
+
+    assert "Copyediting" in skills
+    assert "CMS" not in skills
+    assert "SEO" not in skills
+    assert "Google Analytics" not in skills
+    assert "Adobe InDesign" not in skills
+    assert "QTS" not in skills
+    assert "Drafted and proofread weekly newsletters." in bullets
+    assert "Improved engagement by 45% using Google Analytics and SEO." not in bullets
+
+
 def test_no_invention_validator_allows_metric_prompt_not_in_source():
     rewrite = {
         "experience_section": [

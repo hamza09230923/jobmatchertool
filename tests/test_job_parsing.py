@@ -423,6 +423,68 @@ def test_ba_style_ats_keywords_are_skills_not_sentence_fragments():
     assert "data pipelines" not in hard
 
 
+def test_editorial_ats_keywords_are_tools_and_skills_not_fragments():
+    jd = """
+    What you'll do
+    Draft, edit, and proofread web pages, newsletters, case studies, and campaign copy in line with our editorial style guide.
+    Manage updates in a content management system and maintain an organised editorial calendar.
+
+    What we're looking for
+    English, Journalism, Communications, or Humanities degree.
+    Excellent written English, proofreading, copyediting, and attention to detail.
+    Strong research, synthesis, and stakeholder communication skills.
+    Content management system experience is essential.
+    SEO knowledge is desirable.
+    Google Analytics or similar reporting tools are desirable.
+    Adobe InDesign experience is desirable.
+    QTS is not required.
+    """
+
+    keywords = main._local_ats_keyword_candidates(jd)
+    hard = set(keywords["hard"])
+    soft = set(keywords["soft"])
+
+    assert "content management system" in hard
+    assert "SEO" in hard
+    assert "Google Analytics" in hard
+    assert "Adobe InDesign" in hard
+    assert "proofreading" in hard
+    assert "copyediting" in hard
+    assert "stakeholder communication" in hard
+    assert "attention to detail" in soft
+    assert "Adobe InDesign experience is" not in hard
+    assert "Interview subject matter experts" not in hard
+    assert "Experience writing for web" not in hard
+    assert "charity" not in hard
+    assert "QTS" not in hard
+    assert "proofread web pages" not in hard
+    assert "Use research" not in hard
+    assert "Handle confidential student" not in hard
+    assert "approved on time" not in hard
+
+
+def test_editorial_local_requirements_keep_candidate_owned_action_responsibilities():
+    jd = """
+    What you'll do
+    Draft, edit, and proofread web pages, newsletters, case studies, and campaign copy.
+    Use research, reader feedback, and engagement data to recommend content improvements.
+    Handle confidential student and partner information responsibly when preparing stories and reports.
+
+    What we're looking for
+    Content management system experience is essential.
+    QTS is not required.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = [item["text"] for item in requirements]
+    joined = "\n".join(texts).lower()
+
+    assert "draft, edit, and proofread web pages" in joined
+    assert "use research, reader feedback" in joined
+    assert "handle confidential student" in joined
+    assert not any("qts is not required" in text.lower() for text in texts)
+
+
 def test_single_word_tool_match_uses_token_boundary_not_substring():
     text_norm = main.normalize_phrase("Built keyword coverage and workload reporting.")
     tokens = set(text_norm.split())

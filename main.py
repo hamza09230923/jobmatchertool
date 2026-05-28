@@ -1758,6 +1758,28 @@ def validate_rewrite_no_inventions(rewrite: dict, resume_text: str) -> dict:
                 cleaned_items.append({"heading": heading, "bullets": bullets[:8]})
         rewrite[section_key] = cleaned_items
 
+    validated_skill_sections = []
+    for section in rewrite.get("skills_section") or []:
+        if not isinstance(section, dict):
+            continue
+        kept_skills = []
+        for skill in section.get("items") or []:
+            skill_text = str(skill).strip()
+            if not skill_text:
+                continue
+            reasons = unsupported_reasons(skill_text)
+            if reasons:
+                record_removed(skill_text, reasons)
+                continue
+            kept_skills.append(skill_text)
+        if kept_skills:
+            validated_skill_sections.append({
+                "category": str(section.get("category") or "").strip(),
+                "items": merge_unique(kept_skills),
+            })
+    if "skills_section" in rewrite:
+        rewrite["skills_section"] = validated_skill_sections
+
     summary = str(rewrite.get("rewritten_summary") or "").strip()
     if summary:
         sentences = re.split(r"(?<=[.!?])\s+", summary)
@@ -2840,6 +2862,10 @@ _CANDIDATE_HINTS = (
     "what you will do", "day to day", "in this role",
 )
 _ACTION_VERBS_SET = set(ACTION_VERBS)
+JD_REQUIREMENT_ACTION_VERBS = {
+    "draft", "edit", "proofread", "interview", "use", "work", "handle",
+    "write", "prepare", "publish", "coordinate", "analyse", "analyze",
+}
 
 ROLE_REQUIREMENT_SIGNALS = (
     "experience", "knowledge", "skills", "ability", "proficiency",
@@ -2980,6 +3006,7 @@ ATS_NOISE_TERMS = {
     "industry", "engagement", "requirements", "guidelines", "rules", "advice",
     "support", "users", "audiences", "priorities", "judgement", "insights",
     "corporate safety", "analytics teams", "iag",
+    "experience is", "knowledge is",
 }
 
 ATS_SINGLE_TOKEN_ALLOWLIST = {
@@ -2988,9 +3015,9 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "javascript", "java", "c++", "c#", "scala", "spark", "hadoop",
     "rust", "grpc", "rest", "microservices", "monoliths", "testing",
     "documentation", "correctness", "reliability", "maintainability",
-    "scalability",
+    "scalability", "cms", "seo", "qts", "copywriting", "proofreading", "copyediting",
     "audit", "auditing", "accounting", "aca", "acca", "outlook", "sage",
-    "proaudit", "cpd", "charities", "charity",
+    "proaudit", "cpd", "charities",
     "net", "binary", "git",
     "communication", "teamwork", "leadership", "collaboration",
     "adaptability", "deadlines", "multitasking",
@@ -3055,6 +3082,23 @@ LOCAL_ATS_HARD_KEYWORDS = (
     "ProAudit",
     "not-for-profit organisations",
     "charities",
+    "copywriting",
+    "proofreading",
+    "copyediting",
+    "written English",
+    "English degree",
+    "Humanities degree",
+    "research synthesis",
+    "stakeholder communication",
+    "content management system",
+    "CMS",
+    "SEO",
+    "Google Analytics",
+    "Adobe InDesign",
+    "InDesign",
+    "editorial calendar",
+    "editorial style guide",
+    "content calendar",
 )
 
 LOCAL_ATS_SOFT_KEYWORDS = (
@@ -3076,6 +3120,7 @@ LOCAL_ATS_SOFT_KEYWORDS = (
     "deadline management",
     "multitasking",
     "problem solving",
+    "attention to detail",
 )
 
 
@@ -3118,12 +3163,26 @@ def is_valid_ats_keyword(keyword: str, candidate_jd_blob: str) -> bool:
         norm,
     ):
         return False
+    if _ats_term_is_negated(norm, candidate_jd_blob):
+        return False
     if norm in candidate_jd_blob:
         return True
     candidate_tokens = set(candidate_jd_blob.split())
     if _looks_like_soft_ats_keyword(norm) and len(tokens) <= 3 and all(token in candidate_tokens for token in tokens):
         return True
     return False
+
+
+def _ats_term_is_negated(term_norm: str, candidate_jd_blob: str) -> bool:
+    if not term_norm or not candidate_jd_blob:
+        return False
+    term = re.escape(term_norm)
+    negation = r"(?:not\s+required|not\s+essential|not\s+necessary|is\s+not\s+required|required\s+not)"
+    patterns = (
+        rf"{term}(?:\s+\w+){{0,2}}\s+{negation}",
+        rf"{negation}(?:\s+\w+){{0,2}}\s+{term}",
+    )
+    return any(re.search(pattern, candidate_jd_blob) for pattern in patterns)
 
 
 def _count_normalized_phrase(phrase: str, text_norm: str) -> int:
@@ -3153,6 +3212,7 @@ def _looks_like_soft_ats_keyword(skill: str) -> bool:
         "multitasker",
         "personable",
         "conscientious",
+        "attention to detail",
     })
     return norm in soft_terms or any(term in norm for term in soft_terms if len(term.split()) > 1)
 
@@ -3177,6 +3237,13 @@ def _display_ats_keyword(phrase: str) -> str:
         "typescript": "TypeScript",
         "net": ".NET",
         "git": "Git",
+        "cms": "CMS",
+        "seo": "SEO",
+        "qts": "QTS",
+        "google analytics": "Google Analytics",
+        "adobe indesign": "Adobe InDesign",
+        "indesign": "InDesign",
+        "written english": "written English",
     }
     return display.get(norm, str(phrase or "").strip())
 
@@ -3192,6 +3259,11 @@ ATS_FRAGMENT_NOISE_PREFIXES = (
     "support ",
     "maintain ",
     "maintenance of",
+    "interview ",
+    "experience writing",
+    "proofread ",
+    "use ",
+    "handle ",
     "interface with",
     "predict ",
     "capable of",
@@ -3200,6 +3272,7 @@ ATS_FRAGMENT_NOISE_PREFIXES = (
     "an experienced",
     "software certifications e g",
     "what you",
+    "approved on time",
 )
 
 
@@ -3245,7 +3318,6 @@ def _known_ats_hard_terms() -> List[str]:
             "audit completion",
             "not-for-profit organisations",
             "charities",
-            "charity",
             "stakeholder reporting",
             "data analysis",
             "data modelling",
@@ -3275,6 +3347,7 @@ def _known_ats_soft_terms() -> List[str]:
             "good work ethic",
             "self motivated",
             "self-motivated",
+            "attention to detail",
         )
     )
     return merge_unique([_display_ats_keyword(term) for term in terms if str(term).strip()])
@@ -3304,6 +3377,12 @@ def _local_ats_keyword_candidates(job_description: str) -> dict:
             ).strip(" -:.()")
             cleaned = re.sub(
                 r"\s*[-–—]?\s*(?:essential|desirable|required)\s*$",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            ).strip(" -:.()")
+            cleaned = re.sub(
+                r"\b(?:experience|knowledge|proficiency)\s+is$",
                 "",
                 cleaned,
                 flags=re.IGNORECASE,
@@ -3361,7 +3440,7 @@ def _should_keep_requirement_line(text: str) -> bool:
     if any(noise in norm for noise in ("salary", "benefit", "pension", "healthcare", "annual leave", "dress code")):
         return False
     tokens = norm.split()
-    starts_action = bool(tokens) and tokens[0] in _ACTION_VERBS_SET
+    starts_action = bool(tokens) and (tokens[0] in _ACTION_VERBS_SET or tokens[0] in JD_REQUIREMENT_ACTION_VERBS)
     return starts_action or any(sig in norm for sig in ROLE_REQUIREMENT_SIGNALS)
 
 
@@ -3436,6 +3515,31 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
     return requirements
 
 
+REQUIREMENT_MERGE_GENERIC_TOKENS = set(STOPWORDS).union({
+    "ability", "abilities", "able", "candidate", "essential", "desirable",
+    "experience", "experienced", "skill", "skills", "strong", "excellent",
+    "good", "knowledge", "proficiency", "proficient", "required",
+})
+
+
+def _requirement_meaningful_tokens(norm: str) -> set[str]:
+    return {
+        token
+        for token in str(norm or "").split()
+        if token not in REQUIREMENT_MERGE_GENERIC_TOKENS and len(token) > 2
+    }
+
+
+def _requirements_substantially_overlap(norm: str, existing_norm: str) -> bool:
+    tokens = _requirement_meaningful_tokens(norm)
+    existing_tokens = _requirement_meaningful_tokens(existing_norm)
+    if not tokens or not existing_tokens:
+        return False
+    overlap = tokens.intersection(existing_tokens)
+    smaller = min(len(tokens), len(existing_tokens))
+    return smaller >= 2 and len(overlap) / smaller >= 0.8
+
+
 def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit: int = 35) -> List[dict]:
     merged: List[dict] = []
     seen: set[str] = set()
@@ -3459,6 +3563,11 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
                 subsumed = True
                 break
             if len(existing_tokens) >= 3 and existing_norm in norm and len(norm_tokens) > len(existing_tokens):
+                replace_indexes.append(idx)
+            if _requirements_substantially_overlap(norm, existing_norm):
+                if len(norm_tokens) <= len(existing_tokens):
+                    subsumed = True
+                    break
                 replace_indexes.append(idx)
         if subsumed:
             continue
@@ -3581,6 +3690,14 @@ STRICT_TOOL_TERMS = {
     "timeseries",
     "lakehouse",
     "messaging middleware",
+    "content management system",
+    "cms",
+    "seo",
+    "google analytics",
+    "reporting tools",
+    "adobe indesign",
+    "indesign",
+    "qts",
 }
 
 
@@ -3664,6 +3781,12 @@ AUDIT_STRICT_TERMS = (
     "letter of representation", "finalisation checklist", "finalisation checklists",
     "audit regulation", "auditing standards", "accounting standards",
     "statutory accounts", "consolidated accounts", "working papers", "cpd",
+)
+
+CONFIDENTIAL_INFORMATION_TERMS = (
+    "confidential information", "confidential data", "sensitive information",
+    "sensitive data", "personal information", "personal data", "student information",
+    "student data", "partner information", "data protection", "privacy", "gdpr",
 )
 
 
@@ -3756,6 +3879,14 @@ def _requirement_policy(requirement: str) -> dict:
     if any(term in req_norm for term in AUDIT_STRICT_TERMS):
         policy.update({
             "type": "audit_specific",
+            "strict": True,
+            "allowed_sections": {"skills", "experience", "projects", "certifications"},
+        })
+        return policy
+
+    if any(term in req_norm for term in CONFIDENTIAL_INFORMATION_TERMS):
+        policy.update({
+            "type": "confidential_information",
             "strict": True,
             "allowed_sections": {"skills", "experience", "projects", "certifications"},
         })
@@ -3910,6 +4041,8 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
         return [term for term in REPORTING_STRICT_TERMS if term in req_norm] or list(REPORTING_STRICT_TERMS)
     if policy["type"] == "audit_specific":
         return [term for term in AUDIT_STRICT_TERMS if term in req_norm] or list(AUDIT_STRICT_TERMS)
+    if policy["type"] == "confidential_information":
+        return [term for term in CONFIDENTIAL_INFORMATION_TERMS if term in req_norm] or list(CONFIDENTIAL_INFORMATION_TERMS)
     if policy["type"] == "incident_root_cause":
         return [
             term
@@ -3924,16 +4057,49 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
             "excel", "word", "outlook", "sage", "proaudit", "react", "react native",
             "typescript", "javascript", "docker", "kubernetes", "c++", "c#",
             "cpp", "lakehouse", "messaging middleware",
+            "content management system", "cms", "seo", "google analytics",
+            "reporting tools", "adobe indesign", "indesign", "qts",
         }
         matches = [
             term for term in explicit_tool_terms
             if _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
         ]
-        return [
+        filtered = [
             term for term in matches
             if not any(term != other and normalize_phrase(term) in normalize_phrase(other) for other in matches)
         ]
+        if "content management system" in filtered or "cms" in filtered:
+            filtered.extend(["content management system", "cms"])
+        if "adobe indesign" in filtered or "indesign" in filtered:
+            filtered.extend(["adobe indesign", "indesign"])
+        return merge_unique(filtered)
     return []
+
+
+GENERAL_EVIDENCE_STOPWORDS = set(STOPWORDS).union({
+    "ability", "abilities", "candidate", "demonstrate", "demonstrated",
+    "excellent", "experience", "experienced", "essential", "desirable",
+    "familiarity", "good", "hands", "interest", "knowledge", "passion",
+    "proven", "skill", "skills", "solid", "strong", "understanding",
+    "working", "work", "works", "make", "sure", "line", "responsible",
+    "responsibly", "information", "using", "use", "used",
+})
+
+
+def _non_strict_evidence_has_signal(requirement: str, evidence_norm: str) -> bool:
+    req_norm = normalize_phrase(requirement)
+    req_tokens = [
+        token
+        for token in req_norm.split()
+        if token not in GENERAL_EVIDENCE_STOPWORDS and len(token) > 2
+    ]
+    if not req_tokens:
+        return False
+    evidence_tokens = set(evidence_norm.split())
+    overlap = [token for token in req_tokens if token in evidence_tokens]
+    if len(req_tokens) <= 2:
+        return len(overlap) == len(req_tokens)
+    return len(overlap) >= 2 or (len(overlap) / len(req_tokens)) >= 0.5
 
 
 def validate_evidence_for_requirement(requirement: str, evidence: str, confidence: str) -> dict | None:
@@ -3960,7 +4126,8 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
         evidence_tokens = set(evidence_norm.split())
         language_tokens = req_tokens.intersection(NATURAL_LANGUAGE_SKILLS)
         proficiency_tokens = {"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}
-        if language_tokens and language_tokens.issubset(evidence_tokens) and evidence_tokens.intersection(proficiency_tokens):
+        mode_tokens = {"written", "writing", "read", "reading", "spoken", "speaking", "verbal", "oral"}
+        if language_tokens and language_tokens.issubset(evidence_tokens) and evidence_tokens.intersection(proficiency_tokens | mode_tokens):
             return {"confidence": "strong", "section": section, "policy": policy}
         return None
 
@@ -3972,6 +4139,8 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
         )
         if not explicit_hit:
             return None
+    elif policy["type"] == "general" and not _non_strict_evidence_has_signal(requirement, evidence_norm):
+        return None
 
     adjusted = confidence if confidence in ("strong", "partial") else "partial"
     if policy["type"] == "professional_experience" and section in {"projects", "summary"}:
@@ -3982,7 +4151,7 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
 
 
 def _split_list_fragments(text: str) -> List[str]:
-    raw_parts = re.split(r",|/|&|\band\b|\bor\b", text, flags=re.IGNORECASE)
+    raw_parts = re.split(r",|\s+/\s+|&|\band\b|\bor\b", text, flags=re.IGNORECASE)
     parts: List[str] = []
     for part in raw_parts:
         cleaned = re.sub(
@@ -4146,7 +4315,10 @@ def decompose_requirement_text(text: str) -> List[dict]:
         stripped = _strip_requirement_lead(without_parens)
         split_atoms = _split_list_fragments(stripped)
         if 1 < len(split_atoms) <= 4:
-            atoms.extend(split_atoms)
+            if " or " in f" {normalize_phrase(stripped)} ":
+                _append_alternative_atoms(atoms, split_atoms, f"any:{normalize_phrase(stripped)}")
+            else:
+                atoms.extend(split_atoms)
         elif stripped:
             atoms.append(stripped)
 
@@ -4576,6 +4748,14 @@ STRICT_EVIDENCE_TERMS = (
     "serialization",
     "messaging middleware",
     "lakehouse",
+    "content management system",
+    "cms",
+    "seo",
+    "google analytics",
+    "reporting tools",
+    "adobe indesign",
+    "indesign",
+    "qts",
 )
 
 
@@ -4695,7 +4875,10 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         evidence_tokens = set(evidence_norm.split())
         language_tokens = req_tokens.intersection(NATURAL_LANGUAGE_SKILLS)
         if language_tokens and language_tokens.issubset(evidence_tokens):
-            if evidence_tokens.intersection({"fluent", "fluency", "native", "proficient", "proficiency", "bilingual"}):
+            if evidence_tokens.intersection({
+                "fluent", "fluency", "native", "proficient", "proficiency", "bilingual",
+                "written", "writing", "read", "reading", "spoken", "speaking", "verbal", "oral",
+            }):
                 return "strong"
 
     if policy["type"] == "product_ownership":
