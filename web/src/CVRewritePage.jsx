@@ -49,6 +49,28 @@ function ChangeCard({ change }) {
         <span className="cvr-change-type">{meta.label}</span>
       </div>
       <p className="cvr-change-text">{change.change}</p>
+      {(change.original_text || change.rewritten_text || change.evidence_source) && (
+        <div className="cvr-change-proof">
+          {change.original_text && (
+            <div className="cvr-change-proof-row">
+              <span>From</span>
+              <p>{change.original_text}</p>
+            </div>
+          )}
+          {change.rewritten_text && (
+            <div className="cvr-change-proof-row">
+              <span>To</span>
+              <p>{change.rewritten_text}</p>
+            </div>
+          )}
+          {change.evidence_source && (
+            <div className="cvr-change-proof-row">
+              <span>Evidence</span>
+              <p>{change.evidence_source}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

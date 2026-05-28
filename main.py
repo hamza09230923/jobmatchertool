@@ -1623,12 +1623,165 @@ def normalize_rewrite_response(payload: dict) -> dict:
                 "label": str(item.get("label") or "").strip(),
                 "type": str(item.get("type") or "improved").strip(),
                 "change": str(item.get("change") or "").strip(),
+                "original_text": str(item.get("original_text") or "").strip(),
+                "rewritten_text": str(item.get("rewritten_text") or "").strip(),
+                "evidence_source": str(item.get("evidence_source") or "").strip(),
             }
             for item in (payload.get("section_changes") or [])
             if isinstance(item, dict) and str(item.get("change") or "").strip()
         ][:12],
     }
     return normalized
+
+
+REWRITE_NUMBER_RE = re.compile(r"(?:£|\$|€)?\b\d+(?:[.,]\d+)?\+?%?\b")
+
+
+def _rewrite_strict_terms() -> List[str]:
+    terms: List[str] = []
+    terms.extend(STRICT_TOOL_TERMS)
+    terms.extend(REGULATED_PROCESS_TERMS)
+    terms.extend(CONTROL_GOVERNANCE_TERMS)
+    terms.extend(REPORTING_STRICT_TERMS)
+    terms.extend(AUDIT_STRICT_TERMS)
+    terms.extend(
+        (
+            "certified",
+            "certification",
+            "licence",
+            "license",
+            "aca",
+            "acca",
+            "cima",
+            "qts",
+            "team management",
+            "people management",
+            "line management",
+            "managed team",
+            "managed a team",
+            "supervised",
+            "mentored",
+            "hired",
+        )
+    )
+    return merge_unique([term for term in terms if str(term).strip()])
+
+
+def _numbers_from_text(text: str) -> set[str]:
+    return {match.group(0).lower().strip() for match in REWRITE_NUMBER_RE.finditer(str(text or ""))}
+
+
+def _strip_metric_prompt(text: str) -> str:
+    return re.sub(r"\[METRIC:\s*[^\]]+\]", "", str(text or ""), flags=re.IGNORECASE).strip()
+
+
+def _missing_strict_generated_terms(text: str, resume_text: str) -> List[str]:
+    text_norm = normalize_phrase(text)
+    resume_norm = normalize_phrase(resume_text)
+    if not text_norm:
+        return []
+    missing: List[str] = []
+    for term in _rewrite_strict_terms():
+        term_norm = normalize_phrase(term)
+        if not term_norm:
+            continue
+        if not _phrase_present_in_normalized_text(term_norm, text_norm):
+            continue
+        aliases = _requirement_aliases(term)
+        if any(_phrase_present_in_normalized_text(normalize_phrase(alias), resume_norm) for alias in aliases):
+            continue
+        missing.append(_display_ats_keyword(term))
+    return merge_unique(missing)
+
+
+def _invented_numbers_in_text(text: str, resume_text: str) -> List[str]:
+    text_without_prompts = _strip_metric_prompt(text)
+    resume_numbers = _numbers_from_text(resume_text)
+    invented = []
+    for number in _numbers_from_text(text_without_prompts):
+        if number not in resume_numbers:
+            invented.append(number)
+    return merge_unique(invented)
+
+
+def validate_rewrite_no_inventions(rewrite: dict, resume_text: str) -> dict:
+    """Deterministically remove generated claims with exact tools/metrics absent from the source CV."""
+    if not isinstance(rewrite, dict):
+        return rewrite
+
+    additional = [
+        str(item).strip()
+        for item in (rewrite.get("additional_keywords_to_include") or [])
+        if str(item).strip()
+    ]
+    missing_info = [
+        str(item).strip()
+        for item in (rewrite.get("missing_information") or [])
+        if str(item).strip()
+    ]
+    removed_notes: List[str] = []
+
+    def record_removed(text: str, reasons: List[str]) -> None:
+        reason_text = ", ".join(merge_unique([r for r in reasons if r]))
+        removed_notes.append(f"{text}" + (f" ({reason_text})" if reason_text else ""))
+        note = f"{text} (add only if accurate)"
+        if normalize_phrase(note) not in {normalize_phrase(item) for item in additional}:
+            additional.append(note)
+
+    def unsupported_reasons(text: str) -> List[str]:
+        reasons = []
+        missing_terms = _missing_strict_generated_terms(text, resume_text)
+        if missing_terms:
+            reasons.append("unsupported exact terms: " + ", ".join(missing_terms[:5]))
+        invented_numbers = _invented_numbers_in_text(text, resume_text)
+        if invented_numbers:
+            reasons.append("invented metrics: " + ", ".join(invented_numbers[:5]))
+        return reasons
+
+    for section_key in ("experience_section", "projects_section"):
+        cleaned_items = []
+        for item in rewrite.get(section_key) or []:
+            if not isinstance(item, dict):
+                continue
+            bullets = []
+            for bullet in item.get("bullets") or []:
+                bullet_text = str(bullet).strip()
+                if not bullet_text:
+                    continue
+                reasons = unsupported_reasons(bullet_text)
+                if reasons:
+                    record_removed(bullet_text, reasons)
+                    continue
+                bullets.append(bullet_text)
+            heading = str(item.get("heading") or "").strip()
+            if heading or bullets:
+                cleaned_items.append({"heading": heading, "bullets": bullets[:8]})
+        rewrite[section_key] = cleaned_items
+
+    summary = str(rewrite.get("rewritten_summary") or "").strip()
+    if summary:
+        sentences = re.split(r"(?<=[.!?])\s+", summary)
+        kept_sentences = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            reasons = unsupported_reasons(sentence)
+            if reasons:
+                record_removed(sentence, reasons)
+                continue
+            kept_sentences.append(sentence)
+        rewrite["rewritten_summary"] = " ".join(kept_sentences).strip()
+
+    rewrite["additional_keywords_to_include"] = additional[:15]
+    if removed_notes:
+        missing_info.append(
+            "Removed unsupported generated claims after deterministic validation: "
+            + "; ".join(removed_notes[:8])
+        )
+    rewrite["missing_information"] = missing_info[:12]
+    rewrite.setdefault("rewrite_audit", {})["deterministic_removed_count"] = len(removed_notes)
+    return rewrite
 
 
 def validate_rewrite_skills(rewrite: dict, resume_text: str) -> dict:
@@ -1841,12 +1994,20 @@ def apply_rewrite_audit(rewrite: dict, audit: dict) -> dict:
 
 def audit_and_validate_rewrite(rewrite: dict, resume_text: str, job_description: str) -> dict:
     rewrite = validate_rewrite_skills(rewrite, resume_text)
+    rewrite = validate_rewrite_no_inventions(rewrite, resume_text)
     audit = gemini_lite_audit_rewrite(rewrite, resume_text, job_description)
     rewrite = apply_rewrite_audit(rewrite, audit)
+    rewrite = validate_rewrite_no_inventions(rewrite, resume_text)
+    deterministic_removed = (
+        (rewrite.get("rewrite_audit") or {}).get("deterministic_removed_count")
+        if isinstance(rewrite.get("rewrite_audit"), dict)
+        else 0
+    )
     rewrite["rewrite_audit"] = {
         "enabled": bool(GENAI_CLIENT),
         "model": GEMINI_LITE_MODEL,
         "unsupported_count": len(audit.get("unsupported_claims") or []) if isinstance(audit, dict) else 0,
+        "deterministic_removed_count": int(deterministic_removed or 0),
     }
     return rewrite
 
@@ -1876,6 +2037,327 @@ def extract_openai_output_text(response_json: dict) -> str:
     return "\n".join(parts).strip()
 
 
+def _truncate_text(text: str, limit: int) -> str:
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit("\n", 1)[0].strip() + "\n[truncated]"
+
+
+def _compact_role_fit_for_rewrite(role_fit_breakdown: dict | None) -> dict:
+    breakdown = role_fit_breakdown or {}
+    skills_detail = breakdown.get("skills_detail") or {}
+    return {
+        "final_match_score": breakdown.get("final_match_score"),
+        "application_positioning": breakdown.get("application_positioning") or {},
+        "matched_responsibilities": [
+            {
+                "responsibility": item.get("responsibility"),
+                "evidence": item.get("evidence"),
+                "category": item.get("category"),
+            }
+            for item in (breakdown.get("matched_responsibilities") or [])[:8]
+            if isinstance(item, dict)
+        ],
+        "missing_responsibilities": [
+            {
+                "responsibility": item.get("responsibility"),
+                "gap": item.get("gap"),
+                "category": item.get("category"),
+            }
+            for item in (breakdown.get("missing_responsibilities") or [])[:8]
+            if isinstance(item, dict)
+        ],
+        "skills_missing": [
+            str(item.get("skill") or item.get("keyword") or "").strip()
+            for item in (skills_detail.get("must_have") or [])[:12]
+            if isinstance(item, dict)
+            and (item.get("status") or ("present" if item.get("present") else "missing")) == "missing"
+        ],
+    }
+
+
+def _extract_cv_header_text(resume_text: str) -> str:
+    lines = [line.strip() for line in str(resume_text or "").splitlines() if line.strip()]
+    header = []
+    for line in lines[:12]:
+        if normalize_phrase(line) in {alias for aliases in SECTION_HEADINGS.values() for alias in aliases}:
+            break
+        header.append(line)
+    return "\n".join(header[:8])
+
+
+def _local_education_rewrite_items(raw_education: str) -> List[dict]:
+    items = []
+    for line in str(raw_education or "").splitlines():
+        cleaned = line.strip(" -*\t")
+        if cleaned:
+            items.append({"heading": cleaned, "details": ""})
+    return items[:6]
+
+
+def build_rewrite_evidence_packets(
+    resume_text: str,
+    job_description: str,
+    role_fit_breakdown: dict | None = None,
+) -> dict:
+    """Build strict source-evidence packets for section-by-section CV rewriting."""
+    raw_sections = split_resume_sections_raw(resume_text)
+    resume_terms = merge_unique(
+        extract_skill_tokens(resume_text, limit=80)
+        + extract_keyphrases(resume_text, limit=50)
+        + _known_ats_hard_terms()
+    )
+    resume_norm = normalize_phrase(resume_text)
+    resume_terms = [
+        term
+        for term in resume_terms
+        if _phrase_present_in_normalized_text(normalize_phrase(term), resume_norm)
+    ][:80]
+    missing_keywords = infer_missing_keywords(resume_text, job_description)[:20]
+    local_ats = _local_ats_keyword_candidates(job_description)
+    jd_keywords = merge_unique(local_ats.get("hard", []) + local_ats.get("soft", []) + missing_keywords)[:40]
+    compact_fit = _compact_role_fit_for_rewrite(role_fit_breakdown)
+    shared = {
+        "job_description": _truncate_text(job_description, 3500),
+        "role_fit_summary": compact_fit,
+        "cv_header": _extract_cv_header_text(resume_text),
+        "allowed_cv_terms": resume_terms,
+        "source_numbers": sorted(_numbers_from_text(resume_text)),
+        "jd_keywords_for_gap_list_only": jd_keywords,
+        "rules": [
+            "Use only facts in the source CV evidence packet.",
+            "Do not add JD-only skills to the rewritten CV. Put them in additional_keywords_to_include with '(add only if accurate)'.",
+            "Do not invent metrics. If a useful metric is absent, append [METRIC: short question].",
+            "Preserve employers, job titles, dates, education, certifications, tools, and technologies exactly unless the source CV proves them.",
+            "Write concise UK CV style with action verb plus outcome and no first-person pronouns.",
+        ],
+    }
+    return {
+        "shared": shared,
+        "overview": {
+            **shared,
+            "source_section": _truncate_text(
+                "\n".join(
+                    part
+                    for part in (
+                        raw_sections.get("summary", ""),
+                        raw_sections.get("other", ""),
+                    )
+                    if part
+                ),
+                2500,
+            ),
+        },
+        "skills": {
+            **shared,
+            "source_section": _truncate_text(raw_sections.get("skills", ""), 2500),
+        },
+        "experience": {
+            **shared,
+            "source_section": _truncate_text(raw_sections.get("experience", ""), 6500),
+        },
+        "projects": {
+            **shared,
+            "source_section": _truncate_text(raw_sections.get("projects", ""), 4500),
+        },
+        "education": {
+            **shared,
+            "source_section": _truncate_text(raw_sections.get("education", ""), 2500),
+            "local_items": _local_education_rewrite_items(raw_sections.get("education", "")),
+        },
+    }
+
+
+def _rewrite_section_prompt(section: str, packet: dict) -> str:
+    schemas = {
+        "overview": """
+{
+  "name": "Full name from CV or empty string",
+  "contact": {"email": "", "phone": "", "linkedin": "", "location": ""},
+  "role_target": "target role and company, if extractable",
+  "diagnosis": {
+    "current_positioning": "one sentence",
+    "target_positioning": "one sentence",
+    "key_gaps": ["string"]
+  },
+  "rewritten_summary": "3-4 sentence professional summary grounded only in the CV"
+}
+""",
+        "skills": """
+{
+  "skills_section": [{"category": "Technical Skills", "items": ["CV-evidenced skill only"]}],
+  "additional_keywords_to_include": ["JD-only keyword (add only if accurate)"],
+  "missing_information": ["string"],
+  "section_changes": [{"section": "skills", "label": "Skills", "type": "optimised", "change": "what changed and why", "original_text": "source text", "rewritten_text": "new text", "evidence_source": "skills packet"}]
+}
+""",
+        "experience": """
+{
+  "experience_section": [{"heading": "Role | Company | Dates from source", "bullets": ["rewritten factual bullet"]}],
+  "missing_information": ["string"],
+  "section_changes": [{"section": "experience", "label": "role or bullet", "type": "optimised", "change": "what changed and why", "original_text": "source bullet", "rewritten_text": "rewritten bullet", "evidence_source": "experience packet"}]
+}
+""",
+        "projects": """
+{
+  "projects_section": [{"heading": "project name from source", "bullets": ["rewritten factual bullet"]}],
+  "missing_information": ["string"],
+  "section_changes": [{"section": "projects", "label": "project or bullet", "type": "optimised", "change": "what changed and why", "original_text": "source bullet", "rewritten_text": "rewritten bullet", "evidence_source": "projects packet"}]
+}
+""",
+    }
+    return f"""
+You are rewriting ONLY the {section.upper()} section of a CV for one specific role.
+
+Return ONLY valid JSON matching this schema:
+{schemas[section]}
+
+Rules:
+- Use ONLY facts inside SOURCE CV SECTION and CV HEADER below.
+- You may use the JD and match summary only to choose emphasis and wording.
+- Never add a tool, certification, qualification, employer, title, date, metric, or responsibility unless it appears in SOURCE CV SECTION or CV HEADER.
+- JD-only keywords must go in additional_keywords_to_include, suffixed with "(add only if accurate)", not into the rewritten CV.
+- If a missing number would materially strengthen a bullet, append [METRIC: short question] instead of inventing it.
+- section_changes must explain what changed and why, and include original_text, rewritten_text, and evidence_source where possible.
+- Use plain ASCII punctuation only.
+
+CV HEADER:
+{packet.get("cv_header") or "(none)"}
+
+SOURCE CV SECTION:
+{packet.get("source_section") or "(section missing from CV)"}
+
+ALLOWED CV TERMS:
+{", ".join(packet.get("allowed_cv_terms") or []) or "(none detected)"}
+
+SOURCE NUMBERS:
+{", ".join(packet.get("source_numbers") or []) or "(none detected)"}
+
+JD KEYWORDS FOR GAP LIST ONLY:
+{", ".join(packet.get("jd_keywords_for_gap_list_only") or []) or "(none)"}
+
+MATCH SUMMARY:
+{json.dumps(packet.get("role_fit_summary") or {}, ensure_ascii=False, indent=2)}
+
+JOB DESCRIPTION:
+{packet.get("job_description") or ""}
+""".strip()
+
+
+def rewrite_json_with_openai(prompt: str, max_output_tokens: int) -> dict:
+    response = requests.post(
+        f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": OPENAI_REWRITE_MODEL,
+            "instructions": (
+                "Rewrite CV sections as strict JSON. Ground every generated claim in the supplied source evidence. "
+                "Do not invent facts."
+            ),
+            "input": prompt,
+            "max_output_tokens": max_output_tokens,
+        },
+        timeout=60,
+    )
+    if response.status_code >= 400:
+        detail = f"OpenAI rewrite request failed ({response.status_code})."
+        try:
+            error_payload = response.json()
+            message = ((error_payload.get("error") or {}).get("message") or "").strip()
+            if message:
+                detail = f"OpenAI rewrite request failed ({response.status_code}): {message}"
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=detail)
+    return parse_json_response(extract_openai_output_text(response.json()))
+
+
+def rewrite_json_with_gemini(prompt: str, max_output_tokens: int) -> dict:
+    if not GENAI_CLIENT:
+        detail = "GEMINI_API_KEY is not set."
+        if GENAI_IMPORT_ERROR:
+            detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
+        raise HTTPException(status_code=503, detail=detail)
+    response = GENAI_CLIENT.models.generate_content(
+        model=GEMINI_REWRITE_MODEL,
+        contents=prompt,
+        config=gemini_generation_config(0.2, max_output_tokens=max_output_tokens),
+    )
+    return parse_json_response(getattr(response, "text", "") or "")
+
+
+def generate_sectional_cv_rewrite(
+    resume_text: str,
+    job_description: str,
+    role_fit_breakdown: dict | None,
+    provider: str,
+) -> dict:
+    packets = build_rewrite_evidence_packets(resume_text, job_description, role_fit_breakdown)
+    call_json = rewrite_json_with_openai if provider == "openai" else rewrite_json_with_gemini
+
+    section_limits = {
+        "overview": 900,
+        "skills": 900,
+        "experience": 1800,
+        "projects": 1100,
+    }
+    parts: dict[str, dict] = {}
+    for section, limit in section_limits.items():
+        prompt = _rewrite_section_prompt(section, packets[section])
+        parsed = call_json(prompt, limit)
+        if not isinstance(parsed, dict):
+            parsed = {}
+        parts[section] = parsed
+
+    combined = {
+        **parts.get("overview", {}),
+        "skills_section": parts.get("skills", {}).get("skills_section") or [],
+        "education_section": packets["education"].get("local_items") or [],
+        "experience_section": parts.get("experience", {}).get("experience_section") or [],
+        "projects_section": parts.get("projects", {}).get("projects_section") or [],
+        "additional_keywords_to_include": merge_unique(
+            [
+                *(
+                    str(item).strip()
+                    for item in (parts.get("skills", {}).get("additional_keywords_to_include") or [])
+                    if str(item).strip()
+                ),
+                *(
+                    f"{item} (add only if accurate)"
+                    for item in (packets["shared"].get("jd_keywords_for_gap_list_only") or [])[:12]
+                    if str(item).strip()
+                ),
+            ]
+        )[:15],
+        "missing_information": merge_unique(
+            [
+                *[str(item).strip() for item in (parts.get("skills", {}).get("missing_information") or []) if str(item).strip()],
+                *[str(item).strip() for item in (parts.get("experience", {}).get("missing_information") or []) if str(item).strip()],
+                *[str(item).strip() for item in (parts.get("projects", {}).get("missing_information") or []) if str(item).strip()],
+            ]
+        )[:12],
+        "section_changes": [
+            *[item for item in (parts.get("skills", {}).get("section_changes") or []) if isinstance(item, dict)],
+            *[item for item in (parts.get("experience", {}).get("section_changes") or []) if isinstance(item, dict)],
+            *[item for item in (parts.get("projects", {}).get("section_changes") or []) if isinstance(item, dict)],
+        ],
+    }
+    normalized = normalize_rewrite_response(combined)
+    normalized = audit_and_validate_rewrite(normalized, resume_text, job_description)
+    normalized["rewrite_pipeline"] = {
+        "mode": "sectional",
+        "provider": provider,
+        "sections": ["overview", "skills", "experience", "projects", "education"],
+    }
+    if not normalized["rewritten_summary"] and not normalized["experience_section"]:
+        raise HTTPException(status_code=502, detail="CV rewrite generation returned an invalid response.")
+    return normalized
+
+
 def openai_rewrite_cv(
     resume_text: str,
     job_description: str,
@@ -1883,6 +2365,12 @@ def openai_rewrite_cv(
 ) -> dict:
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set.")
+    return generate_sectional_cv_rewrite(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown,
+        provider="openai",
+    )
 
     analysis_blob = json.dumps(role_fit_breakdown or {}, indent=2)
     instructions = (
@@ -2014,6 +2502,12 @@ def gemini_rewrite_cv(
         if GENAI_IMPORT_ERROR:
             detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=503, detail=detail)
+    return generate_sectional_cv_rewrite(
+        resume_text=resume_text,
+        job_description=job_description,
+        role_fit_breakdown=role_fit_breakdown,
+        provider="gemini",
+    )
 
     analysis_blob = json.dumps(role_fit_breakdown or {}, indent=2)
     prompt = f"""

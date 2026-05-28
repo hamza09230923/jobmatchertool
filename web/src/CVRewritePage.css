@@ -379,6 +379,32 @@
   line-height: 1.5;
   margin: 0;
 }
+.cvr-change-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cvr-change-proof-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+.cvr-change-proof-row span {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--cc, #818cf8);
+}
+.cvr-change-proof-row p {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.56);
+  overflow-wrap: anywhere;
+}
 
 /* Metrics sidebar block */
 .cvr-metrics-sb {
