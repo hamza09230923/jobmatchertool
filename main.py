@@ -4499,6 +4499,173 @@ def aggregate_requirement_evidence(
     }
 
 
+SKILL_AUGMENT_ALLOWED_TYPES = {
+    "degree",
+    "postgraduate_degree",
+    "certification",
+    "language",
+    "exact_tool",
+    "communication",
+    "confidential_information",
+    "regulated_process",
+    "control_or_governance",
+    "reporting",
+    "audit_specific",
+    "incident_root_cause",
+    "years_experience",
+    "professional_experience",
+    "domain_exposure",
+    "data_quality",
+}
+
+
+def _skill_identity_norms(skill: str) -> set[str]:
+    norms = {normalize_phrase(skill)}
+    norms.update(normalize_phrase(alias) for alias in _requirement_aliases(skill))
+    return {norm for norm in norms if norm}
+
+
+def _skill_item(
+    skill: str,
+    parsed_resume: dict,
+    resume_text: str,
+) -> dict:
+    aggregate = aggregate_requirement_evidence(skill, parsed_resume, resume_text)
+    return {
+        "skill": skill,
+        "present": aggregate["present"],
+        "status": aggregate["status"],
+        "cv_where": aggregate["cv_where"],
+        "matched_count": aggregate["matched_count"],
+        "total_count": aggregate["total_count"],
+        "atomic_breakdown": aggregate["atomic_breakdown"],
+        "evidence_source": "deterministic",
+    }
+
+
+def _local_skill_category(skill: str, local_requirements: List[dict], job_description: str = "") -> str:
+    skill_norm = normalize_phrase(skill)
+    for req in local_requirements:
+        req_norm = req.get("normalized") or normalize_phrase(req.get("text") or "")
+        if not req_norm:
+            continue
+        if _phrase_present_in_normalized_text(skill_norm, req_norm) or _requirements_substantially_overlap(skill_norm, req_norm):
+            return req.get("category") or "essential"
+    for raw_line in str(job_description or "").splitlines():
+        line_norm = normalize_phrase(raw_line)
+        if not line_norm or not _phrase_present_in_normalized_text(skill_norm, line_norm):
+            continue
+        if any(marker in line_norm for marker in NICE_SECTION_HEADERS) or any(
+            marker in line_norm for marker in ("desirable", "preferred", "nice to have", "bonus")
+        ):
+            return "nice_to_have"
+    return "essential"
+
+
+def _local_requirement_skill_candidates(job_description: str, limit: int = 40) -> List[dict]:
+    local_requirements = extract_local_job_requirements(job_description, limit=80)
+    candidates: List[dict] = []
+    seen: set[str] = set()
+
+    def add(skill: str, category: str, source: str) -> None:
+        cleaned = str(skill or "").strip(" -:;,.")
+        norm = normalize_phrase(cleaned)
+        if not norm or norm in seen:
+            return
+        if _ats_term_is_negated(norm, _candidate_requirement_text_blob(job_description)):
+            return
+        seen.add(norm)
+        candidates.append({
+            "skill": _display_ats_keyword(cleaned),
+            "category": category if category in {"essential", "nice_to_have"} else "essential",
+            "source": source,
+        })
+
+    local_ats = _local_ats_keyword_candidates(job_description)
+    for skill in local_ats.get("hard", []):
+        add(skill, _local_skill_category(skill, local_requirements, job_description), "local_ats_hard")
+    for skill in local_ats.get("soft", []):
+        add(skill, _local_skill_category(skill, local_requirements, job_description), "local_ats_soft")
+
+    for req in local_requirements:
+        category = req.get("category") or "essential"
+        for atom in decompose_requirement_text(req.get("text") or ""):
+            text = str(atom.get("text") or "").strip()
+            norm = atom.get("normalized") or normalize_phrase(text)
+            if not text or not norm:
+                continue
+            policy_type = atom.get("requirement_type") or _requirement_policy(text)["type"]
+            token_count = len(norm.split())
+            starts_action = norm.split()[0] in (_ACTION_VERBS_SET | JD_REQUIREMENT_ACTION_VERBS)
+            if starts_action and policy_type == "general":
+                continue
+            if token_count > 8 and policy_type not in SKILL_AUGMENT_ALLOWED_TYPES:
+                continue
+            if policy_type == "general" and token_count > 5 and not _looks_like_soft_ats_keyword(text):
+                continue
+            if _looks_like_noisy_ats_fragment(text) and policy_type not in SKILL_AUGMENT_ALLOWED_TYPES:
+                continue
+            add(text, category, "local_requirement")
+            if len(candidates) >= limit:
+                return candidates
+
+    return candidates[:limit]
+
+
+def _augment_skills_with_local_requirements(
+    skills_result: dict,
+    job_description: str,
+    parsed_resume: dict,
+    resume_text: str,
+    limit_per_bucket: int = 35,
+) -> dict:
+    must = list((skills_result or {}).get("must_have") or [])
+    nice = list((skills_result or {}).get("nice_to_have") or [])
+
+    def item_norms(item: dict) -> set[str]:
+        return _skill_identity_norms(str(item.get("skill") or ""))
+
+    must_norms = set().union(*(item_norms(item) for item in must)) if must else set()
+    nice_norms = set().union(*(item_norms(item) for item in nice)) if nice else set()
+
+    for candidate in _local_requirement_skill_candidates(job_description):
+        skill = candidate["skill"]
+        category = candidate.get("category") or "essential"
+        norms = _skill_identity_norms(skill)
+        if not norms:
+            continue
+        if norms.intersection(must_norms):
+            continue
+        if category != "nice_to_have" and norms.intersection(nice_norms):
+            moved = []
+            kept_nice = []
+            for item in nice:
+                if norms.intersection(item_norms(item)):
+                    moved.append(item)
+                else:
+                    kept_nice.append(item)
+            nice = kept_nice
+            nice_norms = set().union(*(item_norms(item) for item in nice)) if nice else set()
+            for item in moved:
+                must.append(item)
+                must_norms.update(item_norms(item))
+            continue
+        if norms.intersection(nice_norms):
+            continue
+        item = _skill_item(skill, parsed_resume, resume_text)
+        if category == "nice_to_have":
+            nice.append(item)
+            nice_norms.update(norms)
+        else:
+            must.append(item)
+            must_norms.update(norms)
+
+    return {
+        "must_have": filter_satisfied_alternative_missing_skills(must[:limit_per_bucket], job_description),
+        "nice_to_have": filter_satisfied_alternative_missing_skills(nice[:limit_per_bucket], job_description),
+    }
+
+
 def extract_resume_evidence_units(raw_sections: dict) -> List[dict]:
     evidence_units: List[dict] = []
     for section, weight in RESPONSIBILITY_SECTION_WEIGHTS.items():
@@ -6870,7 +7037,7 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                             "atomic_breakdown": aggregate["atomic_breakdown"],
                         })
                     return out
-                return {
+                return _augment_skills_with_local_requirements({
                     "must_have": filter_satisfied_alternative_missing_skills(
                         _clean_items(parsed.get("must_have")),
                         job_description,
@@ -6879,7 +7046,7 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                         _clean_items(parsed.get("nice_to_have")),
                         job_description,
                     ),
-                }
+                }, job_description, parsed_resume, resume_text)
         except Exception as exc:
             logger.warning("Gemini skills match failed, using fallback: %s", exc)
 
@@ -6928,10 +7095,10 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
             "total_count": aggregate["total_count"],
             "atomic_breakdown": aggregate["atomic_breakdown"],
         })
-    return {
+    return _augment_skills_with_local_requirements({
         "must_have": filter_satisfied_alternative_missing_skills(must_items, job_description),
         "nice_to_have": filter_satisfied_alternative_missing_skills(nice_items, job_description),
-    }
+    }, job_description, parsed_resume, resume_text)
 
 
 def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text: str) -> dict:
@@ -7137,8 +7304,15 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     )
     return {
         "skills": {
-            "must_have": cleaned_must,
-            "nice_to_have": cleaned_nice,
+            **_augment_skills_with_local_requirements(
+                {
+                    "must_have": cleaned_must,
+                    "nice_to_have": cleaned_nice,
+                },
+                job_description,
+                parsed_resume,
+                resume_text,
+            ),
         },
         "ats_keywords": {
             "hard_skills": hard_ats,

@@ -307,6 +307,107 @@ def test_ats_keywords_extract_hard_and_soft_skills_when_model_returns_none(monke
     assert soft["communication skills"]["status"] == "present"
 
 
+def test_skills_are_augmented_when_model_under_extracts_requirements(monkeypatch):
+    jd = """
+    What you'll do
+    Maintain content in a content management system and proofread campaign copy.
+
+    What we're looking for
+    Excellent written English, proofreading, copyediting, and attention to detail.
+    Content management system experience is essential.
+    SEO knowledge is desirable.
+    Google Analytics or similar reporting tools are desirable.
+    """
+    fake_json = """
+    {
+      "skills": {
+        "must_have": [
+          {"skill": "proofreading", "present": true, "cv_where": "SKILLS: proofreading"}
+        ],
+        "nice_to_have": []
+      },
+      "ats_keywords": {"hard_skills": [], "soft_skills": []}
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Profile\nStrong written English.\nSkills\nProofreading, copyediting.",
+        "summary": "Strong written English.",
+        "skills": ["proofreading", "copyediting", "written English"],
+        "tools": [],
+        "work_experience": [],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(jd, parsed_resume, parsed_resume["_resume_text"])
+    must = {item["skill"]: item for item in result["skills"]["must_have"]}
+    nice = {item["skill"]: item for item in result["skills"]["nice_to_have"]}
+
+    assert must["written English"]["status"] == "present"
+    assert must["copyediting"]["status"] == "present"
+    assert must["content management system"]["status"] == "missing"
+    assert nice["SEO"]["status"] == "missing"
+    assert nice["Google Analytics"]["status"] == "missing"
+
+
+def test_model_claimed_skill_evidence_must_survive_validator(monkeypatch):
+    jd = """
+    What we're looking for
+    Content management system experience is essential.
+    Adobe InDesign experience is desirable.
+    """
+    fake_json = """
+    {
+      "skills": {
+        "must_have": [
+          {
+            "skill": "content management system",
+            "present": true,
+            "cv_where": "[Communications Intern @ Charity] Maintained a shared content calendar in Microsoft Excel."
+          }
+        ],
+        "nice_to_have": [
+          {
+            "skill": "Adobe InDesign",
+            "present": true,
+            "cv_where": "[Editor @ Newspaper] Managed weekly style consistency and image captions."
+          }
+        ]
+      },
+      "ats_keywords": {"hard_skills": [], "soft_skills": []}
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    parsed_resume = {
+        "_resume_text": "Experience\nMaintained a shared content calendar in Microsoft Excel.\nManaged weekly style consistency and image captions.",
+        "summary": "",
+        "skills": ["content calendars", "Microsoft Excel", "style consistency"],
+        "tools": ["Microsoft Excel"],
+        "work_experience": [
+            {
+                "title": "Communications Intern",
+                "company": "Charity",
+                "bullets": ["Maintained a shared content calendar in Microsoft Excel."],
+            },
+            {
+                "title": "Editor",
+                "company": "Newspaper",
+                "bullets": ["Managed weekly style consistency and image captions."],
+            },
+        ],
+        "projects": [],
+    }
+
+    result = main.gemini_skills_and_ats(jd, parsed_resume, parsed_resume["_resume_text"])
+    must = {item["skill"]: item for item in result["skills"]["must_have"]}
+    nice = {item["skill"]: item for item in result["skills"]["nice_to_have"]}
+
+    assert must["content management system"]["status"] == "missing"
+    assert must["content management system"]["cv_where"] is None
+    assert nice["Adobe InDesign"]["status"] == "missing"
+    assert nice["Adobe InDesign"]["cv_where"] is None
+
+
 def test_ats_recovery_ignores_company_about_text_even_when_keywords_present(monkeypatch):
     jd = """
     About us
