@@ -3550,12 +3550,21 @@ STRICT_TOOL_TERMS = {
     "rest",
     "rest api",
     "microservices",
+    "aws lambda",
+    "step functions",
+    "github actions",
+    "ci/cd",
+    "ci cd",
+    "ecs",
+    "aws ecs",
+    "terraform",
     "excel",
     "word",
     "outlook",
     "sage",
     "proaudit",
     "react",
+    "react native",
     "typescript",
     "javascript",
     "docker",
@@ -3752,6 +3761,14 @@ def _requirement_policy(requirement: str) -> dict:
         })
         return policy
 
+    if any(term in req_norm for term in ("incident investigation", "incident investigations", "root cause", "root-cause")):
+        policy.update({
+            "type": "incident_root_cause",
+            "strict": True,
+            "allowed_sections": {"experience", "projects"},
+        })
+        return policy
+
     if any(term in req_norm for term in STRICT_TOOL_TERMS):
         policy.update({
             "type": "exact_tool",
@@ -3893,16 +3910,28 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
         return [term for term in REPORTING_STRICT_TERMS if term in req_norm] or list(REPORTING_STRICT_TERMS)
     if policy["type"] == "audit_specific":
         return [term for term in AUDIT_STRICT_TERMS if term in req_norm] or list(AUDIT_STRICT_TERMS)
+    if policy["type"] == "incident_root_cause":
+        return [
+            term
+            for term in ("incident investigation", "incident investigations", "root cause", "root-cause")
+            if term in req_norm
+        ] or ["incident investigation", "root cause"]
     if policy["type"] == "exact_tool":
         explicit_tool_terms = {
             "python", "rust", "grpc", "rest", "rest api", "microservices",
-            "excel", "word", "outlook", "sage", "proaudit", "react",
+            "aws lambda", "step functions", "github actions", "ci/cd", "ci cd",
+            "ecs", "aws ecs", "terraform",
+            "excel", "word", "outlook", "sage", "proaudit", "react", "react native",
             "typescript", "javascript", "docker", "kubernetes", "c++", "c#",
             "cpp", "lakehouse", "messaging middleware",
         }
-        return [
+        matches = [
             term for term in explicit_tool_terms
             if _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
+        ]
+        return [
+            term for term in matches
+            if not any(term != other and normalize_phrase(term) in normalize_phrase(other) for other in matches)
         ]
     return []
 
@@ -4588,6 +4617,14 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
             if set(evidence_norm.split()).intersection(experience_signals):
                 return "strong"
 
+    if policy["type"] == "exact_tool":
+        explicit_terms = _policy_explicit_terms(policy, requirement)
+        if explicit_terms and any(
+            _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
+            for term in explicit_terms
+        ):
+            return "strong"
+
     if policy["type"] == "project_management":
         evidence_tokens = set(evidence_norm.split())
         management_signals = {
@@ -4642,6 +4679,16 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         }
         if evidence_tokens.intersection(people_management_signals) and evidence_tokens.intersection(people_scope_signals):
             return "strong"
+
+    if policy["type"] == "incident_root_cause":
+        section = infer_evidence_section(evidence_text)
+        if section not in {"experience", "projects"}:
+            return None
+        evidence_tokens = set(evidence_norm.split())
+        incident_signals = {"incident", "incidents", "outage", "outages", "postmortem", "postmortems", "root", "cause", "rca", "investigation", "investigations"}
+        if evidence_tokens.intersection(incident_signals):
+            return "strong"
+        return None
 
     if policy["type"] == "language":
         req_tokens = set(req_norm.split())

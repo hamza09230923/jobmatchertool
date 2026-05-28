@@ -1179,6 +1179,16 @@ FALSE_POSITIVE_REQUIREMENT_FIXTURES = [
         id="Docker Compose does not prove Terraform",
     ),
     pytest.param(
+        "validation_checks_not_incident_investigation",
+        parsed_resume(
+            resume_text="Experience\nImplemented validation checks across operational data, improving reliability by 40%.",
+            skills=["data validation"],
+            work_experience=[{"title": "Data Engineer", "company": "DataCo", "bullets": ["Implemented validation checks across operational data, improving reliability by 40%."]}],
+        ),
+        "Support incident investigations by analysing historical operational data and presenting root-cause findings",
+        id="validation checks do not prove incident investigation",
+    ),
+    pytest.param(
         "mentoring_bot_not_line_management",
         parsed_resume(
             resume_text="Projects\nBuilt a mentoring chatbot for onboarding FAQs.",
@@ -1247,6 +1257,24 @@ FALSE_NEGATIVE_REQUIREMENT_FIXTURES = [
         "AWS Lambda",
         "skills",
         id="AWS Lambda exact tool is detected",
+    ),
+    pytest.param(
+        "strong_python_programming_present",
+        parsed_resume(resume_text="Skills\nPython, SQL", skills=["Python", "SQL"]),
+        "Strong Python programming skills",
+        "skills",
+        id="Python is detected inside programming skills phrase",
+    ),
+    pytest.param(
+        "github_actions_present",
+        parsed_resume(
+            resume_text="Skills\nGitHub Actions, Docker\nExperience\nUsed GitHub Actions for deployment workflows.",
+            skills=["GitHub Actions", "Docker"],
+            work_experience=[{"title": "Developer", "company": "DevCo", "bullets": ["Used GitHub Actions for deployment workflows."]}],
+        ),
+        "Experience using GitHub Actions",
+        "skills",
+        id="GitHub Actions is detected inside experience using phrase",
     ),
     pytest.param(
         "cicd_present",

@@ -272,3 +272,24 @@ def test_sectional_rewrite_combines_sections_and_runs_validator(monkeypatch):
     assert result["experience_section"][0]["bullets"] == ["Built Python APIs for internal reporting."]
     assert any("Kubernetes" in item for item in result["additional_keywords_to_include"])
     assert result["section_changes"][0]["original_text"] == "Python"
+
+
+def test_no_invention_validator_removes_terraform_and_ecs_claim():
+    rewrite = {
+        "experience_section": [
+            {
+                "heading": "Developer | DevCo | 2024",
+                "bullets": ["Used Terraform to manage ECS services."],
+            }
+        ],
+        "skills_section": [{"category": "Technical Skills", "items": ["Python", "Terraform"]}],
+        "additional_keywords_to_include": [],
+        "missing_information": [],
+    }
+    resume_text = "Skills\nPython\nExperience\nBuilt Python APIs."
+
+    result = main.validate_rewrite_no_inventions(main.validate_rewrite_skills(rewrite, resume_text), resume_text)
+
+    assert result["experience_section"][0]["bullets"] == []
+    assert result["skills_section"][0]["items"] == ["Python"]
+    assert any("Terraform" in item for item in result["additional_keywords_to_include"])
