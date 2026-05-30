@@ -2844,6 +2844,8 @@ _COMPANY_DESC_SIGNALS = (
     "note taking platform", "organization platform", "digital businesses",
     "portfolio of outstanding", "serves a huge number of customers",
     "shareowners", "own and operate", "company culture",
+    "trusted by", "number one online", "online motor insurance provider",
+    "expanding to help", "future of insurance",
 )
 _JD_META_SIGNALS = (
     "by applying", "stepping into", "you may work directly", "part of a high performing",
@@ -3013,6 +3015,8 @@ ATS_SINGLE_TOKEN_ALLOWLIST = {
     "mifir", "emir", "sftr", "mifid", "rts", "excel", "powerpoint", "word",
     "python", "sql", "aws", "docker", "kubernetes", "react", "typescript",
     "javascript", "java", "c++", "c#", "scala", "spark", "hadoop",
+    "kafka", "flink", "databricks", "redshift", "postgresql", "lightgbm",
+    "xgboost", "mlops", "airflow", "oozie", "rdbms",
     "rust", "grpc", "rest", "microservices", "monoliths", "testing",
     "documentation", "correctness", "reliability", "maintainability",
     "scalability", "cms", "seo", "qts", "copywriting", "proofreading", "copyediting",
@@ -3055,6 +3059,7 @@ LOCAL_ATS_HARD_KEYWORDS = (
     "microservices",
     "monoliths",
     "testing",
+    "A/B testing",
     "documentation",
     "correctness",
     "reliability",
@@ -3244,8 +3249,45 @@ def _display_ats_keyword(phrase: str) -> str:
         "adobe indesign": "Adobe InDesign",
         "indesign": "InDesign",
         "written english": "written English",
+        "a b testing": "A/B testing",
     }
     return display.get(norm, str(phrase or "").strip())
+
+
+def clean_model_skill_name(skill: str) -> str:
+    cleaned = str(skill or "").strip(" -:;,.")
+    cleaned = re.split(r"\betc\.?\b|\.|;", cleaned, maxsplit=1, flags=re.IGNORECASE)[0].strip(" -:;,.")
+    cleaned = re.sub(
+        r"^(?:expert in|proficient in|proficiency in|experience in|experience with|knowledge on|knowledge of|exposure to|hands-on experience in|technologies like)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip(" -:;,.")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    display = _display_ats_keyword(cleaned)
+    return display.strip(" -:;,.")
+
+
+def is_valid_model_skill(skill: str, candidate_jd_blob: str) -> bool:
+    norm = normalize_phrase(skill)
+    if not norm:
+        return False
+    if norm.startswith((
+        "you will ",
+        "you ll ",
+        "we ",
+        "our ",
+        "since ",
+        "fueled by ",
+        "fuelled by ",
+        "embrace ",
+    )):
+        return False
+    if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
+        return False
+    if _looks_like_noisy_ats_fragment(skill):
+        return False
+    return is_valid_ats_keyword(skill, candidate_jd_blob)
 
 
 ATS_FRAGMENT_NOISE_PREFIXES = (
@@ -3368,7 +3410,7 @@ def _local_ats_keyword_candidates(job_description: str) -> dict:
 
     for req in extract_local_job_requirements(job_description, limit=80):
         text = str(req.get("text") or "")
-        for fragment in re.split(r";|,|/|\band\b|\bor\b", text, flags=re.IGNORECASE):
+        for fragment in re.split(r";|,|\s+/\s+|\band\b|\bor\b", text, flags=re.IGNORECASE):
             cleaned = re.sub(
                 r"^(?:must have|should have|required|essential|desirable|able to|ability to|experience of|experience in|experience with|strong|good|excellent)\s+",
                 "",
@@ -3419,6 +3461,10 @@ def _should_keep_requirement_line(text: str) -> bool:
     if len(norm.split()) < 3:
         return False
     if _classify_jd_section_heading(norm):
+        return False
+    if re.match(r"^since\s+\d{4}\b", norm):
+        return False
+    if norm.startswith(("fueled by ", "fuelled by ", "you ll be joining ", "you will be joining ")):
         return False
     if norm in {"experience in planning", "planning", "strong planning"}:
         return False
@@ -3579,6 +3625,179 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
         if len(merged) >= limit:
             break
     return merged
+
+
+def _requirements_by_category(requirements: List[dict]) -> dict:
+    essential = []
+    nice_to_have = []
+    for req in requirements or []:
+        text = str((req or {}).get("text") or "").strip()
+        if not text:
+            continue
+        if (req or {}).get("category") == "nice_to_have":
+            nice_to_have.append(text)
+        else:
+            essential.append(text)
+    return {
+        "essential": essential,
+        "nice_to_have": nice_to_have,
+    }
+
+
+def _cleaned_job_description_from_requirements(requirements: List[dict]) -> str:
+    lines = []
+    for req in requirements or []:
+        text = str((req or {}).get("text") or "").strip()
+        if not text:
+            continue
+        lines.append(text)
+    return "\n".join(lines)
+
+
+def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
+    """API-backed JD preflight used before CV parsing/matching.
+
+    It extracts candidate-owned essentials/desirables, removes company/perk prose,
+    and produces a clean JD slice for downstream requirement and keyword judging.
+    """
+    job_description = clean_text(job_description)
+    if not job_description:
+        raise ValueError("Job description is empty.")
+
+    effective_limit = max(limit, 35)
+    local_requirements = extract_local_job_requirements(job_description, limit=effective_limit)
+    local_ats = _local_ats_keyword_candidates(job_description)
+
+    if not GENAI_CLIENT:
+        merged = merge_job_requirements([], local_requirements, limit=effective_limit)
+        cleaned_jd = _cleaned_job_description_from_requirements(merged)
+        return {
+            "source": "local",
+            "cleaned_job_description": cleaned_jd,
+            "requirements": merged,
+            "requirements_by_category": _requirements_by_category(merged),
+            "ats_keywords": {
+                "hard_skills": [{"skill": skill, "source": "local"} for skill in local_ats["hard"][:12]],
+                "soft_skills": [{"skill": skill, "source": "local"} for skill in local_ats["soft"][:8]],
+            },
+            "quality": {
+                "makes_sense": bool(merged),
+                "confidence": "medium" if merged else "low",
+                "issues": [] if merged else ["No candidate-owned requirements were found."],
+                "excluded_noise": [],
+            },
+        }
+
+    prompt = (
+        "You are a strict job-description preflight judge. Before any CV analysis, extract only the candidate-owned hiring requirements.\n\n"
+        "Return ONLY valid JSON with this exact shape:\n"
+        "{\n"
+        '  "requirements": [{"text": "standalone requirement", "category": "essential|nice_to_have"}],\n'
+        '  "ats_keywords": {\n'
+        '    "hard_skills": ["Python", "Kafka"],\n'
+        '    "soft_skills": ["collaboration"]\n'
+        "  },\n"
+        '  "quality": {\n'
+        '    "makes_sense": true,\n'
+        '    "confidence": "high|medium|low",\n'
+        '    "issues": ["short issue if extraction looks weak"],\n'
+        '    "excluded_noise": ["company background/perk phrase you deliberately ignored"]\n'
+        "  }\n"
+        "}\n\n"
+        "Rules:\n"
+        "- essentials are mandatory requirements, responsibilities, qualifications, skills, tools, or behaviours.\n"
+        "- nice_to_have means explicitly preferred, desirable, bonus, advantage, or plus.\n"
+        "- Exclude company history, mission, size, benefits, perks, salary, location/flexibility, application instructions, and generic marketing copy.\n"
+        "- Do not include company names or the job title as a requirement.\n"
+        "- Keep each requirement concise and candidate-owned.\n"
+        "- ATS keywords must be high-signal skills/tools/domains/behaviours from the kept requirements only.\n"
+        f"- Return at most {limit} requirements.\n\n"
+        f"JOB DESCRIPTION:\n{job_description[:5000]}"
+    )
+
+    try:
+        response = GENAI_CLIENT.models.generate_content(
+            model=GEMINI_PARSE_MODEL,
+            contents=prompt,
+            config=gemini_generation_config(0),
+        )
+        parsed = parse_json_response(getattr(response, "text", "") or "")
+        if not isinstance(parsed, dict):
+            raise ValueError("Unexpected preflight response shape")
+    except Exception as exc:
+        logger.warning("Gemini JD preflight failed; API-backed analysis is required: %s", exc)
+        raise
+
+    generated_reqs = []
+    for req in parsed.get("requirements") or []:
+        if not isinstance(req, dict):
+            continue
+        text = str(req.get("text") or "").strip()
+        category = str(req.get("category") or "essential").strip()
+        if category not in {"essential", "nice_to_have"}:
+            category = "essential"
+        generated_reqs.append({"text": text, "category": category})
+
+    merged = merge_job_requirements(generated_reqs, local_requirements, limit=effective_limit)
+    cleaned_jd = _cleaned_job_description_from_requirements(merged)
+    candidate_blob = normalize_phrase(cleaned_jd) or _candidate_requirement_text_blob(job_description)
+
+    def clean_keyword_list(values, limit_count):
+        out = []
+        seen = set()
+        for value in values or []:
+            skill = clean_model_skill_name(str(value or ""))
+            norm = normalize_phrase(skill)
+            if not skill or norm in seen:
+                continue
+            if not is_valid_model_skill(skill, candidate_blob):
+                continue
+            seen.add(norm)
+            out.append({"skill": skill, "source": "preflight"})
+            if len(out) >= limit_count:
+                break
+        return out
+
+    raw_ats = parsed.get("ats_keywords") or {}
+    hard = clean_keyword_list(raw_ats.get("hard_skills"), 12)
+    soft = clean_keyword_list(raw_ats.get("soft_skills"), 8)
+    for skill in local_ats["hard"]:
+        if len(hard) >= 12:
+            break
+        norm = normalize_phrase(skill)
+        if norm and not any(normalize_phrase(item["skill"]) == norm for item in hard):
+            hard.append({"skill": skill, "source": "local"})
+    for skill in local_ats["soft"]:
+        if len(soft) >= 8:
+            break
+        norm = normalize_phrase(skill)
+        if norm and not any(normalize_phrase(item["skill"]) == norm for item in soft):
+            soft.append({"skill": skill, "source": "local"})
+
+    quality = parsed.get("quality") if isinstance(parsed.get("quality"), dict) else {}
+    issues = [str(item).strip() for item in quality.get("issues") or [] if str(item).strip()]
+    if not merged:
+        issues.append("No candidate-owned requirements survived cleanup.")
+    return {
+        "source": "gemini",
+        "cleaned_job_description": cleaned_jd,
+        "requirements": merged,
+        "requirements_by_category": _requirements_by_category(merged),
+        "ats_keywords": {
+            "hard_skills": hard,
+            "soft_skills": soft,
+        },
+        "quality": {
+            "makes_sense": bool(merged) and bool(quality.get("makes_sense", True)),
+            "confidence": str(quality.get("confidence") or ("high" if merged else "low")),
+            "issues": merge_unique(issues),
+            "excluded_noise": [
+                str(item).strip()
+                for item in quality.get("excluded_noise") or []
+                if str(item).strip()
+            ][:12],
+        },
+    }
 
 
 def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[dict]:
@@ -4564,15 +4783,18 @@ def _local_skill_category(skill: str, local_requirements: List[dict], job_descri
 
 def _local_requirement_skill_candidates(job_description: str, limit: int = 40) -> List[dict]:
     local_requirements = extract_local_job_requirements(job_description, limit=80)
+    candidate_blob = _candidate_requirement_text_blob(job_description)
     candidates: List[dict] = []
     seen: set[str] = set()
 
     def add(skill: str, category: str, source: str) -> None:
-        cleaned = str(skill or "").strip(" -:;,.")
+        cleaned = clean_model_skill_name(str(skill or ""))
         norm = normalize_phrase(cleaned)
         if not norm or norm in seen:
             return
-        if _ats_term_is_negated(norm, _candidate_requirement_text_blob(job_description)):
+        if not is_valid_model_skill(cleaned, candidate_blob):
+            return
+        if _ats_term_is_negated(norm, candidate_blob):
             return
         seen.add(norm)
         candidates.append({
@@ -5653,9 +5875,9 @@ def infer_role_seniority(job_description: str) -> dict:
 
     terms = extract_seniority_terms(job_description)
     norm = normalize_phrase(job_description)
-    if "technical direction" in norm or "technical vision" in norm or "accountable for the technical delivery" in norm:
+    if re.search(r"\b(?:technical direction|technical vision|accountable for the technical delivery)\b", norm):
         terms.append("lead")
-    if "mentor" in norm or "line management" in norm:
+    if re.search(r"\bmentor(?:ing)?\b", norm) or re.search(r"\bline management\b", norm):
         terms.append("lead")
     level = max((SENIORITY_LEVELS.get(term, 0) for term in terms), default=0)
     return {
@@ -6969,6 +7191,20 @@ async def status():
     }
 
 
+@app.post("/extract-job-requirements")
+async def extract_job_requirements_endpoint(payload: dict):
+    job_description = clean_text(str((payload or {}).get("job_description") or ""))
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Missing job_description.")
+    try:
+        return {"job_preflight": preflight_job_requirements(job_description)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI preflight failed while extracting job requirements: {exc}",
+        )
+
+
 def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
     """Use Gemini to extract skills from JD and semantically match against CV."""
     resume_text = str(parsed_resume.get("_resume_text") or "")
@@ -7101,7 +7337,12 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
     }, job_description, parsed_resume, resume_text)
 
 
-def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text: str) -> dict:
+def gemini_skills_and_ats(
+    job_description: str,
+    parsed_resume: dict,
+    resume_text: str,
+    job_preflight: dict | None = None,
+) -> dict:
     """Single Gemini call that does both skills matching and ATS keyword extraction.
 
     Replaces separate gemini_skills_match + gemini_ats_keywords to save one API round-trip.
@@ -7115,8 +7356,18 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     if not cv_section:
         raise RuntimeError("Parsed CV evidence is required for skills and ATS analysis.")
 
+    preflight_requirements = (job_preflight or {}).get("requirements") or []
+    job_description_for_prompt = (job_preflight or {}).get("cleaned_job_description") or job_description
+    requirement_lines = "\n".join(
+        f"- {req.get('category', 'essential')}: {req.get('text')}"
+        for req in preflight_requirements
+        if isinstance(req, dict) and req.get("text")
+    )
+
     prompt = (
         "You are matching a candidate's CV against a job description. Complete TWO tasks in one response.\n\n"
+        "Use the PRE-VALIDATED REQUIREMENTS as the source of truth when provided. "
+        "Ignore raw JD company background, benefits, marketing prose, location/flexibility, and application instructions.\n\n"
         "TASK 1 — SKILLS MATCHING:\n"
         "Extract ALL skills, tools, technologies, and competencies from the JD. "
         "Classify each as 'must_have' (required/essential) or 'nice_to_have' (preferred/bonus). "
@@ -7151,7 +7402,8 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     )
     contents = (
         f"{prompt}\n\n"
-        f"JOB DESCRIPTION:\n{job_description[:4000]}\n\n"
+        f"PRE-VALIDATED REQUIREMENTS:\n{requirement_lines or '(none provided)'}\n\n"
+        f"JOB DESCRIPTION:\n{job_description_for_prompt[:4000]}\n\n"
         f"CANDIDATE CV:\n{cv_section}\n\n"
         f"FULL CV TEXT (for ats cv_count):\n{resume_text[:3000]}"
     )
@@ -7175,10 +7427,14 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         for item in (lst or []):
             if not isinstance(item, dict):
                 continue
-            skill = str(item.get("skill") or "").strip()
-            if not skill or skill.lower() in seen:
+            skill = clean_model_skill_name(str(item.get("skill") or ""))
+            norm_skill = normalize_phrase(skill)
+            if not skill or norm_skill in seen:
                 continue
-            seen.add(skill.lower())
+            has_ai_evidence = bool(item.get("present")) or bool(str(item.get("cv_where") or "").strip())
+            if not is_valid_model_skill(skill, candidate_jd_blob_for_ats) and not has_ai_evidence:
+                continue
+            seen.add(norm_skill)
             aggregate = aggregate_requirement_evidence(
                 skill,
                 parsed_resume,
@@ -7201,7 +7457,11 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     resume_text_norm_for_ats = normalize_phrase(resume_text)
     resume_token_set_for_ats = set(resume_text_norm_for_ats.split())
     resume_compact_for_ats = resume_text_norm_for_ats.replace(" ", "")
-    candidate_jd_blob_for_ats = _candidate_requirement_text_blob(job_description)
+    candidate_jd_blob_for_ats = (
+        normalize_phrase(job_description_for_prompt)
+        if (job_preflight or {}).get("cleaned_job_description")
+        else _candidate_requirement_text_blob(job_description)
+    )
 
     def _clean_ats(lst, limit):
         out, seen = [], set()
@@ -7272,22 +7532,32 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
     ats_raw = parsed.get("ats_keywords") or {}
     cleaned_must = filter_satisfied_alternative_missing_skills(
         _clean_skills(skills_raw.get("must_have")),
-        job_description,
+        job_description_for_prompt or job_description,
     )
     cleaned_nice = filter_satisfied_alternative_missing_skills(
         _clean_skills(skills_raw.get("nice_to_have")),
-        job_description,
+        job_description_for_prompt or job_description,
     )
     extracted_skill_candidates = [
         str(item.get("skill") or "").strip()
         for item in [*cleaned_must, *cleaned_nice]
         if str(item.get("skill") or "").strip()
     ]
-    local_ats_candidates = _local_ats_keyword_candidates(job_description)
+    local_ats_candidates = _local_ats_keyword_candidates(job_description_for_prompt or job_description)
+    preflight_ats = (job_preflight or {}).get("ats_keywords") or {}
+    preflight_hard = [
+        item.get("skill") if isinstance(item, dict) else item
+        for item in preflight_ats.get("hard_skills") or []
+    ]
+    preflight_soft = [
+        item.get("skill") if isinstance(item, dict) else item
+        for item in preflight_ats.get("soft_skills") or []
+    ]
     hard_ats = _augment_ats_with_local_keywords(
         _clean_ats(ats_raw.get("hard_skills"), 12),
         [
             *(skill for skill in extracted_skill_candidates if not _looks_like_soft_ats_keyword(skill)),
+            *preflight_hard,
             *local_ats_candidates["hard"],
             *LOCAL_ATS_HARD_KEYWORDS,
         ],
@@ -7297,6 +7567,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
         _clean_ats(ats_raw.get("soft_skills"), 8),
         [
             *(skill for skill in extracted_skill_candidates if _looks_like_soft_ats_keyword(skill)),
+            *preflight_soft,
             *local_ats_candidates["soft"],
             *LOCAL_ATS_SOFT_KEYWORDS,
         ],
@@ -7309,7 +7580,7 @@ def gemini_skills_and_ats(job_description: str, parsed_resume: dict, resume_text
                     "must_have": cleaned_must,
                     "nice_to_have": cleaned_nice,
                 },
-                job_description,
+                job_description_for_prompt or job_description,
                 parsed_resume,
                 resume_text,
             ),
@@ -7378,6 +7649,20 @@ async def analyze(
         )
 
     debug_info = {} if debug else None
+    try:
+        job_preflight = await asyncio.to_thread(preflight_job_requirements, job_description)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI preflight failed while extracting job requirements: {exc}",
+        )
+    analysis_job_description = job_preflight.get("cleaned_job_description") or job_description
+    if debug_info is not None:
+        debug_info["job_preflight"] = {
+            "source": job_preflight.get("source"),
+            "requirements_count": len(job_preflight.get("requirements") or []),
+            "quality": job_preflight.get("quality") or {},
+        }
 
     # Phase 1: Parse resume — everything else depends on this
     try:
@@ -7399,15 +7684,15 @@ async def analyze(
     resume_compact = resume_text_norm.replace(" ", "")
     resume_sections = split_resume_sections(resume_text)
     resume_sections_raw = split_resume_sections_raw(resume_text)
-    tfidf_terms = extract_tfidf_terms(job_description, limit=40)
-    required_years = extract_required_years(job_description)
+    tfidf_terms = extract_tfidf_terms(analysis_job_description, limit=40)
+    required_years = extract_required_years(analysis_job_description)
     resume_years = (
         years_from_work_experience(parsed_resume.get("work_experience") or [])
         or parsed_resume.get("years_experience")
         or extract_resume_years(resume_text)
     )
     try:
-        responsibility_candidates = extract_job_responsibilities(job_description)
+        responsibility_candidates = job_preflight.get("requirements") or extract_job_responsibilities(analysis_job_description)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -7425,15 +7710,15 @@ async def analyze(
             gemini_sections,
         ) = await asyncio.wait_for(
             asyncio.gather(
-                asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, job_description),
-                asyncio.to_thread(gemini_skills_and_ats, job_description, parsed_resume, resume_text),
+                asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, analysis_job_description),
+                asyncio.to_thread(gemini_skills_and_ats, analysis_job_description, parsed_resume, resume_text, job_preflight),
                 asyncio.to_thread(gemini_responsibility_match, responsibility_candidates, parsed_resume),
-                asyncio.to_thread(compute_semantic_score, resume_text, job_description, None),
-                asyncio.to_thread(textrazor_extract_phrases, job_description, None),
+                asyncio.to_thread(compute_semantic_score, resume_text, analysis_job_description, None),
+                asyncio.to_thread(textrazor_extract_phrases, analysis_job_description, None),
                 # 6th task: per-section feedback via Gemini. Runs in parallel so no added latency.
                 # Skips role_fit_breakdown context here (chicken-and-egg) — the prompt is strong
                 # enough to infer JD vs CV gaps on its own.
-                asyncio.to_thread(gemini_section_feedback, parsed_resume, job_description, None),
+                asyncio.to_thread(gemini_section_feedback, parsed_resume, analysis_job_description, None),
             ),
             timeout=70,
         )
@@ -7477,7 +7762,7 @@ async def analyze(
     experience_result = compute_experience_match(
         raw_sections=resume_sections_raw,
         resume_text=resume_text,
-        job_description=job_description,
+        job_description=analysis_job_description,
         responsibilities=responsibility_candidates,
         responsibility_result=responsibility_result,
         required_years=required_years,
@@ -7490,7 +7775,7 @@ async def analyze(
 
     inferred_missing = infer_missing_keywords(
         resume_text,
-        job_description,
+        analysis_job_description,
         prefetched_phrases=combined_terms,
     )
     skills_present = merge_unique(present_must_have + present_nice_to_have)
@@ -7507,7 +7792,7 @@ async def analyze(
         2,
     )
     base_match_score = max(0.0, min(100.0, base_match_score))
-    seniority_fit = compute_seniority_fit(job_description, parsed_resume, resume_text, resume_years)
+    seniority_fit = compute_seniority_fit(analysis_job_description, parsed_resume, resume_text, resume_years)
     technical_relevance_score = compute_technical_relevance_score(
         responsibility_result["score"],
         semantic_score,
@@ -7575,6 +7860,8 @@ async def analyze(
         "job_description": {
             "source": job_source if job_source in {"paste", "url"} else "paste",
             "char_count": len(job_description),
+            "cleaned_char_count": len(analysis_job_description),
+            "preflight": job_preflight,
         },
     }
 
@@ -7592,7 +7879,7 @@ async def analyze(
             else build_section_feedback(
                 resume_sections_raw,
                 resume_sections,
-                job_description,
+                analysis_job_description,
                 parsed_resume,
             )
         ),

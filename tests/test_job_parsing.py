@@ -115,6 +115,108 @@ def test_principal_investing_phrase_is_not_seniority_term():
     assert "principal" not in terms
 
 
+def test_prima_preface_copy_is_not_treated_as_candidate_requirements():
+    jd = """
+Since 2015, we have been using our love of data and tech to rethink motor insurance.
+Fueled by curiosity, experimentation and collaboration, you'll help deliver scalable solutions.
+You'll be joining over 300 engineers across software development, infrastructure, operations and security.
+
+What You'll Do
+
+Build reusable technology that enables teams to ingest, store, transform, and serve their own data products.
+
+What We're Looking For
+
+Proficiency in DevOps, CI/CD pipeline management, and expertise in infrastructure as Code deployment practices.
+"""
+
+    requirements = main.extract_local_job_requirements(jd, limit=20)
+    joined = " ".join(req["text"] for req in requirements).lower()
+
+    assert "since 2015" not in joined
+    assert "fueled by curiosity" not in joined
+    assert "joining over 300 engineers" not in joined
+    assert "build reusable technology" in joined
+    assert "ci/cd pipeline management" in joined
+
+
+def test_pipeline_management_is_not_line_management_seniority_signal():
+    seniority = main.infer_role_seniority(
+        "Data Engineer required. Proficiency in DevOps and CI/CD pipeline management is essential."
+    )
+
+    assert seniority["level"] == 0
+    assert "lead" not in seniority["terms"]
+
+
+def test_model_skill_cleanup_rejects_sentence_fragments():
+    jd_blob = main._candidate_requirement_text_blob(
+        "What We're Looking For\n"
+        "Expert in Kafka, Flink and Spark. Experience in Databricks is a plus.\n"
+        "You will help build and maintain complex data products."
+    )
+
+    assert main.clean_model_skill_name("Spark etc. Experience in Databricks is a plus") == "Spark"
+    assert main.is_valid_model_skill("Spark", jd_blob)
+    assert not main.is_valid_model_skill("You will help build", jd_blob)
+
+
+def test_ats_keyword_split_keeps_ab_testing_intact():
+    jd = """
+What We're Looking For
+Understanding of A/B testing, attribution, and customer segmentation.
+"""
+
+    hard = main._local_ats_keyword_candidates(jd)["hard"]
+
+    assert "A/B testing" in hard
+    assert "Understanding of A" not in hard
+
+
+def test_preflight_job_requirements_cleans_groups_and_judges_keywords(monkeypatch):
+    fake_json = """
+    {
+      "requirements": [
+        {"text": "Since 2015, Prima has been using data and tech to rethink motor insurance.", "category": "essential"},
+        {"text": "Build reusable technology that enables teams to ingest, store, transform, and serve their own data products.", "category": "essential"},
+        {"text": "Experience with Apache Airflow.", "category": "nice_to_have"}
+      ],
+      "ats_keywords": {
+        "hard_skills": ["data products", "Apache Airflow", "Prima"],
+        "soft_skills": ["collaboration"]
+      },
+      "quality": {
+        "makes_sense": true,
+        "confidence": "high",
+        "issues": [],
+        "excluded_noise": ["Since 2015 company background"]
+      }
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+
+    result = main.preflight_job_requirements(
+        "Since 2015, Prima has been using data and tech to rethink motor insurance.\n"
+        "What You'll Do\n"
+        "Build reusable technology that enables teams to ingest, store, transform, and serve their own data products.\n"
+        "Nice-to-Have\n"
+        "Experience with Apache Airflow."
+    )
+
+    cleaned = result["cleaned_job_description"].lower()
+    assert "since 2015" not in cleaned
+    assert "build reusable technology" in cleaned
+    assert "apache airflow" in cleaned
+    assert result["requirements_by_category"]["essential"] == [
+        "Build reusable technology that enables teams to ingest, store, transform, and serve their own data products."
+    ]
+    assert result["requirements_by_category"]["nice_to_have"] == ["Experience with Apache Airflow."]
+    hard_keywords = [item["skill"] for item in result["ats_keywords"]["hard_skills"]]
+    assert "Apache Airflow" in hard_keywords
+    assert "Prima" not in hard_keywords
+    assert result["quality"]["makes_sense"] is True
+
+
 def test_ats_keywords_are_limited_to_candidate_facing_requirements(monkeypatch):
     fake_json = """
     {
