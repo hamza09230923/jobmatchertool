@@ -1,0 +1,4356 @@
+{
+  "match_score": 46.92,
+  "missing_keywords": [
+    "well-tested code",
+    "software engineering",
+    "CI/CD pipelines",
+    "Write clean",
+    "Deploy applications",
+    "machine learning concepts"
+  ],
+  "resume_text": "John Doe - Software Engineer\nJohn Doe\nLocation: London, UK | Email: john.doe@example.com | GitHub: github.com/johndoe\nSUMMARY\nExperienced Software Engineer with 5+ years of experience building scalable backend systems and robust data pipelines.\nEXPERIENCE\nSenior Software Engineer @ TechCorp\nJan 2020 - Present\n- Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.\n- Automated operational processes reducing manual workload by 40%.\n- Integrated REST APIs for seamless data flow across microservices.\nSoftware Engineer @ StartupInc\nJun 2017 - Dec 2019\n- Developed full-stack applications using React, TypeScript, and Express.\n- Managed database schemas in PostgreSQL and optimized queries for performance.\n- Containerized applications using Docker and deployed to Kubernetes.\nSKILLS\nPython, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices.",
+  "cv_highlights": [
+    {
+      "section": "summary",
+      "section_label": "Summary",
+      "lines": [
+        {
+          "text": "Experienced Software Engineer with 5+ years of experience building scalable backend systems and robust data pipelines.",
+          "quality": "strong",
+          "reason": "Action verb with measurable impact."
+        }
+      ]
+    },
+    {
+      "section": "experience",
+      "section_label": "Experience",
+      "lines": [
+        {
+          "text": "Senior Software Engineer  \u00b7  TechCorp  (01/2020 \u2013 Present)",
+          "quality": "neutral",
+          "reason": null
+        },
+        {
+          "text": "Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+          "quality": "strong",
+          "reason": "Action verb with measurable impact."
+        },
+        {
+          "text": "Automated operational processes reducing manual workload by 40%.",
+          "quality": "strong",
+          "reason": "Action verb with measurable impact."
+        },
+        {
+          "text": "Integrated REST APIs for seamless data flow across microservices.",
+          "quality": "weak",
+          "reason": "No action verb or quantified result \u2014 consider strengthening."
+        },
+        {
+          "text": "Software Engineer  \u00b7  StartupInc  (06/2017 \u2013 12/2019)",
+          "quality": "neutral",
+          "reason": null
+        },
+        {
+          "text": "Developed full-stack applications using React, TypeScript, and Express.",
+          "quality": "good",
+          "reason": "Has action verb."
+        },
+        {
+          "text": "Managed database schemas in PostgreSQL and optimized queries for performance.",
+          "quality": "good",
+          "reason": "Has action verb."
+        },
+        {
+          "text": "Containerized applications using Docker and deployed to Kubernetes.",
+          "quality": "weak",
+          "reason": "No action verb or quantified result \u2014 consider strengthening."
+        }
+      ]
+    },
+    {
+      "section": "skills",
+      "section_label": "Skills",
+      "lines": [
+        {
+          "text": "Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices.",
+          "quality": "neutral",
+          "reason": null
+        }
+      ]
+    }
+  ],
+  "role_fit_breakdown": {
+    "responsibility_match_score": 38.77,
+    "experience_match_score": 72.44,
+    "skills_match_score": 55.0,
+    "semantic_score": 70.36,
+    "base_match_score": 46.92,
+    "technical_relevance_score": 44.42,
+    "application_positioning": {
+      "headline": "Developing fit",
+      "cover_letter_tone": "balanced and evidence-led",
+      "cover_letter_guidance": "Focus on transferable evidence and avoid unsupported claims.",
+      "technical_relevance_score": 44.42
+    },
+    "final_match_score": 46.92,
+    "matched_responsibilities": [
+      {
+        "responsibility": "Build and maintain robust backend services using Python and FastAPI.",
+        "action_phrases": [
+          "build maintain robust",
+          "maintain robust backend"
+        ],
+        "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+        "section": "experience",
+        "similarity": 0.5,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "essential",
+        "matched_count": 2,
+        "total_count": 3,
+        "atomic_breakdown": [
+          {
+            "requirement": "Build and maintain robust backend services",
+            "canonical_atom": "backend_engineering",
+            "status": "partial",
+            "verification_result": "partial",
+            "confidence": "partial",
+            "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+            "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+            "section": "experience",
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r1a1e3"
+          },
+          {
+            "requirement": "Python",
+            "canonical_atom": "python",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r1a2e1"
+          },
+          {
+            "requirement": "FastAPI",
+            "canonical_atom": "fastapi",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Build and maintain robust backend services using Python and FastAPI.",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+          "section": "experience",
+          "matched_count": 2,
+          "missing_count": 1,
+          "total_count": 3,
+          "coverage_ratio": 0.5,
+          "final_score": 0.5,
+          "matched_scoring_units": [
+            "atom:backend_engineering",
+            "atom:python"
+          ],
+          "missing_scoring_units": [
+            "atom:fastapi"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "Build and maintain robust backend services",
+              "canonical_atom": "backend_engineering",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r1a1e3",
+              "scoring_unit_id": "atom:backend_engineering",
+              "satisfied_by": "backend_engineering"
+            },
+            {
+              "requirement": "Python",
+              "canonical_atom": "python",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r1a2e1",
+              "scoring_unit_id": "atom:python",
+              "satisfied_by": "python"
+            },
+            {
+              "requirement": "FastAPI",
+              "canonical_atom": "fastapi",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:fastapi",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "Build and maintain robust backend services",
+              "canonical_atom": "backend_engineering",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r1a1e3"
+            },
+            {
+              "requirement": "Python",
+              "canonical_atom": "python",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r1a2e1"
+            },
+            {
+              "requirement": "FastAPI",
+              "canonical_atom": "fastapi",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Deploy applications using Docker and Kubernetes.",
+        "action_phrases": [],
+        "evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+        "section": "experience",
+        "similarity": 0.75,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "essential",
+        "matched_count": 3,
+        "total_count": 3,
+        "atomic_breakdown": [
+          {
+            "requirement": "Deploy applications",
+            "canonical_atom": "application_deployment",
+            "status": "partial",
+            "verification_result": "partial",
+            "confidence": "partial",
+            "evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+            "selected_evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+            "section": "experience",
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r2a1e1"
+          },
+          {
+            "requirement": "Docker",
+            "canonical_atom": "containerization",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r2a2e1"
+          },
+          {
+            "requirement": "Kubernetes",
+            "canonical_atom": "kubernetes",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r2a3e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Deploy applications using Docker and Kubernetes.",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+          "section": "experience",
+          "matched_count": 3,
+          "missing_count": 0,
+          "total_count": 3,
+          "coverage_ratio": 0.833,
+          "final_score": 0.833,
+          "matched_scoring_units": [
+            "atom:application_deployment",
+            "atom:containerization",
+            "atom:kubernetes"
+          ],
+          "missing_scoring_units": [],
+          "scoring_units": [
+            {
+              "requirement": "Deploy applications",
+              "canonical_atom": "application_deployment",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+              "selected_evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a1e1",
+              "scoring_unit_id": "atom:application_deployment",
+              "satisfied_by": "application_deployment"
+            },
+            {
+              "requirement": "Docker",
+              "canonical_atom": "containerization",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a2e1",
+              "scoring_unit_id": "atom:containerization",
+              "satisfied_by": "containerization"
+            },
+            {
+              "requirement": "Kubernetes",
+              "canonical_atom": "kubernetes",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a3e1",
+              "scoring_unit_id": "atom:kubernetes",
+              "satisfied_by": "kubernetes"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "Deploy applications",
+              "canonical_atom": "application_deployment",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+              "selected_evidence": "[Software Engineer @ StartupInc] Containerized applications using Docker and deployed to Kubernetes.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a1e1"
+            },
+            {
+              "requirement": "Docker",
+              "canonical_atom": "containerization",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a2e1"
+            },
+            {
+              "requirement": "Kubernetes",
+              "canonical_atom": "kubernetes",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r2a3e1"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Optimize database queries (PostgreSQL).",
+        "action_phrases": [
+          "optimize database queries"
+        ],
+        "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+        "section": "skills",
+        "similarity": 0.75,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "essential",
+        "matched_count": 2,
+        "total_count": 2,
+        "atomic_breakdown": [
+          {
+            "requirement": "PostgreSQL",
+            "canonical_atom": "postgresql",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r4a1e1"
+          },
+          {
+            "requirement": "Optimize database queries",
+            "canonical_atom": "optimize database queries",
+            "status": "partial",
+            "verification_result": "partial",
+            "confidence": "partial",
+            "evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+            "selected_evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+            "section": "experience",
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r4a2e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Optimize database queries (PostgreSQL).",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 2,
+          "missing_count": 0,
+          "total_count": 2,
+          "coverage_ratio": 0.75,
+          "final_score": 0.75,
+          "matched_scoring_units": [
+            "atom:postgresql",
+            "atom:optimize database queries"
+          ],
+          "missing_scoring_units": [],
+          "scoring_units": [
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r4a1e1",
+              "scoring_unit_id": "atom:postgresql",
+              "satisfied_by": "postgresql"
+            },
+            {
+              "requirement": "Optimize database queries",
+              "canonical_atom": "optimize database queries",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+              "selected_evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r4a2e1",
+              "scoring_unit_id": "atom:optimize database queries",
+              "satisfied_by": "optimize database queries"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r4a1e1"
+            },
+            {
+              "requirement": "Optimize database queries",
+              "canonical_atom": "optimize database queries",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+              "selected_evidence": "[Software Engineer @ StartupInc] Managed database schemas in PostgreSQL and optimized queries for performance.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r4a2e1"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Proficiency in Python and at least one other language (e.g., JavaScript/TypeScript, Go).",
+        "action_phrases": [],
+        "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+        "section": "skills",
+        "similarity": 0.667,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "essential",
+        "matched_count": 2,
+        "total_count": 3,
+        "atomic_breakdown": [
+          {
+            "requirement": "e.g",
+            "canonical_atom": "e g",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+            "selected_evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+            "section": "experience",
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": "any:e g javascript typescript go",
+            "group_mode": "any",
+            "alternative_group": "any:e g javascript typescript go",
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null,
+            "group_status": "present"
+          },
+          {
+            "requirement": "JavaScript/TypeScript",
+            "canonical_atom": "javascript typescript",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": "any:e g javascript typescript go",
+            "group_mode": "any",
+            "alternative_group": "any:e g javascript typescript go",
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r7a2e2",
+            "group_status": "present"
+          },
+          {
+            "requirement": "Go",
+            "canonical_atom": "go",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": "any:e g javascript typescript go",
+            "group_mode": "any",
+            "alternative_group": "any:e g javascript typescript go",
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null,
+            "group_status": "present"
+          },
+          {
+            "requirement": "Proficiency in Python",
+            "canonical_atom": "python",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r7a4e1"
+          },
+          {
+            "requirement": "at least one other language",
+            "canonical_atom": "at least one other language",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Proficiency in Python and at least one other language (e.g., JavaScript/TypeScript, Go).",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 2,
+          "missing_count": 1,
+          "total_count": 3,
+          "coverage_ratio": 0.667,
+          "final_score": 0.667,
+          "matched_scoring_units": [
+            "atom:python",
+            "any:e g javascript typescript go"
+          ],
+          "missing_scoring_units": [
+            "atom:at least one other language"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "Proficiency in Python",
+              "canonical_atom": "python",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r7a4e1",
+              "scoring_unit_id": "atom:python",
+              "satisfied_by": "python"
+            },
+            {
+              "requirement": "at least one other language",
+              "canonical_atom": "at least one other language",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:at least one other language",
+              "satisfied_by": null
+            },
+            {
+              "scoring_unit_id": "any:e g javascript typescript go",
+              "requirement": "e.g / JavaScript/TypeScript / Go",
+              "canonical_atom": "e g / javascript typescript / go",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+              "section": "experience",
+              "strict": true,
+              "requirement_type": "alternative_group",
+              "group_id": "any:e g javascript typescript go",
+              "group_mode": "any",
+              "alternative_group": "any:e g javascript typescript go",
+              "satisfied_by": "e g"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "e.g",
+              "canonical_atom": "e g",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Integrated REST APIs for seamless data flow across microservices.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": "any:e g javascript typescript go",
+              "group_mode": "any",
+              "alternative_group": "any:e g javascript typescript go",
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "group_status": "present"
+            },
+            {
+              "requirement": "JavaScript/TypeScript",
+              "canonical_atom": "javascript typescript",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": "any:e g javascript typescript go",
+              "group_mode": "any",
+              "alternative_group": "any:e g javascript typescript go",
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r7a2e2",
+              "group_status": "present"
+            },
+            {
+              "requirement": "Go",
+              "canonical_atom": "go",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": "any:e g javascript typescript go",
+              "group_mode": "any",
+              "alternative_group": "any:e g javascript typescript go",
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "group_status": "present"
+            },
+            {
+              "requirement": "Proficiency in Python",
+              "canonical_atom": "python",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r7a4e1"
+            },
+            {
+              "requirement": "at least one other language",
+              "canonical_atom": "at least one other language",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Experience with cloud platforms (AWS, GCP, or Azure).",
+        "action_phrases": [],
+        "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+        "section": "skills",
+        "similarity": 1.0,
+        "match_type": "ai_atomic",
+        "confidence": "strong",
+        "category": "essential",
+        "matched_count": 1,
+        "total_count": 1,
+        "atomic_breakdown": [
+          {
+            "requirement": "AWS",
+            "canonical_atom": "cloud_platform",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": "any:aws gcp or azure",
+            "group_mode": "any",
+            "alternative_group": "any:aws gcp or azure",
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r8a1e1",
+            "group_status": "present"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Experience with cloud platforms (AWS, GCP, or Azure).",
+          "status": "present",
+          "present": true,
+          "confidence": "strong",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 1,
+          "missing_count": 0,
+          "total_count": 1,
+          "coverage_ratio": 1.0,
+          "final_score": 1.0,
+          "matched_scoring_units": [
+            "any:aws gcp or azure"
+          ],
+          "missing_scoring_units": [],
+          "scoring_units": [
+            {
+              "scoring_unit_id": "any:aws gcp or azure",
+              "requirement": "AWS",
+              "canonical_atom": "cloud_platform",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "alternative_group",
+              "group_id": "any:aws gcp or azure",
+              "group_mode": "any",
+              "alternative_group": "any:aws gcp or azure",
+              "satisfied_by": "cloud_platform"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "AWS",
+              "canonical_atom": "cloud_platform",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": "any:aws gcp or azure",
+              "group_mode": "any",
+              "alternative_group": "any:aws gcp or azure",
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r8a1e1",
+              "group_status": "present"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Familiarity with containerization (Docker, Kubernetes).",
+        "action_phrases": [],
+        "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+        "section": "skills",
+        "similarity": 0.667,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "essential",
+        "matched_count": 2,
+        "total_count": 3,
+        "atomic_breakdown": [
+          {
+            "requirement": "Docker",
+            "canonical_atom": "containerization",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r9a1e1"
+          },
+          {
+            "requirement": "Kubernetes",
+            "canonical_atom": "kubernetes",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r9a2e1"
+          },
+          {
+            "requirement": "Familiarity",
+            "canonical_atom": "familiarity",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Familiarity with containerization (Docker, Kubernetes).",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 2,
+          "missing_count": 1,
+          "total_count": 3,
+          "coverage_ratio": 0.667,
+          "final_score": 0.667,
+          "matched_scoring_units": [
+            "atom:containerization",
+            "atom:kubernetes"
+          ],
+          "missing_scoring_units": [
+            "atom:familiarity"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "Docker",
+              "canonical_atom": "containerization",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r9a1e1",
+              "scoring_unit_id": "atom:containerization",
+              "satisfied_by": "containerization"
+            },
+            {
+              "requirement": "Kubernetes",
+              "canonical_atom": "kubernetes",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r9a2e1",
+              "scoring_unit_id": "atom:kubernetes",
+              "satisfied_by": "kubernetes"
+            },
+            {
+              "requirement": "Familiarity",
+              "canonical_atom": "familiarity",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:familiarity",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "Docker",
+              "canonical_atom": "containerization",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r9a1e1"
+            },
+            {
+              "requirement": "Kubernetes",
+              "canonical_atom": "kubernetes",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r9a2e1"
+            },
+            {
+              "requirement": "Familiarity",
+              "canonical_atom": "familiarity",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Knowledge of machine learning concepts.",
+        "action_phrases": [],
+        "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+        "section": "experience",
+        "similarity": 0.5,
+        "match_type": "ai_atomic",
+        "confidence": "partial",
+        "category": "nice_to_have",
+        "matched_count": 1,
+        "total_count": 1,
+        "atomic_breakdown": [
+          {
+            "requirement": "machine learning concepts",
+            "canonical_atom": "ai_development",
+            "status": "partial",
+            "verification_result": "partial",
+            "confidence": "partial",
+            "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+            "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+            "section": "experience",
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r13a1e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Knowledge of machine learning concepts.",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+          "section": "experience",
+          "matched_count": 1,
+          "missing_count": 0,
+          "total_count": 1,
+          "coverage_ratio": 0.5,
+          "final_score": 0.5,
+          "matched_scoring_units": [
+            "atom:ai_development"
+          ],
+          "missing_scoring_units": [],
+          "scoring_units": [
+            {
+              "requirement": "machine learning concepts",
+              "canonical_atom": "ai_development",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r13a1e1",
+              "scoring_unit_id": "atom:ai_development",
+              "satisfied_by": "ai_development"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "machine learning concepts",
+              "canonical_atom": "ai_development",
+              "status": "partial",
+              "verification_result": "partial",
+              "confidence": "partial",
+              "evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "selected_evidence": "[Senior Software Engineer @ TechCorp] Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+              "section": "experience",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r13a1e1"
+            }
+          ]
+        }
+      }
+    ],
+    "missing_responsibilities": [
+      {
+        "responsibility": "Collaborate with frontend engineers to integrate RESTful APIs.",
+        "action_phrases": [
+          "collaborate frontend engineers"
+        ],
+        "gap": "No evidence of general collaboration",
+        "category": "essential",
+        "atomic_breakdown": [
+          {
+            "requirement": "Collaborate",
+            "canonical_atom": "collaborate",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          },
+          {
+            "requirement": "frontend engineers to integrate RESTful APIs",
+            "canonical_atom": "backend_engineering",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r3a2e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Collaborate with frontend engineers to integrate RESTful APIs.",
+          "status": "missing",
+          "present": false,
+          "confidence": "missing",
+          "cv_where": null,
+          "section": null,
+          "matched_count": 0,
+          "missing_count": 2,
+          "total_count": 2,
+          "coverage_ratio": 0.0,
+          "final_score": 0.0,
+          "matched_scoring_units": [],
+          "missing_scoring_units": [
+            "atom:collaborate",
+            "atom:backend_engineering"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "Collaborate",
+              "canonical_atom": "collaborate",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:collaborate",
+              "satisfied_by": null
+            },
+            {
+              "requirement": "frontend engineers to integrate RESTful APIs",
+              "canonical_atom": "backend_engineering",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r3a2e1",
+              "scoring_unit_id": "atom:backend_engineering",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "Collaborate",
+              "canonical_atom": "collaborate",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            },
+            {
+              "requirement": "frontend engineers to integrate RESTful APIs",
+              "canonical_atom": "backend_engineering",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r3a2e1"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Write clean, maintainable, and well-tested code.",
+        "action_phrases": [],
+        "gap": "No evidence of writing well-tested code",
+        "category": "essential",
+        "atomic_breakdown": [
+          {
+            "requirement": "Write clean",
+            "canonical_atom": "write clean",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          },
+          {
+            "requirement": "maintainable",
+            "canonical_atom": "maintainable",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          },
+          {
+            "requirement": "well-tested code",
+            "canonical_atom": "well tested code",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Write clean, maintainable, and well-tested code.",
+          "status": "missing",
+          "present": false,
+          "confidence": "missing",
+          "cv_where": null,
+          "section": null,
+          "matched_count": 0,
+          "missing_count": 3,
+          "total_count": 3,
+          "coverage_ratio": 0.0,
+          "final_score": 0.0,
+          "matched_scoring_units": [],
+          "missing_scoring_units": [
+            "atom:write clean",
+            "atom:maintainable",
+            "atom:well tested code"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "Write clean",
+              "canonical_atom": "write clean",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:write clean",
+              "satisfied_by": null
+            },
+            {
+              "requirement": "maintainable",
+              "canonical_atom": "maintainable",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:maintainable",
+              "satisfied_by": null
+            },
+            {
+              "requirement": "well-tested code",
+              "canonical_atom": "well tested code",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:well tested code",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "Write clean",
+              "canonical_atom": "write clean",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            },
+            {
+              "requirement": "maintainable",
+              "canonical_atom": "maintainable",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            },
+            {
+              "requirement": "well-tested code",
+              "canonical_atom": "well tested code",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "3+ years of experience in software engineering.",
+        "action_phrases": [],
+        "gap": "No evidence of 3+ years of experience in software engineering",
+        "category": "essential",
+        "atomic_breakdown": [
+          {
+            "requirement": "3+ years of experience in software engineering.",
+            "canonical_atom": "3+ years of experience in software engineering",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": true,
+            "requirement_type": "years_experience",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "formal_or_early_career_experience",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "3+ years of experience in software engineering.",
+          "status": "missing",
+          "present": false,
+          "confidence": "missing",
+          "cv_where": null,
+          "section": null,
+          "matched_count": 0,
+          "missing_count": 1,
+          "total_count": 1,
+          "coverage_ratio": 0.0,
+          "final_score": 0.0,
+          "matched_scoring_units": [],
+          "missing_scoring_units": [
+            "atom:3+ years of experience in software engineering"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "3+ years of experience in software engineering.",
+              "canonical_atom": "3+ years of experience in software engineering",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "years_experience",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "formal_or_early_career_experience",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:3+ years of experience in software engineering",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "3+ years of experience in software engineering.",
+              "canonical_atom": "3+ years of experience in software engineering",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "years_experience",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "formal_or_early_career_experience",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Strong understanding of REST APIs and microservices architecture.",
+        "action_phrases": [],
+        "gap": "The available evidence was too generic and already used for other requirements.",
+        "category": "essential",
+        "atomic_breakdown": [
+          {
+            "requirement": "understanding of REST APIs",
+            "canonical_atom": "backend_engineering",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r10a1e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Strong understanding of REST APIs and microservices architecture.",
+          "status": "present",
+          "present": true,
+          "confidence": "strong",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 1,
+          "missing_count": 0,
+          "total_count": 1,
+          "coverage_ratio": 1.0,
+          "final_score": 1.0,
+          "matched_scoring_units": [
+            "atom:backend_engineering"
+          ],
+          "missing_scoring_units": [],
+          "scoring_units": [
+            {
+              "requirement": "understanding of REST APIs",
+              "canonical_atom": "backend_engineering",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r10a1e1",
+              "scoring_unit_id": "atom:backend_engineering",
+              "satisfied_by": "backend_engineering"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "understanding of REST APIs",
+              "canonical_atom": "backend_engineering",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r10a1e1"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Experience with SQL databases, especially PostgreSQL.",
+        "action_phrases": [],
+        "gap": "The available evidence was too generic and already used for other requirements.",
+        "category": "essential",
+        "atomic_breakdown": [
+          {
+            "requirement": "SQL databases",
+            "canonical_atom": "sql_relational_databases",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": false,
+            "requirement_type": "general",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "general",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "certifications",
+                "education",
+                "experience",
+                "projects",
+                "skills",
+                "summary"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": null
+          },
+          {
+            "requirement": "PostgreSQL",
+            "canonical_atom": "postgresql",
+            "status": "present",
+            "verification_result": "present",
+            "confidence": "strong",
+            "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+            "section": "skills",
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r11a2e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Experience with SQL databases, especially PostgreSQL.",
+          "status": "partial",
+          "present": true,
+          "confidence": "partial",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "section": "skills",
+          "matched_count": 1,
+          "missing_count": 1,
+          "total_count": 2,
+          "coverage_ratio": 0.5,
+          "final_score": 0.5,
+          "matched_scoring_units": [
+            "atom:postgresql"
+          ],
+          "missing_scoring_units": [
+            "atom:sql_relational_databases"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "SQL databases",
+              "canonical_atom": "sql_relational_databases",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null,
+              "scoring_unit_id": "atom:sql_relational_databases",
+              "satisfied_by": null
+            },
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r11a2e1",
+              "scoring_unit_id": "atom:postgresql",
+              "satisfied_by": "postgresql"
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "SQL databases",
+              "canonical_atom": "sql_relational_databases",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            },
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r11a2e1"
+            }
+          ]
+        }
+      },
+      {
+        "responsibility": "Experience with CI/CD pipelines.",
+        "action_phrases": [],
+        "gap": "No explicit CV evidence found for this requirement.",
+        "category": "nice_to_have",
+        "atomic_breakdown": [
+          {
+            "requirement": "CI/CD pipelines",
+            "canonical_atom": "ci_cd",
+            "status": "missing",
+            "verification_result": "missing",
+            "confidence": "missing",
+            "evidence": null,
+            "selected_evidence": null,
+            "section": null,
+            "strict": true,
+            "requirement_type": "exact_tool",
+            "group_id": null,
+            "group_mode": null,
+            "alternative_group": null,
+            "evidence_policy": {
+              "policy_type": "exact_tool",
+              "requested_signal_families": [],
+              "minimum_signal_families": 1,
+              "requires_action_evidence": false,
+              "allowed_sections": [
+                "experience",
+                "projects",
+                "skills"
+              ]
+            },
+            "matched_signal_families": [],
+            "selected_evidence_id": "r12a1e1"
+          }
+        ],
+        "verification_debug": {
+          "original_requirement": "Experience with CI/CD pipelines.",
+          "status": "missing",
+          "present": false,
+          "confidence": "missing",
+          "cv_where": null,
+          "section": null,
+          "matched_count": 0,
+          "missing_count": 1,
+          "total_count": 1,
+          "coverage_ratio": 0.0,
+          "final_score": 0.0,
+          "matched_scoring_units": [],
+          "missing_scoring_units": [
+            "atom:ci_cd"
+          ],
+          "scoring_units": [
+            {
+              "requirement": "CI/CD pipelines",
+              "canonical_atom": "ci_cd",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r12a1e1",
+              "scoring_unit_id": "atom:ci_cd",
+              "satisfied_by": null
+            }
+          ],
+          "atomic_breakdown": [
+            {
+              "requirement": "CI/CD pipelines",
+              "canonical_atom": "ci_cd",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": "r12a1e1"
+            }
+          ]
+        }
+      }
+    ],
+    "matched_action_phrases": [
+      "build maintain robust",
+      "maintain robust backend",
+      "optimize database queries"
+    ],
+    "missing_action_phrases": [
+      "collaborate frontend engineers"
+    ],
+    "experience_evidence": [
+      "Detected 10+ years of experience on the CV.",
+      "Meets the role's 3+ years requirement.",
+      "3 responsibility matches are backed by experience bullets."
+    ],
+    "experience_gaps": [
+      "Experience section needs clearer date ranges across roles."
+    ],
+    "skills_present": [
+      "Python",
+      "Docker",
+      "Kubernetes",
+      "REST APIs",
+      "PostgreSQL",
+      "JavaScript",
+      "TypeScript",
+      "AWS",
+      "SQL",
+      "JavaScript/TypeScript",
+      "especially PostgreSQL"
+    ],
+    "skills_partial": [],
+    "skills_missing": [
+      "well-tested code",
+      "software engineering",
+      "CI/CD pipelines",
+      "Write clean",
+      "Deploy applications",
+      "machine learning concepts"
+    ],
+    "weights": {
+      "responsibility": 0.7,
+      "experience": 0.1,
+      "skills": 0.1,
+      "semantic": 0.1
+    },
+    "responsibility_detail": {
+      "total_responsibilities": 13,
+      "matched_count": 7,
+      "missing_count": 6,
+      "evidence_by_section": {
+        "experience": 3,
+        "projects": 0,
+        "summary": 0,
+        "skills": 4
+      },
+      "similarity_threshold": 0.34
+    },
+    "experience_detail": {
+      "required_years": 3,
+      "resume_years": 10,
+      "years_score": 100.0,
+      "date_coverage_score": 66.67,
+      "responsibility_evidence_score": 23.08
+    },
+    "skills_detail": {
+      "must_have": [
+        {
+          "skill": "Python",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "Python",
+              "canonical_atom": "python",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "Docker",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "Docker",
+              "canonical_atom": "containerization",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "Kubernetes",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "Kubernetes",
+              "canonical_atom": "kubernetes",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "REST APIs",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "REST APIs",
+              "canonical_atom": "backend_engineering",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "PostgreSQL",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "well-tested code",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "well-tested code",
+              "canonical_atom": "well tested code",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "software engineering",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "software engineering",
+              "canonical_atom": "software engineering",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "JavaScript",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "JavaScript",
+              "canonical_atom": "javascript",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "TypeScript",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "TypeScript",
+              "canonical_atom": "typescript",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "AWS",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "AWS",
+              "canonical_atom": "cloud_platform",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "SQL",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "SQL",
+              "canonical_atom": "sql_relational_databases",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "CI/CD pipelines",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "CI/CD pipelines",
+              "canonical_atom": "ci_cd",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        },
+        {
+          "skill": "Write clean",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "Write clean",
+              "canonical_atom": "write clean",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ],
+          "evidence_source": "deterministic"
+        },
+        {
+          "skill": "JavaScript/TypeScript",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "JavaScript/TypeScript",
+              "canonical_atom": "javascript typescript",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ],
+          "evidence_source": "deterministic"
+        },
+        {
+          "skill": "especially PostgreSQL",
+          "present": true,
+          "status": "present",
+          "cv_where": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+          "matched_count": 1,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "PostgreSQL",
+              "canonical_atom": "postgresql",
+              "status": "present",
+              "verification_result": "present",
+              "confidence": "strong",
+              "evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "selected_evidence": "SKILLS: Python, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices",
+              "section": "skills",
+              "strict": true,
+              "requirement_type": "exact_tool",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "exact_tool",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "experience",
+                  "projects",
+                  "skills"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ],
+          "evidence_source": "deterministic"
+        },
+        {
+          "skill": "Deploy applications",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "Deploy applications",
+              "canonical_atom": "application_deployment",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ],
+          "evidence_source": "deterministic"
+        },
+        {
+          "skill": "machine learning concepts",
+          "present": false,
+          "status": "missing",
+          "cv_where": null,
+          "matched_count": 0,
+          "total_count": 1,
+          "atomic_breakdown": [
+            {
+              "requirement": "machine learning concepts",
+              "canonical_atom": "ai_development",
+              "status": "missing",
+              "verification_result": "missing",
+              "confidence": "missing",
+              "evidence": null,
+              "selected_evidence": null,
+              "section": null,
+              "strict": false,
+              "requirement_type": "general",
+              "group_id": null,
+              "group_mode": null,
+              "alternative_group": null,
+              "evidence_policy": {
+                "policy_type": "general",
+                "requested_signal_families": [],
+                "minimum_signal_families": 1,
+                "requires_action_evidence": false,
+                "allowed_sections": [
+                  "certifications",
+                  "education",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "summary"
+                ]
+              },
+              "matched_signal_families": [],
+              "selected_evidence_id": null
+            }
+          ]
+        }
+      ],
+      "nice_to_have": [],
+      "must_have_present": [
+        "Python",
+        "Docker",
+        "Kubernetes",
+        "REST APIs",
+        "PostgreSQL",
+        "JavaScript",
+        "TypeScript",
+        "AWS",
+        "SQL",
+        "JavaScript/TypeScript",
+        "especially PostgreSQL"
+      ],
+      "must_have_partial": [],
+      "must_have_missing": [
+        "well-tested code",
+        "software engineering",
+        "CI/CD pipelines",
+        "Write clean",
+        "Deploy applications",
+        "machine learning concepts"
+      ],
+      "nice_to_have_present": [],
+      "nice_to_have_partial": [],
+      "nice_to_have_missing": [],
+      "must_coverage": 64.71,
+      "nice_coverage": 0.0
+    },
+    "job_description": {
+      "source": "paste",
+      "char_count": 993,
+      "cleaned_char_count": 709,
+      "preflight": {
+        "source": "gemini",
+        "cleaned_job_description": "Build and maintain robust backend services using Python and FastAPI.\nDeploy applications using Docker and Kubernetes.\nCollaborate with frontend engineers to integrate RESTful APIs.\nOptimize database queries (PostgreSQL).\nWrite clean, maintainable, and well-tested code.\n3+ years of experience in software engineering.\nProficiency in Python and at least one other language (e.g., JavaScript/TypeScript, Go).\nExperience with cloud platforms (AWS, GCP, or Azure).\nFamiliarity with containerization (Docker, Kubernetes).\nStrong understanding of REST APIs and microservices architecture.\nExperience with SQL databases, especially PostgreSQL.\nExperience with CI/CD pipelines.\nKnowledge of machine learning concepts.",
+        "requirements": [
+          {
+            "text": "Build and maintain robust backend services using Python and FastAPI.",
+            "normalized": "build and maintain robust backend services using python and fastapi",
+            "action_phrases": [
+              "build maintain robust",
+              "maintain robust backend"
+            ],
+            "category": "essential"
+          },
+          {
+            "text": "Deploy applications using Docker and Kubernetes.",
+            "normalized": "deploy applications using docker and kubernetes",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Collaborate with frontend engineers to integrate RESTful APIs.",
+            "normalized": "collaborate with frontend engineers to integrate restful apis",
+            "action_phrases": [
+              "collaborate frontend engineers"
+            ],
+            "category": "essential"
+          },
+          {
+            "text": "Optimize database queries (PostgreSQL).",
+            "normalized": "optimize database queries postgresql",
+            "action_phrases": [
+              "optimize database queries"
+            ],
+            "category": "essential"
+          },
+          {
+            "text": "Write clean, maintainable, and well-tested code.",
+            "normalized": "write clean maintainable and well tested code",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "3+ years of experience in software engineering.",
+            "normalized": "3+ years of experience in software engineering",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Proficiency in Python and at least one other language (e.g., JavaScript/TypeScript, Go).",
+            "normalized": "proficiency in python and at least one other language e g javascript typescript go",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Experience with cloud platforms (AWS, GCP, or Azure).",
+            "normalized": "experience with cloud platforms aws gcp or azure",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Familiarity with containerization (Docker, Kubernetes).",
+            "normalized": "familiarity with containerization docker kubernetes",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Strong understanding of REST APIs and microservices architecture.",
+            "normalized": "strong understanding of rest apis and microservices architecture",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Experience with SQL databases, especially PostgreSQL.",
+            "normalized": "experience with sql databases especially postgresql",
+            "action_phrases": [],
+            "category": "essential"
+          },
+          {
+            "text": "Experience with CI/CD pipelines.",
+            "normalized": "experience with ci cd pipelines",
+            "action_phrases": [],
+            "category": "nice_to_have"
+          },
+          {
+            "text": "Knowledge of machine learning concepts.",
+            "normalized": "knowledge of machine learning concepts",
+            "action_phrases": [],
+            "category": "nice_to_have"
+          }
+        ],
+        "requirements_by_category": {
+          "essential": [
+            "Build and maintain robust backend services using Python and FastAPI.",
+            "Deploy applications using Docker and Kubernetes.",
+            "Collaborate with frontend engineers to integrate RESTful APIs.",
+            "Optimize database queries (PostgreSQL).",
+            "Write clean, maintainable, and well-tested code.",
+            "3+ years of experience in software engineering.",
+            "Proficiency in Python and at least one other language (e.g., JavaScript/TypeScript, Go).",
+            "Experience with cloud platforms (AWS, GCP, or Azure).",
+            "Familiarity with containerization (Docker, Kubernetes).",
+            "Strong understanding of REST APIs and microservices architecture.",
+            "Experience with SQL databases, especially PostgreSQL."
+          ],
+          "nice_to_have": [
+            "Experience with CI/CD pipelines.",
+            "Knowledge of machine learning concepts."
+          ]
+        },
+        "ats_keywords": {
+          "hard_skills": [
+            {
+              "skill": "Python",
+              "source": "preflight"
+            },
+            {
+              "skill": "Docker",
+              "source": "preflight"
+            },
+            {
+              "skill": "Kubernetes",
+              "source": "preflight"
+            },
+            {
+              "skill": "RESTful APIs",
+              "source": "preflight"
+            },
+            {
+              "skill": "PostgreSQL",
+              "source": "preflight"
+            },
+            {
+              "skill": "SQL",
+              "source": "preflight"
+            },
+            {
+              "skill": "CI/CD",
+              "source": "preflight"
+            },
+            {
+              "skill": "machine learning",
+              "source": "preflight"
+            },
+            {
+              "skill": "AWS",
+              "source": "local"
+            },
+            {
+              "skill": "TypeScript",
+              "source": "local"
+            },
+            {
+              "skill": "REST",
+              "source": "local"
+            },
+            {
+              "skill": "microservices",
+              "source": "local"
+            }
+          ],
+          "soft_skills": []
+        },
+        "quality": {
+          "makes_sense": true,
+          "confidence": "high",
+          "issues": [],
+          "excluded_noise": [
+            "We are looking for a Software Engineer to join our core backend team. You will be responsible for designing, building, and maintaining scalable APIs and microservices."
+          ]
+        }
+      }
+    }
+  },
+  "section_feedback": {
+    "summary": {
+      "verdict": "good",
+      "summary_line": "The summary effectively highlights 5+ years of experience and relevant backend system building, but could be more specific to the JD's core technologies.",
+      "strengths": [
+        "Highlights 5+ years of experience, aligning with the JD's requirement for 3+ years.",
+        "Mentions building scalable backend systems, a core requirement of the JD."
+      ],
+      "improvements": [
+        {
+          "issue": "The summary could explicitly mention Python and FastAPI, key technologies from the JD, to immediately signal alignment.",
+          "fix": "Consider rephrasing to: 'Experienced Software Engineer with 5+ years of experience building scalable backend systems using Python and FastAPI, and robust data pipelines.'"
+        },
+        {
+          "issue": "The summary could also briefly touch upon cloud and containerization experience, which are critical JD requirements.",
+          "fix": "Consider adding: '...and experience with cloud platforms and containerization.'"
+        }
+      ]
+    },
+    "experience": {
+      "verdict": "strong",
+      "summary_line": "The experience section strongly aligns with the JD, showcasing direct application of Python, REST APIs, PostgreSQL, Docker, and Kubernetes.",
+      "strengths": [
+        "The TechCorp role bullet 'Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda...' directly addresses Python, cloud (AWS Lambda), and backend service development.",
+        "The StartupInc role bullet 'Containerized applications using Docker and deployed to Kubernetes.' directly matches the JD's requirement for containerization and orchestration."
+      ],
+      "improvements": [
+        {
+          "issue": "The TechCorp role bullet 'Automated operational processes reducing manual workload by 40%' could be more specific about the technologies used for automation, especially if Python was involved.",
+          "fix": "If Python was used for automation, consider: 'Automated operational processes using Python, reducing manual workload by 40%.'"
+        },
+        {
+          "issue": "The StartupInc role bullet 'Managed database schemas in PostgreSQL and optimized queries for performance.' could quantify the performance improvement achieved through query optimization.",
+          "fix": "If specific metrics are available, add them: 'Managed database schemas in PostgreSQL and optimized queries, resulting in X% faster response times.'"
+        }
+      ]
+    },
+    "projects": {
+      "verdict": "weak",
+      "summary_line": "The absence of a projects section is a significant gap, especially for demonstrating hands-on experience with specific technologies not fully covered in work experience.",
+      "strengths": [],
+      "improvements": [
+        {
+          "issue": "The CV is missing a dedicated 'Projects' section, which is crucial for showcasing personal initiative and deeper dives into technologies relevant to the JD.",
+          "fix": "Add a 'Projects' section and include 1-2 personal projects that demonstrate experience with Python, FastAPI, Docker, Kubernetes, or PostgreSQL, detailing the problem solved and technologies used."
+        }
+      ]
+    },
+    "skills": {
+      "verdict": "strong",
+      "summary_line": "The skills section is a strong match for the JD, listing all key technical requirements explicitly.",
+      "strengths": [
+        "Directly lists 'Python', 'FastAPI' (implied by REST APIs and Microservices, but could be explicit), 'Docker', 'Kubernetes', and 'PostgreSQL', all core JD requirements.",
+        "Includes 'AWS', 'REST APIs', and 'Microservices', further reinforcing alignment with the JD."
+      ],
+      "improvements": [
+        {
+          "issue": "While 'REST APIs' and 'Microservices' are listed, explicitly adding 'FastAPI' would provide an immediate and precise match to a key JD technology.",
+          "fix": "Add 'FastAPI' to the skills list."
+        },
+        {
+          "issue": "The JD mentions CI/CD pipelines, which is not explicitly listed in the skills section.",
+          "fix": "Add 'CI/CD Pipelines' to the skills list."
+        }
+      ]
+    },
+    "education": {
+      "verdict": "weak",
+      "summary_line": "The absence of an education section means critical information about the candidate's foundational knowledge is missing.",
+      "strengths": [],
+      "improvements": [
+        {
+          "issue": "The CV is missing an 'Education' section, which is standard for professional resumes and provides context for the candidate's academic background.",
+          "fix": "Add an 'Education' section detailing degree(s), major(s), university name(s), and graduation year(s)."
+        }
+      ]
+    }
+  },
+  "candidate_profile": {
+    "industry_domains": [],
+    "location": "London, UK",
+    "management_experience": {
+      "has_managed": false,
+      "max_team_size": null
+    },
+    "employment_gaps": [
+      {
+        "start": "01/2019",
+        "end": "01/2020",
+        "duration_months": 12
+      }
+    ],
+    "languages": [
+      {
+        "language": "English",
+        "proficiency": "Native"
+      }
+    ],
+    "links": {
+      "linkedin": null,
+      "github": "github.com/johndoe",
+      "portfolio": null,
+      "other": []
+    },
+    "quantified_achievements": [
+      "Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+      "Automated operational processes reducing manual workload by 40%."
+    ],
+    "achievements": []
+  },
+  "cv_sections_analysis": {
+    "overall_quality_score": 75,
+    "career_narrative": "John Doe progressed from a Software Engineer role at StartupInc to a Senior Software Engineer at TechCorp, focusing on backend systems and data pipelines.",
+    "ats_compatibility": {
+      "score": 90,
+      "issues": [],
+      "strengths": [
+        "Uses common keywords from the job description.",
+        "Clear section headings.",
+        "Standard date formats."
+      ]
+    },
+    "red_flags": [
+      "Unexplained 12-month gap between 01/2019 and 01/2020."
+    ],
+    "interview_questions": [
+      "Can you elaborate on the 40% reduction in manual workload you achieved? What specific processes were automated, and what was your role in that automation?",
+      "Walk me through the design and maintenance of the backend pipelines at TechCorp. What were some of the key challenges you faced?",
+      "You mention integrating REST APIs for microservices. Can you describe a specific instance where you had to overcome a complex integration challenge?",
+      "What was your experience like containerizing applications with Docker and deploying to Kubernetes at StartupInc? What were the main benefits you observed?",
+      "Could you explain the reason for the 12-month employment gap between StartupInc and TechCorp?",
+      "While you list Python and Node.js, the job description emphasizes FastAPI. Can you discuss your experience or learning curve with FastAPI?"
+    ],
+    "sections": {
+      "intro": {
+        "score": 70,
+        "grade": "B",
+        "strengths": [
+          "Highlights relevant experience (backend systems, data pipelines).",
+          "Mentions years of experience."
+        ],
+        "issues": [
+          "Generic, could be more tailored to the specific job description.",
+          "Doesn't mention specific technologies like FastAPI or CI/CD."
+        ],
+        "rewrite": "Experienced Software Engineer with 5+ years of expertise in building scalable backend systems and robust data pipelines. Proficient in Python, Node.js, and cloud platforms like AWS, with a strong understanding of microservices and REST APIs. Eager to leverage these skills to develop and maintain backend services using Python and FastAPI."
+      },
+      "skills": {
+        "score": 85,
+        "grade": "A",
+        "strengths": [
+          "Covers many key technologies mentioned in the job description.",
+          "Includes both programming languages and relevant tools/platforms."
+        ],
+        "issues": [
+          "FastAPI is not explicitly listed.",
+          "CI/CD is not explicitly listed.",
+          "Machine learning concepts are not listed."
+        ],
+        "jd_skills_present": [
+          "Python",
+          "JavaScript",
+          "TypeScript",
+          "Node.js",
+          "React",
+          "AWS",
+          "Docker",
+          "Kubernetes",
+          "PostgreSQL",
+          "SQL",
+          "REST APIs",
+          "Microservices"
+        ],
+        "jd_skills_missing": [
+          "FastAPI",
+          "CI/CD pipelines",
+          "Machine learning concepts"
+        ],
+        "listed_but_unevidenced": []
+      },
+      "experience": {
+        "score": 75,
+        "grade": "B",
+        "overall_strengths": [
+          "Quantified achievements (40% reduction).",
+          "Uses action verbs.",
+          "Demonstrates experience with key technologies from the JD."
+        ],
+        "overall_issues": [
+          "Some bullets could be stronger with more specific impact or context.",
+          "Lack of mention of FastAPI, CI/CD, and ML concepts in work bullets.",
+          "The 12-month gap needs to be addressed."
+        ],
+        "roles": [
+          {
+            "company": "TechCorp",
+            "title": "Senior Software Engineer",
+            "dates": "01/2020 \u2013 Present",
+            "role_score": 80,
+            "quantification_rate": "1/3 bullets have metrics",
+            "bullets": [
+              {
+                "text": "Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.",
+                "quality": "good",
+                "issue": null,
+                "rewrite": null
+              },
+              {
+                "text": "Automated operational processes reducing manual workload by 40%.",
+                "quality": "strong",
+                "issue": null,
+                "rewrite": null
+              },
+              {
+                "text": "Integrated REST APIs for seamless data flow across microservices.",
+                "quality": "good",
+                "issue": null,
+                "rewrite": null
+              }
+            ]
+          },
+          {
+            "company": "StartupInc",
+            "title": "Software Engineer",
+            "dates": "06/2017 \u2013 12/2019",
+            "role_score": 70,
+            "quantification_rate": "0/3 bullets have metrics",
+            "bullets": [
+              {
+                "text": "Developed full-stack applications using React, TypeScript, and Express.",
+                "quality": "good",
+                "issue": null,
+                "rewrite": null
+              },
+              {
+                "text": "Managed database schemas in PostgreSQL and optimized queries for performance.",
+                "quality": "good",
+                "issue": null,
+                "rewrite": null
+              },
+              {
+                "text": "Containerized applications using Docker and deployed to Kubernetes.",
+                "quality": "good",
+                "issue": null,
+                "rewrite": null
+              }
+            ]
+          }
+        ]
+      },
+      "education": {
+        "score": null,
+        "grade": "N/A",
+        "strengths": [],
+        "issues": [
+          "Education section is empty."
+        ]
+      },
+      "projects": {
+        "score": null,
+        "grade": "N/A",
+        "strengths": [],
+        "issues": [
+          "Projects section is empty."
+        ]
+      }
+    }
+  },
+  "ats_keywords": {
+    "hard_skills": [
+      {
+        "skill": "Python",
+        "jd_count": 2,
+        "cv_count": 2,
+        "status": "present"
+      },
+      {
+        "skill": "Docker",
+        "jd_count": 2,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "Kubernetes",
+        "jd_count": 2,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "PostgreSQL",
+        "jd_count": 2,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "REST APIs",
+        "jd_count": 2,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "microservices",
+        "jd_count": 1,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "software engineering",
+        "jd_count": 1,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "TypeScript",
+        "jd_count": 1,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "AWS",
+        "jd_count": 1,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "SQL",
+        "jd_count": 1,
+        "cv_count": 1,
+        "status": "present"
+      },
+      {
+        "skill": "CI/CD pipelines",
+        "jd_count": 1,
+        "cv_count": 0,
+        "status": "missing"
+      },
+      {
+        "skill": "well-tested code",
+        "jd_count": 1,
+        "cv_count": 0,
+        "status": "missing"
+      }
+    ],
+    "soft_skills": []
+  },
+  "debug": {
+    "job_preflight": {
+      "source": "gemini",
+      "requirements_count": 13,
+      "quality": {
+        "makes_sense": true,
+        "confidence": "high",
+        "issues": [],
+        "excluded_noise": [
+          "We are looking for a Software Engineer to join our core backend team. You will be responsible for designing, building, and maintaining scalable APIs and microservices."
+        ]
+      }
+    },
+    "parse_method": "gemini",
+    "missing_keywords_count": 6,
+    "missing_keywords_sample": [
+      "well-tested code",
+      "software engineering",
+      "CI/CD pipelines",
+      "Write clean",
+      "Deploy applications",
+      "machine learning concepts"
+    ],
+    "coverage_must": 64.71,
+    "coverage_nice": 0.0,
+    "responsibility_match_score": 38.77,
+    "experience_match_score": 72.44,
+    "skills_match_score": 55.0,
+    "semantic_score": 70.36,
+    "weights": {
+      "responsibility": 0.7,
+      "experience": 0.1,
+      "skills": 0.1,
+      "semantic": 0.1
+    },
+    "skills_loaded": 296,
+    "skills_path": "data/skills.json",
+    "resume_excerpt": "John Doe - Software Engineer\nJohn Doe\nLocation: London, UK | Email: john.doe@example.com | GitHub: github.com/johndoe\nSUMMARY\nExperienced Software Engineer with 5+ years of experience building scalable backend systems and robust data pipelines.\nEXPERIENCE\nSenior Software Engineer @ TechCorp\nJan 2020 - Present\n- Designed and maintained backend pipelines using Python, Node.js, and AWS Lambda, supporting 60+ active users.\n- Automated operational processes reducing manual workload by 40%.\n- Integrated REST APIs for seamless data flow across microservices.\nSoftware Engineer @ StartupInc\nJun 2017 - Dec 2019\n- Developed full-stack applications using React, TypeScript, and Express.\n- Managed database schemas in PostgreSQL and optimized queries for performance.\n- Containerized applications using Docker and deployed to Kubernetes.\nSKILLS\nPython, JavaScript, TypeScript, Node.js, React, AWS, Docker, Kubernetes, PostgreSQL, SQL, REST APIs, Microservices.",
+    "responsibilities_detected": 13,
+    "analysis_cache": {
+      "hit": false,
+      "key": "6afe4abfa268d86a13911fd097b51f582dfa3795d76e2997e9a51eda4dbde0e7",
+      "max_entries": 256,
+      "persistent": true,
+      "scorer_version": "2026-05-30.jd-preflight-v14"
+    },
+    "gemini_seed": 1337,
+    "scorer_version": "2026-05-30.jd-preflight-v14"
+  },
+  "score_breakdown": {
+    "current_score": 47,
+    "potential_score": 94,
+    "verdict_line": "You have a foundation but several gaps are pulling the score down. Addressing the items below could get you to 94.",
+    "factors_pulling_down": [
+      {
+        "label": "5 essential responsibilities not evidenced",
+        "points_lost": 20,
+        "fix": "Add bullets that explicitly evidence: Collaborate with frontend engineers to integrate RESTful APIs.; Write clean, maintainable, and well-tested code.; 3+ years of experience in software engineering."
+      },
+      {
+        "label": "6 responsibilities only partially evidenced",
+        "points_lost": 15,
+        "fix": "Strengthen evidence with metrics or exact-keyword bullets for: Build and maintain robust backend services using Python and FastAPI.; Deploy applications using Docker and Kubernetes.; Optimize database queries (PostgreSQL)."
+      },
+      {
+        "label": "6 must-have skills missing from CV",
+        "points_lost": 12,
+        "fix": "Add to your skills/tools section if you have any experience with: well-tested code, software engineering, CI/CD pipelines, Write clean, Deploy applications"
+      }
+    ],
+    "factors_pulling_up": [
+      "1 responsibility clearly evidenced in your experience",
+      "11 of 17 must-have skills already in your CV"
+    ]
+  },
+  "user": {
+    "id": 1,
+    "email": "test@example.com",
+    "tier": "free",
+    "email_verified": false,
+    "lifetime_scans": 1,
+    "scans_remaining": 1,
+    "free_tier_limit": 2
+  }
+}
