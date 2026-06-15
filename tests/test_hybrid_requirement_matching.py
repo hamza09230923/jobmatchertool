@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -51,6 +52,68 @@ def sample_resume():
         ],
         "work_experience": [],
     }
+
+
+def transferable_action_resume():
+    resume_text = """
+    Experience
+    Worked across product, engineering and stakeholder needs to clarify requirements,
+    define practical solutions and deliver features aligned with user outcomes.
+    Delivered production features within a seven-person Agile team and participated in code reviews.
+    Identified and corrected machine learning pipeline data leakage.
+    Evaluated new AI technologies through selected data projects.
+    """
+    return {
+        "_resume_text": resume_text,
+        "summary": "",
+        "skills": ["Python", "testing"],
+        "tools": [],
+        "projects": [
+            {
+                "name": "AI evaluation projects",
+                "tech_stack": ["Python"],
+                "bullets": ["Evaluated new AI technologies through selected data projects."],
+            }
+        ],
+        "work_experience": [
+            {
+                "company": "Example",
+                "role": "Developer",
+                "bullets": [
+                    "Worked across product, engineering and stakeholder needs to clarify requirements, define practical solutions and deliver features aligned with user outcomes.",
+                    "Delivered production features within a seven-person Agile team and participated in code reviews.",
+                    "Identified and corrected machine learning pipeline data leakage.",
+                ],
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "Analyzing requirements and implementing new features",
+        "Collaborating closely with other developers",
+        "Debugging complicated engineering and operational problems",
+    ],
+)
+def test_general_responsibilities_match_transferable_action_evidence(requirement):
+    parsed_resume = transferable_action_resume()
+
+    result = main.aggregate_requirement_evidence(requirement, parsed_resume, parsed_resume["_resume_text"])
+
+    assert result["status"] in {"present", "partial"}
+    assert result["matched_count"] >= 1
+
+
+def test_transferable_action_matching_does_not_satisfy_explicit_tools():
+    parsed_resume = transferable_action_resume()
+
+    linux = main.aggregate_requirement_evidence("Basic Linux knowledge", parsed_resume, parsed_resume["_resume_text"])
+    kafka = main.aggregate_requirement_evidence("Experience with Kafka", parsed_resume, parsed_resume["_resume_text"])
+
+    assert linux["status"] == "missing"
+    assert kafka["status"] == "missing"
 
 
 def degree_resume():
@@ -146,6 +209,813 @@ def test_gemini_responsibility_match_downgrades_trading_project_to_partial(monke
         atom["requirement"].lower() in {"equities", "options"} and atom["status"] == "missing"
         for atom in match["atomic_breakdown"]
     )
+
+
+def test_requirement_decomposition_removes_labels_and_duplicate_concepts():
+    atoms = main.decompose_requirement_text(
+        "Software Engineering Fundamentals: A demonstrable understanding of version control "
+        "and repository tools (Git, CI/CD) and a commitment to writing clean, well-documented code."
+    )
+    concepts = [main._requirement_concept_key(atom["text"]) for atom in atoms]
+    normalized = [atom["normalized"] for atom in atoms]
+
+    assert "software engineering fundamentals" not in normalized
+    assert concepts.count("version_control") == 1
+    assert concepts.count("ci_cd") == 1
+    assert concepts.count("clean_documented_code") == 1
+
+
+def test_find_cv_evidence_prefers_concrete_project_over_skills_list():
+    parsed = parsed_resume(
+        resume_text="""
+        Skills
+        Python, SQL
+        Projects
+        Built a Python service that queried MySQL relational tables and generated operational reports.
+        """,
+        skills=["Python", "SQL"],
+        projects=[
+            {
+                "name": "Operational Reporting",
+                "tech_stack": ["Python", "MySQL"],
+                "bullets": ["Built a Python service that queried MySQL relational tables and generated operational reports."],
+            }
+        ],
+    )
+
+    result = main.find_cv_evidence_for_requirement(
+        "Experience with SQL for querying relational databases",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    assert result is not None
+    assert result["section"] == "projects"
+    assert "queried MySQL relational tables" in result["evidence"]
+
+
+def test_skill_items_dedupe_equivalent_requirement_wording():
+    items = [
+        {"skill": "Git", "status": "present", "present": True},
+        {"skill": "version control", "status": "missing", "present": False},
+        {"skill": "repository tools", "status": "missing", "present": False},
+        {"skill": "SQL", "status": "present", "present": True},
+        {"skill": "SQL for querying relational databases", "status": "missing", "present": False},
+    ]
+
+    result = main._dedupe_skill_items(items)
+
+    assert [item["skill"] for item in result] == ["Git", "SQL"]
+
+
+def test_gemini_responsibility_score_uses_atomic_coverage_and_downweights_desirables(monkeypatch):
+    parsed = parsed_resume(
+        resume_text="Skills\nPython\nEducation\nBSc Computer Science",
+        skills=["Python"],
+        education=[{"degree": "BSc Computer Science", "institution": "Nottingham"}],
+    )
+    fake_json = """
+    {
+      "matches": [
+        {"index": 1, "responsibility": "Strong Python programming and data structures and algorithms", "evidence": "SKILLS: Python", "confidence": "partial"}
+      ],
+      "missing": [
+        {"index": 2, "responsibility": "Master's degree or PhD", "gap": "No postgraduate degree"}
+      ]
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [
+        {
+            "text": "Strong Python programming and data structures and algorithms",
+            "normalized": main.normalize_phrase("Strong Python programming and data structures and algorithms"),
+            "action_phrases": [],
+            "category": "essential",
+        },
+        {
+            "text": "Master's degree or PhD",
+            "normalized": main.normalize_phrase("Master's degree or PhD"),
+            "action_phrases": [],
+            "category": "nice_to_have",
+        },
+    ]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+
+    assert 25 < result["score"] < 50
+    assert result["matched_responsibilities"][0]["similarity"] < 1
+
+
+def test_responsibility_candidate_retrieval_ranks_direct_evidence_above_unrelated_lines():
+    parsed = parsed_resume(
+        resume_text="""
+        Experience
+        Analysed marketing funnel performance and prepared campaign reports.
+        Built Python APIs backed by MySQL and wrote SQL queries for operational reporting.
+        """,
+        work_experience=[
+            {
+                "title": "Engineer",
+                "company": "Example",
+                "bullets": [
+                    "Analysed marketing funnel performance and prepared campaign reports.",
+                    "Built Python APIs backed by MySQL and wrote SQL queries for operational reporting.",
+                ],
+            }
+        ],
+    )
+    responsibility = {
+        "text": "Experience with SQL for querying relational databases",
+        "normalized": main.normalize_phrase("Experience with SQL for querying relational databases"),
+        "action_phrases": [],
+        "category": "essential",
+    }
+
+    candidates = main.retrieve_responsibility_evidence_candidates([responsibility], parsed)
+
+    assert "wrote SQL queries" in candidates[responsibility["normalized"]][0]["text"]
+
+
+def test_atom_candidate_retrieval_uses_stable_ids_and_cv_lines_only():
+    parsed = parsed_resume(
+        resume_text="Projects\nBuilt a Python API.\nExperience\nPrepared monthly reports.",
+        projects=[{"name": "API", "bullets": ["Built a Python API."]}],
+        work_experience=[{"title": "Analyst", "company": "Example", "bullets": ["Prepared monthly reports."]}],
+    )
+    responsibilities = [{
+        "text": "Build APIs and communicate progress",
+        "normalized": main.normalize_phrase("Build APIs and communicate progress"),
+        "action_phrases": [],
+        "category": "essential",
+    }]
+
+    packets, candidates = main.retrieve_atom_evidence_candidates(responsibilities, parsed)
+
+    assert {packet["atom_id"] for packet in packets} == {"r1a1", "r1a2"}
+    assert all(item["evidence_id"].startswith(atom_id) for atom_id, items in candidates.items() for item in items)
+    assert all(
+        item["text"] in {unit["text"] for unit in main.evidence_units_from_parsed(parsed)}
+        for items in candidates.values()
+        for item in items
+    )
+
+
+def test_gemini_atom_match_rejects_evidence_id_outside_atom_packet(monkeypatch):
+    parsed = parsed_resume(
+        resume_text="Experience\nPrepared monthly reports.",
+        work_experience=[{"title": "Analyst", "company": "Example", "bullets": ["Prepared monthly reports."]}],
+    )
+    fake_json = json.dumps({
+        "atom_matches": [
+            {"atom_id": "r1a1", "evidence_id": "r99a99e1", "confidence": "strong"}
+        ],
+        "atom_missing": [],
+    })
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [{
+        "text": "Design distributed systems",
+        "normalized": main.normalize_phrase("Design distributed systems"),
+        "action_phrases": [],
+        "category": "essential",
+    }]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+
+    assert result["matched_responsibilities"] == []
+    assert result["missing_responsibilities"][0]["verification_debug"]["matched_count"] == 0
+
+
+def test_gemini_atom_match_uses_grounded_cv_evidence_id(monkeypatch):
+    evidence = "[Project: Platform] Built and tested an application using Git and Docker for deployment."
+    parsed = parsed_resume(
+        resume_text=f"Projects\n{evidence}",
+        projects=[{"name": "Platform", "bullets": ["Built and tested an application using Git and Docker for deployment."]}],
+    )
+    fake_json = json.dumps({
+        "atom_matches": [
+            {"atom_id": "r1a1", "evidence_id": "r1a1e2", "confidence": "strong"}
+        ],
+        "atom_missing": [],
+    })
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [{
+        "text": "Interest in modern development practices",
+        "normalized": main.normalize_phrase("Interest in modern development practices"),
+        "action_phrases": [],
+        "category": "essential",
+    }]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+    match = result["matched_responsibilities"][0]
+
+    assert match["confidence"] == "partial"
+    assert match["verification_debug"]["atomic_breakdown"][0]["selected_evidence_id"] == "r1a1e2"
+    assert match["evidence"] == evidence
+
+
+def test_gemini_responsibility_match_rejects_evidence_not_in_retrieved_candidates(monkeypatch):
+    parsed = parsed_resume(
+        resume_text="Experience\nAnalysed marketing funnel performance.",
+        work_experience=[
+            {
+                "title": "Analyst",
+                "company": "Example",
+                "bullets": ["Analysed marketing funnel performance."],
+            }
+        ],
+    )
+    fake_json = """
+    {
+      "matches": [
+        {
+          "index": 1,
+          "responsibility": "Experience designing distributed systems",
+          "evidence": "[Engineer @ InventedCo] Designed distributed systems using replication and sharding.",
+          "confidence": "strong"
+        }
+      ],
+      "missing": []
+    }
+    """
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [
+        {
+            "text": "Experience designing distributed systems",
+            "normalized": main.normalize_phrase("Experience designing distributed systems"),
+            "action_phrases": [],
+            "category": "essential",
+        }
+    ]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+
+    assert result["matched_responsibilities"] == []
+    assert len(result["missing_responsibilities"]) == 1
+
+
+def test_broad_responsibility_is_not_proved_by_skills_line_only(monkeypatch):
+    parsed = parsed_resume(
+        resume_text="Skills\nAnalytical problem solving, stakeholder management",
+        skills=["Analytical problem solving", "stakeholder management"],
+    )
+    skills_line = main.cv_skills_evidence_line(parsed)
+    fake_json = json.dumps({
+        "matches": [
+            {
+                "index": 1,
+                "responsibility": "Break down complex operational problems into manageable steps",
+                "evidence": skills_line,
+                "confidence": "strong",
+            }
+        ],
+        "missing": [],
+    })
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [
+        {
+            "text": "Break down complex operational problems into manageable steps",
+            "normalized": main.normalize_phrase("Break down complex operational problems into manageable steps"),
+            "action_phrases": [],
+            "category": "essential",
+        }
+    ]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+
+    assert result["matched_responsibilities"] == []
+    assert len(result["missing_responsibilities"]) == 1
+
+
+def test_learning_product_feature_does_not_prove_eagerness_to_learn(monkeypatch):
+    evidence = (
+        "Implemented AI-driven features including quiz generation and content "
+        "summarisation using Hugging Face, adding intelligent learning functionality."
+    )
+    parsed = parsed_resume(
+        resume_text=f"Projects\n{evidence}",
+        projects=[{"name": "Learning Platform", "tech_stack": ["Hugging Face"], "bullets": [evidence]}],
+    )
+    fake_json = json.dumps({
+        "matches": [
+            {
+                "index": 1,
+                "responsibility": "A proactive attitude towards self-development and learning new skills",
+                "evidence": evidence,
+                "confidence": "strong",
+            }
+        ],
+        "missing": [],
+    })
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(fake_json))
+    responsibilities = [
+        {
+            "text": "A proactive attitude towards self-development and learning new skills",
+            "normalized": main.normalize_phrase(
+                "A proactive attitude towards self-development and learning new skills"
+            ),
+            "action_phrases": [],
+            "category": "essential",
+        }
+    ]
+
+    result = main.gemini_responsibility_match(responsibilities, parsed)
+
+    assert result["matched_responsibilities"] == []
+    assert len(result["missing_responsibilities"]) == 1
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence",
+    [
+        (
+            "Hands-on experience with cloud platforms",
+            "[Engineer @ Example] Built Python and AWS Lambda automation workflows that reduced manual workload by 70%.",
+        ),
+        (
+            "Deliver data engineering solutions and pipelines",
+            "[Engineer @ Example] Designed and maintained backend data systems and pipelines for large datasets.",
+        ),
+        (
+            "Experience with end-to-end development of AI or Machine Learning features",
+            "[Project: Predictor] Built and deployed a machine learning pipeline with feature engineering and XGBoost.",
+        ),
+        (
+            "Calibrate optical sensors before each production run",
+            "[Engineer @ Example] Calibrated optical sensors before production runs and documented the results.",
+        ),
+    ],
+)
+def test_general_capability_verifier_accepts_action_based_core_evidence(requirement, evidence):
+    assert main._evidence_proves_any_core_concept(requirement, evidence)
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence",
+    [
+        (
+            "Hands-on experience with cloud platforms",
+            "[Analyst @ Example] Analysed marketing funnel performance and prepared campaign reports.",
+        ),
+        (
+            "Deliver data engineering solutions and pipelines",
+            "[Project: Learning Platform] Implemented quiz generation and content summarisation.",
+        ),
+        (
+            "Calibrate optical sensors before each production run",
+            "[Researcher @ Example] Preserved archaeological samples under controlled humidity.",
+        ),
+        (
+            "Technical leadership within an engineering team",
+            "[Developer @ Example] Delivered a feature within a seven-person Agile team.",
+        ),
+    ],
+)
+def test_general_capability_verifier_rejects_generic_or_unrelated_evidence(requirement, evidence):
+    assert not main._evidence_proves_any_core_concept(requirement, evidence)
+
+
+def test_general_capability_verifier_rejects_skills_only_evidence():
+    assert not main._evidence_proves_any_core_concept(
+        "Hands-on experience with cloud platforms",
+        "SKILLS: AWS, Azure, GCP",
+    )
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence,canonical",
+    [
+        (
+            "Assist in automation and agent development to help scale solutions",
+            "[Engineer @ Example] Automated operational workflows using Python and AWS Lambda.",
+            "automation",
+        ),
+        (
+            "Exposure to AI development techniques",
+            "[Project: Predictor] Built an AI-powered forecasting model using XGBoost and FinBERT.",
+            "ai_development",
+        ),
+        (
+            "Support application deployment activities",
+            "[Project: Platform] Containerised the application and deployed it through GitHub Actions to AWS ECR.",
+            "application_deployment",
+        ),
+        (
+            "Exposure to coding and scripting",
+            "[Project: Platform] Built a full-stack platform using Python, FastAPI, and JavaScript.",
+            "software_development",
+        ),
+    ],
+)
+def test_canonical_capability_equivalence_accepts_action_based_evidence(
+    requirement,
+    evidence,
+    canonical,
+):
+    assert canonical in main._canonical_capability_keys(requirement)
+    assert main._evidence_proves_any_core_concept(requirement, evidence)
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence",
+    [
+        (
+            "Exposure to AI development techniques",
+            "[Analyst @ Example] Automated monthly spreadsheet reporting.",
+        ),
+        (
+            "Support application deployment activities",
+            "[Analyst @ Example] Monitored marketing campaign performance.",
+        ),
+        (
+            "Assist in automation",
+            "SKILLS: Python, AWS Lambda, workflow automation",
+        ),
+    ],
+)
+def test_canonical_capability_equivalence_rejects_unrelated_or_skills_only_evidence(
+    requirement,
+    evidence,
+):
+    assert not main._evidence_proves_any_core_concept(requirement, evidence)
+
+
+def test_early_career_coding_exposure_is_proved_by_project_delivery():
+    parsed = parsed_resume(
+        resume_text="Projects\nBuilt a full-stack CV matching platform using Python and FastAPI.",
+        projects=[
+            {
+                "name": "CV Matcher",
+                "tech_stack": ["Python", "FastAPI"],
+                "bullets": ["Built a full-stack CV matching platform using Python and FastAPI."],
+            }
+        ],
+    )
+
+    result = main.aggregate_requirement_evidence(
+        "Some exposure to coding or scripting through university, personal projects, or placements",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert all(item.get("group_status") == "present" for item in result["atomic_breakdown"])
+
+
+def test_compound_capabilities_are_normalized_matched_and_aggregated_by_atom():
+    parsed = parsed_resume(
+        resume_text=(
+            "Experience\nAutomated operational workflows using Python and AWS Lambda.\n"
+            "Projects\nBuilt an AI-powered full-stack platform and deployed it with Docker and GitHub Actions."
+        ),
+        work_experience=[
+            {
+                "title": "Engineer",
+                "company": "Example",
+                "bullets": ["Automated operational workflows using Python and AWS Lambda."],
+            }
+        ],
+        projects=[
+            {
+                "name": "AI Platform",
+                "tech_stack": ["Python", "Docker", "GitHub Actions"],
+                "bullets": ["Built an AI-powered full-stack platform and deployed it with Docker and GitHub Actions."],
+            }
+        ],
+    )
+
+    result = main.aggregate_requirement_evidence(
+        "Exposure to coding, automation, AI development and application deployment",
+        parsed,
+        parsed["_resume_text"],
+    )
+    statuses = {
+        main.normalize_phrase(item["requirement"]): item["status"]
+        for item in result["atomic_breakdown"]
+    }
+
+    assert result["status"] == "partial"
+    assert result["coverage_ratio"] == 0.25
+    assert statuses == {
+        "exposure to coding": "present",
+        "automation": "missing",
+        "ai development": "missing",
+        "application deployment": "missing",
+    }
+
+
+def test_zero_verified_atoms_forces_missing_even_when_parent_or_ai_match_exists(monkeypatch):
+    requirement = "Build dashboards and maintain data pipelines"
+    parent_evidence = "[Developer @ Example] Delivered technical work across the platform."
+
+    def parent_only_match(candidate, parsed, resume_text=""):
+        if candidate == requirement:
+            return {"evidence": parent_evidence, "section": "experience", "confidence": "partial"}
+        return None
+
+    monkeypatch.setattr(main, "find_cv_evidence_for_requirement", parent_only_match)
+    result = main.aggregate_requirement_evidence(
+        requirement,
+        parsed_resume(resume_text=parent_evidence),
+        parent_evidence,
+        ai_present=True,
+        ai_evidence=parent_evidence,
+        ai_confidence="partial",
+    )
+
+    assert result["matched_count"] == 0
+    assert result["status"] == "missing"
+    assert result["final_score"] == 0
+
+
+def test_one_strong_alternative_satisfies_group_without_penalizing_missing_options():
+    parsed = parsed_resume(resume_text="Skills\nVue", skills=["Vue"])
+
+    result = main.aggregate_requirement_evidence(
+        "Experience with React, Angular, or Vue",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert result["matched_count"] == 1
+    assert result["missing_count"] == 0
+    assert result["total_count"] == 1
+    assert result["scoring_units"][0]["satisfied_by"] == "vue"
+
+
+@pytest.mark.parametrize(
+    "variant,canonical",
+    [
+        ("CI/CD", "ci_cd"),
+        ("ci cd", "ci_cd"),
+        ("CI-CD", "ci_cd"),
+        ("cicd", "ci_cd"),
+        ("continuous integration and deployment", "ci_cd"),
+        ("Node", "node_js"),
+        ("Node.js", "node_js"),
+        ("C sharp", "c_sharp"),
+        (".NET", "dotnet"),
+        ("JS", "javascript"),
+    ],
+)
+def test_exact_alias_variants_use_same_canonical_key(variant, canonical):
+    assert main.exact_alias_key(variant) == canonical
+
+
+def test_exact_alias_registry_does_not_match_unrelated_named_tools():
+    assert main.exact_alias_key("Java") is None
+    assert main.classify_requirement_evidence_match(
+        "Experience with JavaScript",
+        "SKILLS: Java",
+    ) is None
+
+
+@pytest.mark.parametrize("evidence_variant", ["CI/CD", "CI-CD", "cicd", "continuous integration and deployment"])
+def test_exact_alias_variants_can_verify_same_named_tool(evidence_variant):
+    parsed = parsed_resume(resume_text=f"Skills\n{evidence_variant}", skills=[evidence_variant])
+
+    result = main.aggregate_requirement_evidence(
+        "Experience with CI/CD",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    assert result["status"] == "present"
+    assert result["atomic_breakdown"][0]["canonical_atom"] == "ci_cd"
+
+
+def test_evidence_for_one_atom_cannot_prove_a_different_atom():
+    parsed = parsed_resume(resume_text="Skills\nPython", skills=["Python"])
+
+    result = main.aggregate_requirement_evidence(
+        "Python and Java",
+        parsed,
+        parsed["_resume_text"],
+    )
+    statuses = {
+        main.normalize_phrase(item["requirement"]): item["status"]
+        for item in result["atomic_breakdown"]
+    }
+
+    assert statuses == {"python": "present", "java": "missing"}
+    assert result["status"] == "partial"
+    assert result["matched_count"] == 1
+    assert result["missing_count"] == 1
+
+
+@pytest.mark.parametrize("formal_atom", ["internship experience", "placement experience"])
+def test_founder_evidence_does_not_prove_formal_early_career_programmes(formal_atom):
+    evidence = "[Co-Founder @ Example] Built a full-stack platform used by 60 customers."
+    parsed = parsed_resume(
+        resume_text=evidence,
+        work_experience=[{"title": "Co-Founder", "company": "Example", "bullets": [evidence]}],
+    )
+
+    result = main.aggregate_requirement_evidence(formal_atom, parsed, parsed["_resume_text"])
+
+    assert result["status"] == "missing"
+    assert result["matched_count"] == 0
+
+
+def test_project_evidence_proves_coding_exposure_only_with_technical_delivery_signal():
+    technical = parsed_resume(
+        resume_text="Projects\nBuilt a Python API for processing job applications.",
+        projects=[{"name": "API", "bullets": ["Built a Python API for processing job applications."]}],
+    )
+    nontechnical = parsed_resume(
+        resume_text="Projects\nReviewed market trends and prepared a presentation.",
+        projects=[{"name": "Research", "bullets": ["Reviewed market trends and prepared a presentation."]}],
+    )
+    requirement = "Exposure to coding through personal projects"
+
+    assert main.aggregate_requirement_evidence(
+        requirement,
+        technical,
+        technical["_resume_text"],
+    )["status"] == "present"
+    assert main.aggregate_requirement_evidence(
+        requirement,
+        nontechnical,
+        nontechnical["_resume_text"],
+    )["status"] == "missing"
+
+
+def test_atom_scoring_debug_output_is_complete_and_authoritative():
+    parsed = parsed_resume(resume_text="Skills\nPython", skills=["Python"])
+
+    result = main.aggregate_requirement_evidence(
+        "Python or Java",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    assert result["original_requirement"] == "Python or Java"
+    assert result["final_score"] == 1.0
+    assert result["matched_scoring_units"] == [result["scoring_units"][0]["scoring_unit_id"]]
+    assert result["missing_scoring_units"] == []
+    assert result["matched_count"] == 1
+    assert result["total_count"] == 1
+    assert result["status"] == "present"
+    assert result["scoring_units"][0]["satisfied_by"] == "python"
+    assert all(
+        {
+            "canonical_atom",
+            "selected_evidence",
+            "verification_result",
+            "alternative_group",
+        }.issubset(atom)
+        for atom in result["atomic_breakdown"]
+    )
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence,expected_families",
+    [
+        (
+            "Understanding of DevOps concepts",
+            "SKILLS: AWS, Docker, GitHub Actions, CI/CD",
+            {"deployment", "cloud"},
+        ),
+        (
+            "Interest in modern development practices",
+            "[Project: Platform] Built and tested an application using Git, Docker, and GitHub Actions for deployment.",
+            {"software_delivery", "version_control", "testing_quality", "deployment"},
+        ),
+        (
+            "Experience in collaborative delivery environments",
+            "[Developer @ Example] Delivered features within a seven-person Agile team against stakeholder requirements.",
+            {"collaboration", "delivery_management"},
+        ),
+    ],
+)
+def test_general_evidence_policy_verifies_abstract_capabilities(
+    requirement,
+    evidence,
+    expected_families,
+):
+    verified = main.verify_evidence_policy(requirement, evidence)
+
+    assert verified
+    assert expected_families.issubset(set(verified["matched_signal_families"]))
+
+
+@pytest.mark.parametrize(
+    "requirement,evidence",
+    [
+        (
+            "Understanding of DevOps concepts",
+            "SKILLS: Microsoft Excel",
+        ),
+        (
+            "Interest in modern development practices",
+            "SKILLS: Git, Docker, CI/CD",
+        ),
+        (
+            "Experience in collaborative delivery environments",
+            "[Analyst @ Example] Prepared individual monthly reports.",
+        ),
+    ],
+)
+def test_general_evidence_policy_rejects_insufficient_or_non_action_evidence(
+    requirement,
+    evidence,
+):
+    assert main.verify_evidence_policy(requirement, evidence) is None
+
+
+def test_grounded_atom_selection_can_partially_verify_unknown_general_capability():
+    parsed = parsed_resume(
+        resume_text="Projects\nBuilt and tested an application using Git and Docker for deployment.",
+        projects=[
+            {
+                "name": "Platform",
+                "bullets": ["Built and tested an application using Git and Docker for deployment."],
+            }
+        ],
+    )
+
+    result = main.aggregate_requirement_evidence(
+        "Interest in modern development practices",
+        parsed,
+        parsed["_resume_text"],
+        ai_atom_matches={
+            main.normalize_phrase("modern development practices"): {
+                "evidence_id": "r1a1e1",
+                "evidence": "[Project: Platform] Built and tested an application using Git and Docker for deployment.",
+                "confidence": "strong",
+            }
+        },
+    )
+    atom = result["atomic_breakdown"][0]
+
+    assert result["status"] == "partial"
+    assert atom["selected_evidence_id"] == "r1a1e1"
+    assert atom["selected_evidence"].startswith("[Project: Platform]")
+
+
+def test_years_experience_cannot_be_proved_by_one_backend_bullet():
+    evidence = "[Engineer @ Example] Developed backend services using Python and MySQL."
+
+    assert main.classify_requirement_evidence_match(
+        "3+ years of experience in backend engineering",
+        evidence,
+    ) is None
+
+
+def test_bundled_named_tools_are_checked_independently():
+    parsed = parsed_resume(
+        resume_text="Projects\nBuilt APIs using Python and FastAPI.",
+        skills=["Python", "FastAPI"],
+        projects=[
+            {
+                "name": "API Platform",
+                "tech_stack": ["Python", "FastAPI"],
+                "bullets": ["Built APIs using Python and FastAPI."],
+            }
+        ],
+    )
+
+    result = main.aggregate_requirement_evidence(
+        "Design and maintain APIs and microservices using Python, FastAPI, and Postgres",
+        parsed,
+        parsed["_resume_text"],
+    )
+
+    statuses = {
+        main.normalize_phrase(item["requirement"]): item["status"]
+        for item in result["atomic_breakdown"]
+    }
+    assert result["status"] == "partial"
+    assert statuses["python"] == "present"
+    assert statuses["fastapi"] == "present"
+    assert statuses["postgres"] == "missing"
+    assert any("microservices" in requirement and status == "missing" for requirement, status in statuses.items())
+
+
+def test_aws_does_not_prove_specific_snowflake_requirement():
+    assert not main._evidence_proves_any_core_concept(
+        "Specific experience with Snowflake",
+        "[Engineer @ Example] Built AWS Lambda workflows for operational data.",
+    )
+
+
+def test_generic_data_atom_does_not_prove_domain_passion():
+    assert not main._evidence_proves_any_core_concept(
+        "Domain Passion: Use data and intelligence to drive ad campaign efficiency and demonstrate media investment value",
+        "[Founder @ Example] Built a data-driven EdTech platform supporting user engagement analysis.",
+    )
+
+
+def test_one_line_must_cover_all_core_atoms_to_be_strong():
+    requirement = "Build scalable backend systems for AI and machine learning models in production"
+    backend_only = "[Engineer @ Example] Developed backend data structures and automated workflows."
+    full_evidence = (
+        "[Engineer @ Example] Built backend systems that deployed machine learning models "
+        "into production."
+    )
+
+    assert not main._evidence_proves_all_core_concepts(requirement, backend_only)
+    assert main._evidence_proves_all_core_concepts(requirement, full_evidence)
 
 
 def test_gemini_skills_and_ats_preserves_partial_status(monkeypatch):
@@ -460,26 +1330,15 @@ def test_lead_fullstack_jd_extracts_owned_responsibilities_when_gemini_is_sparse
     assert any("automated testing" in text or "pipelines" in text for text in texts)
 
 
-def test_seniority_fit_marks_junior_candidate_as_stretch_for_lead_role():
-    resume = {"seniority_level": "junior"}
-    resume_text = """
-    Junior AI Engineer
-    Recent BSc Computer Science graduate.
-    Built React and FastAPI projects using AWS Lambda and GitHub Actions.
-    """
-    jd = """
-    Lead Full-stack Engineer.
-    You will drive technical direction, align the team on a technical vision,
-    mentor engineers, and be accountable for technical delivery.
-    """
+def test_application_positioning_uses_evidence_score():
+    positioning = main.build_application_positioning(35, 45)
 
-    seniority = main.compute_seniority_fit(jd, resume, resume_text, resume_years=1)
-    positioning = main.build_application_positioning(35, 45, seniority)
-
-    assert seniority["role"]["label"] == "lead"
-    assert seniority["candidate"]["label"] == "junior"
-    assert seniority["fit_type"] in {"stretch", "underleveled"}
-    assert "under-leveled" in positioning["headline"]
+    assert positioning == {
+        "headline": "Developing fit",
+        "cover_letter_tone": "balanced and evidence-led",
+        "cover_letter_guidance": "Focus on transferable evidence and avoid unsupported claims.",
+        "technical_relevance_score": 45,
+    }
 
 
 def test_at_least_one_language_examples_are_not_all_required():

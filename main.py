@@ -96,6 +96,17 @@ except ValueError:
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_REWRITE_MODEL = os.getenv("OPENAI_REWRITE_MODEL", "gpt-5-mini")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+ANALYZE_CORE_TIMEOUT_SECONDS = _env_int("ANALYZE_CORE_TIMEOUT_SECONDS", 100)
+ANALYZE_OPTIONAL_TIMEOUT_SECONDS = _env_int("ANALYZE_OPTIONAL_TIMEOUT_SECONDS", 8)
 GENAI_CLIENT = (
     genai.Client(api_key=GEMINI_API_KEY) if genai is not None and GEMINI_API_KEY else None
 )
@@ -305,10 +316,10 @@ SEMANTIC_WEIGHT = 0.55
 MUST_COVERAGE_WEIGHT = 0.3
 NICE_COVERAGE_WEIGHT = 0.15
 ATS_BLEND_WEIGHT = 0.4
-RESPONSIBILITY_MATCH_WEIGHT = 0.65
+RESPONSIBILITY_MATCH_WEIGHT = 0.70
 EXPERIENCE_MATCH_WEIGHT = 0.10
-SKILLS_MATCH_WEIGHT = 0.05
-SEMANTIC_MATCH_WEIGHT = 0.20
+SKILLS_MATCH_WEIGHT = 0.10
+SEMANTIC_MATCH_WEIGHT = 0.10
 RESPONSIBILITY_SIMILARITY_THRESHOLD = 0.34
 RESPONSIBILITY_EMBEDDING_THRESHOLD = 0.68
 
@@ -647,29 +658,6 @@ ACTION_VERB_BASE = {
     "support": "support",
     "supported": "support",
 }
-SENIORITY_ALIASES = {
-    "jr": "junior",
-    "junior": "junior",
-    "associate": "associate",
-    "mid": "mid",
-    "midlevel": "mid",
-    "mid-level": "mid",
-    "senior": "senior",
-    "sr": "senior",
-    "lead": "lead",
-    "manager": "manager",
-    "principal": "principal",
-    "staff": "principal",
-}
-SENIORITY_LEVELS = {
-    "junior": 1,
-    "associate": 2,
-    "mid": 2,
-    "senior": 3,
-    "lead": 4,
-    "manager": 4,
-    "principal": 5,
-}
 RESPONSIBILITY_SECTION_WEIGHTS = {
     "experience": 1.0,
     "projects": 0.75,
@@ -725,6 +713,37 @@ TECH_SKILL_ALIASES = {
     "javascript": ("javascript", "java script", "js"),
     "c++": ("c++", "cpp", "c plus plus"),
 }
+
+# Narrow, explicit equivalences for named tools. Do not add broad capabilities here.
+EXACT_ALIAS_REGISTRY = {
+    "ci_cd": (
+        "ci/cd", "ci cd", "ci-cd", "cicd",
+        "continuous integration/deployment",
+        "continuous integration and deployment",
+        "continuous integration and continuous deployment",
+    ),
+    "node_js": ("node", "node.js", "node js", "nodejs"),
+    "c_sharp": ("c#", "c sharp", "csharp"),
+    "dotnet": (".net", "dotnet", "dot net"),
+    "javascript": ("javascript", "java script", "js"),
+}
+
+
+def exact_alias_key(text: str) -> str | None:
+    norm = normalize_phrase(text)
+    for canonical, aliases in EXACT_ALIAS_REGISTRY.items():
+        if norm in {normalize_phrase(alias) for alias in aliases}:
+            return canonical
+    return None
+
+
+def exact_aliases(text: str) -> List[str]:
+    canonical = exact_alias_key(text)
+    if not canonical:
+        return []
+    return list(EXACT_ALIAS_REGISTRY[canonical])
+
+
 DOMAIN_EVIDENCE_GROUPS = (
     {
         "targets": (
@@ -758,6 +777,141 @@ DOMAIN_EVIDENCE_GROUPS = (
         ),
     },
 )
+
+CANONICAL_CAPABILITY_TAXONOMY = {
+    "cloud_platform": {
+        "aliases": ("cloud", "cloud platform", "cloud platforms"),
+        "evidence_signals": (
+            "aws", "amazon web services", "azure", "gcp", "google cloud",
+            "aws lambda", "aws rds", "dynamodb", "step functions",
+        ),
+    },
+    "data_engineering": {
+        "aliases": (
+            "data engineering", "data pipeline", "data pipelines", "data workflow",
+            "data workflows", "etl", "elt",
+        ),
+        "evidence_signals": (
+            "data engineering", "data pipeline", "data pipelines", "etl", "elt",
+            "data ingestion", "data flow", "data flows", "batch", "streaming",
+        ),
+    },
+    "ai_development": {
+        "aliases": (
+            "artificial intelligence", "machine learning", "ai feature", "ai features",
+            "ml feature", "ml features", "ai model", "ai models", "ml model", "ml models",
+            "ai development", "ai development techniques", "applied ai",
+        ),
+        "evidence_signals": (
+            "artificial intelligence", "machine learning", "ml pipeline", "feature engineering",
+            "scikit learn", "xgboost", "finbert", "reinforcement learning", "predictive model",
+            "forecasting model", "ai powered", "gemini embedding", "gemini embeddings",
+        ),
+    },
+    "software_development": {
+        "aliases": (
+            "coding", "scripting", "software development", "application development",
+        ),
+        "evidence_signals": (
+            "software development", "full stack", "full stack platform", "backend service",
+            "backend services", "frontend application", "application", "python", "javascript",
+            "node js", "fastapi",
+        ),
+    },
+    "automation": {
+        "aliases": (
+            "automation", "workflow automation", "process automation", "automated workflow",
+            "automated workflows",
+        ),
+        "evidence_signals": (
+            "automation", "automated", "workflow automation", "automated workflow",
+            "automated workflows", "process automation", "serverless workflow",
+        ),
+    },
+    "application_deployment": {
+        "aliases": (
+            "application deployment", "deployment", "deploy applications", "deploy solutions",
+            "deployment activities",
+        ),
+        "evidence_signals": (
+            "deployed", "deployment", "docker", "github actions", "ci cd", "aws ecr",
+            "containerised", "containerized",
+        ),
+    },
+    "application_monitoring": {
+        "aliases": ("application monitoring", "platform monitoring", "system monitoring"),
+        "evidence_signals": (
+            "application monitoring", "platform monitoring", "system monitoring",
+            "performance monitoring",
+        ),
+    },
+    "backend_engineering": {
+        "aliases": (
+            "backend system", "backend systems", "backend service", "backend services",
+            "api", "apis", "microservice", "microservices",
+        ),
+        "evidence_signals": (
+            "backend system", "backend systems", "backend service", "backend services",
+            "api", "apis", "rest api", "restful", "fastapi", "microservice", "microservices",
+        ),
+    },
+    "data_warehousing": {
+        "aliases": ("data warehouse", "data warehouses", "data warehousing"),
+        "evidence_signals": ("snowflake", "redshift", "bigquery", "data warehouse", "data warehouses", "lakehouse"),
+    },
+}
+
+CAPABILITY_EVIDENCE_GROUPS = tuple(
+    {
+        "concept": concept,
+        "targets": definition["aliases"],
+        "signals": definition["evidence_signals"],
+    }
+    for concept, definition in CANONICAL_CAPABILITY_TAXONOMY.items()
+)
+
+# Reusable evidence dimensions for abstract capabilities. These classify evidence;
+# they never override exact-tool or formal-experience verification.
+EVIDENCE_SIGNAL_FAMILIES = {
+    "software_delivery": (
+        "built", "developed", "implemented", "delivered", "deployed", "shipped",
+        "application", "applications", "platform", "feature", "features",
+    ),
+    "deployment": (
+        "deployment", "deployed", "docker", "containerised", "containerized",
+        "github actions", "ci cd", "aws ecr", "terraform",
+    ),
+    "version_control": ("git", "github", "repository", "repositories", "branch", "commit"),
+    "testing_quality": (
+        "testing", "tested", "tests", "unit test", "integration test", "vitest",
+        "pytest", "testing library", "linting", "eslint", "code review", "code reviews",
+    ),
+    "automation": ("automation", "automated", "workflow automation", "automated workflows"),
+    "cloud": ("aws", "azure", "gcp", "cloud", "lambda", "rds", "dynamodb"),
+    "collaboration": (
+        "collaborated", "collaboration", "team", "teams", "agile", "stakeholder",
+        "stakeholders", "sprint", "stand up", "stand ups", "retrospective", "retrospectives",
+    ),
+    "delivery_management": (
+        "delivered", "delivery", "deadline", "deadlines", "on time", "requirements",
+        "prioritised", "prioritized", "roadmap",
+    ),
+    "learning": (
+        "learned", "learning", "training", "coursework", "certification",
+        "certifications", "upskilling", "self directed",
+    ),
+}
+
+CAPABILITY_POLICY_HINTS = {
+    "devops": ("deployment", "version_control", "automation", "cloud"),
+    "modern development": ("software_delivery", "version_control", "testing_quality", "deployment"),
+    "software engineering practices": ("software_delivery", "version_control", "testing_quality", "deployment"),
+    "collaborative delivery": ("collaboration", "delivery_management"),
+    "team based environment": ("collaboration",),
+    "technical delivery": ("software_delivery", "delivery_management"),
+    "code quality": ("testing_quality", "version_control"),
+    "clean code": ("testing_quality", "version_control"),
+}
 
 SECTION_HEADINGS = {
     "experience": (
@@ -1377,7 +1531,6 @@ def gemini_parse_resume(resume_text: str) -> dict:
         '  "soft_skills": ["communication", "leadership", ...],\n'
         '  "languages": [{"language": "English", "proficiency": "Native/Fluent/Conversational/Basic"}],\n'
         '  "years_experience": number_or_null,\n'
-        '  "seniority_level": "junior or mid or senior or lead or principal or director or vp or c-suite",\n'
         '  "industry_domains": ["fintech", "healthcare", "saas", "e-commerce", etc.],\n'
         '  "management_experience": {"has_managed": false, "max_team_size": null},\n'
         '  "work_experience": [\n'
@@ -1398,7 +1551,6 @@ def gemini_parse_resume(resume_text: str) -> dict:
         "RULES:\n"
         "- Extract ALL work bullets verbatim — do not summarise or truncate.\n"
         "- For employment_gaps: compare consecutive work_experience entries by date; list any gap > 3 months with start/end dates and duration_months.\n"
-        "- For seniority_level: infer from most recent job title and total years of experience.\n"
         "- For quantified_achievements: copy verbatim every bullet from work_experience or projects that contains any number, percentage, currency symbol, or measurable metric.\n"
         "- For management_experience: set has_managed=true if any role mentions managing, leading, or mentoring a team; set max_team_size to the largest team size mentioned.\n"
         "- For industry_domains: list the industries/sectors the candidate has worked in based on company descriptions and role context.\n"
@@ -1424,7 +1576,6 @@ def analyze_cv_sections(
         parsed_summary = json.dumps({
             "name": parsed_resume.get("name"),
             "summary": parsed_resume.get("summary"),
-            "seniority_level": parsed_resume.get("seniority_level"),
             "years_experience": parsed_resume.get("years_experience"),
             "skills": parsed_resume.get("skills", [])[:30],
             "soft_skills": parsed_resume.get("soft_skills", [])[:15],
@@ -2815,21 +2966,6 @@ def extract_action_phrases(text: str) -> List[str]:
     return phrases
 
 
-def extract_seniority_terms(text: str) -> List[str]:
-    normalized = normalize_phrase(text)
-    terms: List[str] = []
-    seen = set()
-    for raw, canonical in SENIORITY_ALIASES.items():
-        if not re.search(rf"\b{re.escape(raw)}\b", normalized):
-            continue
-        if raw == "principal" and re.search(r"\bprincipal\s+(?:investing|investment|investor)\b", normalized):
-            continue
-        if canonical not in seen:
-            seen.add(canonical)
-            terms.append(canonical)
-    return terms
-
-
 _COMPANY_SUBJECT_RE = re.compile(
     r'^\s*(\([A-Za-z]+:[A-Za-z]+\)|we\b|our\b|at\s+[A-Z][A-Za-z0-9& .-]+\b)',
     re.IGNORECASE,
@@ -2840,7 +2976,7 @@ _COMPANY_DESC_SIGNALS = (
     "our vision", "our customers", "helping customers",
     "is one of", "has one of", "manage a combined", "manages a combined",
     "assets under management", "around the world", "part of blackrock",
-    "with offices in", "track record of",
+    "with offices in",
     "note taking platform", "organization platform", "digital businesses",
     "portfolio of outstanding", "serves a huge number of customers",
     "shareowners", "own and operate", "company culture",
@@ -2851,7 +2987,8 @@ _JD_META_SIGNALS = (
     "by applying", "stepping into", "you may work directly", "part of a high performing",
     "what we offer", "selection process", "all applications", "careers page",
     "apply now", "before you apply", "permanent or fixed term",
-    "salary", "compensation", "benefits", "access to equity", "tax cut",
+    "salary", "base compensation", "total compensation", "compensation range",
+    "benefits", "access to equity", "tax cut",
     "remote working", "flexible hours", "start date", "relocation", "parental",
     "health insurance", "reasonable accommodations", "offer stage",
     "experienced professionals who will support your continued development",
@@ -2869,9 +3006,57 @@ JD_REQUIREMENT_ACTION_VERBS = {
     "write", "prepare", "publish", "coordinate", "analyse", "analyze",
 }
 
+GENERAL_ACTION_FAMILIES = {
+    "analyse": {
+        "analyse", "analysed", "analyses", "analysing", "analyze", "analyzed",
+        "analyzes", "analyzing", "analysis", "assess", "assessed", "assessing",
+        "clarify", "clarified", "clarifying", "evaluate", "evaluated", "evaluating",
+    },
+    "collaborate": {
+        "collaborate", "collaborated", "collaborating", "collaboration",
+        "coordinate", "coordinated", "coordinating", "partner", "partnered",
+        "partnering", "team", "teams", "teamwork", "agile",
+    },
+    "deliver": {
+        "build", "building", "built", "create", "created", "creating", "deliver", "delivered",
+        "delivering", "develop", "developed", "developing", "implement",
+        "implemented", "implementing", "implementation",
+    },
+    "research": {
+        "experiment", "experimented", "experimenting", "explore", "explored",
+        "exploring", "investigate", "investigated", "investigating", "research",
+        "researched", "researching",
+    },
+    "test": {
+        "test", "tested", "testing", "validate", "validated", "validating",
+        "validation", "verify", "verified", "verifying",
+    },
+    "troubleshoot": {
+        "correct", "corrected", "correcting", "debug", "debugged", "debugging",
+        "diagnose", "diagnosed", "diagnosing", "fix", "fixed", "fixing",
+        "resolve", "resolved", "resolving", "troubleshoot", "troubleshot",
+        "troubleshooting",
+    },
+}
+GENERAL_ACTION_TOKEN_TO_FAMILY = {
+    token: family
+    for family, tokens in GENERAL_ACTION_FAMILIES.items()
+    for token in tokens
+}
+
+
+def _general_action_families(text: str) -> set[str]:
+    return {
+        GENERAL_ACTION_TOKEN_TO_FAMILY[token]
+        for token in normalize_phrase(text).split()
+        if token in GENERAL_ACTION_TOKEN_TO_FAMILY
+    }
+
 ROLE_REQUIREMENT_SIGNALS = (
     "experience", "knowledge", "skills", "ability", "proficiency",
-    "proficient", "familiar", "awareness", "comfortable", "expertise", "expert",
+    "proficient", "familiar", "awareness", "exposure", "comfortable", "comfort",
+    "understanding", "strength", "background", "willingness", "expertise", "expert",
+    "track record",
     "responsible", "accountable", "expected to", "you will", "you'll",
     "you ll", "you can", "you are able", "lead", "mentor", "manage",
     "design", "develop", "test", "testing", "deploy", "scale", "secure", "monitor",
@@ -2880,7 +3065,7 @@ ROLE_REQUIREMENT_SIGNALS = (
     "pipeline", "pipelines",
     "source control", "deployment pipeline", "deployment pipelines",
     "programming language", "programming languages", "programming skills",
-    "certification", "certifications", "degree", "capable",
+    "certification", "certifications", "qualification", "qualifications", "qualified", "degree", "capable",
     "responsive web applications", "windows applications",
     "primitive data types", "binary level", "serverless", "containers",
     "ownership", "end-to-end ownership", "ai tools", "workflow",
@@ -2892,7 +3077,7 @@ ROLE_REQUIREMENT_SIGNALS = (
 
 NICE_SECTION_HEADERS = (
     "nice to have", "preferred", "desirable", "bonus", "advantageous",
-    "ideal experience", "nice-to-have",
+    "ideal experience", "nice-to-have", "preferred bonus",
 )
 
 ESSENTIAL_SECTION_HEADERS = (
@@ -2905,8 +3090,22 @@ ESSENTIAL_SECTION_HEADERS = (
 
 EXCLUDED_JD_SECTION_HEADERS = (
     "background",
+    "company",
+    "our company",
+    "who we are",
+    "our culture",
+    "culture",
+    "perks",
+    "application process",
+    "salary range",
+    "compensation and benefits",
+    "about this role",
+    "an overview of this role",
+    "overview of this role",
+    "about the team",
     "our benefits",
     "benefits",
+    "benefits and perks",
     "our hybrid work model",
     "hybrid work model",
     "about blackrock",
@@ -2914,6 +3113,11 @@ EXCLUDED_JD_SECTION_HEADERS = (
     "about the fca and team",
     "about the company",
     "about the job",
+    "overview of job",
+    "role overview",
+    "reporting of the role",
+    "measures of success",
+    "3 best things about the job",
     "company overview",
     "about us",
     "what we offer",
@@ -2924,11 +3128,15 @@ EXCLUDED_JD_SECTION_HEADERS = (
     "selection process",
     "before you apply",
     "equal opportunity employer",
+    "equal employment opportunity",
 )
 
 CANDIDATE_JD_SECTION_HEADERS = (
     "description",
     "a few examples of your responsibilities",
+    "duties",
+    "key duties",
+    "your responsibilities",
     "what you'll do",
     "what you ll do",
     "what you will do",
@@ -2938,27 +3146,46 @@ CANDIDATE_JD_SECTION_HEADERS = (
     "what we re looking for",
     "what you'll bring",
     "what you ll bring",
-    "role overview",
+    "what you will bring",
+    "what you will need",
+    "about you",
+    "about the candidate",
     "key responsibilities",
     "role responsibilities",
     "responsibilities",
     "preferred qualifications skills",
     "preferred qualifications",
+    "preferred requirements",
+    "preferred experience",
+    "minimum qualifications",
+    "basic qualifications",
+    "essential criteria",
+    "desirable criteria",
+    "person specification",
     "qualifications skills",
     "qualifications",
     "skills",
     "requirements",
+    "required skills",
+    "required experience",
+    "required skills experience",
+    "required skills and experience",
+    "essential skills",
+    "essential skills experience",
+    "essential skills and experience",
+    "desirable skills",
+    "preferred bonus",
 )
 
-ROLE_TITLE_SENIORITY_PATTERNS = (
-    (re.compile(r"\bassociate(?:\s*[- ]?\s*level)?\b", re.IGNORECASE), "associate"),
-    (re.compile(r"\bjunior\b", re.IGNORECASE), "junior"),
-    (re.compile(r"\bmid(?:\s*[- ]?\s*level)?\b", re.IGNORECASE), "mid"),
-    (re.compile(r"\bsenior\b", re.IGNORECASE), "senior"),
-    (re.compile(r"\blead\b", re.IGNORECASE), "lead"),
-    (re.compile(r"\bprincipal\b", re.IGNORECASE), "principal"),
-    (re.compile(r"\bstaff\b", re.IGNORECASE), "principal"),
+JD_LIST_MARKER_RE = re.compile(
+    r"^(?:[-*]|\u2022|\u25aa|\u25e6|\u2023|\d+[.)])\s+"
 )
+
+
+def _strip_jd_list_marker(line: str) -> tuple[str, bool]:
+    raw = str(line or "").strip()
+    is_list_item = bool(JD_LIST_MARKER_RE.match(raw))
+    return JD_LIST_MARKER_RE.sub("", raw, count=1).strip(), is_list_item
 
 
 def _classify_jd_section_heading(line_norm: str) -> str | None:
@@ -2966,35 +3193,26 @@ def _classify_jd_section_heading(line_norm: str) -> str | None:
         return None
     if line_norm.startswith("why ") and len(line_norm.split()) <= 4:
         return "excluded"
+    if line_norm.startswith("more about ") and len(line_norm.split()) <= 8:
+        return "excluded"
+    if re.match(r"^(?:how|ways) .{0,40} support (?:you|employees|team members)$", line_norm):
+        return "excluded"
+    if "responsible for" in line_norm and len(line_norm.split()) <= 12:
+        return "candidate"
     if line_norm in EXCLUDED_JD_SECTION_HEADERS:
         return "excluded"
     if line_norm in CANDIDATE_JD_SECTION_HEADERS:
         return "candidate"
     if any(line_norm.startswith(f"{header} ") for header in CANDIDATE_JD_SECTION_HEADERS if header.startswith("what ")):
         return "candidate"
-    if any(line_norm.startswith(f"{header} ") for header in EXCLUDED_JD_SECTION_HEADERS):
+    if line_norm.startswith("about ") and len(line_norm.split()) <= 8:
         return "excluded"
-    return None
-
-
-def _extract_role_title_seniority(job_description: str) -> str | None:
-    lines = [line.strip() for line in str(job_description or "").splitlines() if line.strip()]
-    for idx, line in enumerate(lines):
-        norm = normalize_phrase(line)
-        if norm in {"corporate title", "title", "role title", "job title"} and idx + 1 < len(lines):
-            title_line = lines[idx + 1]
-            for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
-                if pattern.search(title_line):
-                    return term
-    for line in lines[:12]:
-        if "corporate title" in normalize_phrase(line):
-            for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
-                if pattern.search(line):
-                    return term
-    title_window = " ".join(lines[:8])
-    for pattern, term in ROLE_TITLE_SENIORITY_PATTERNS:
-        if pattern.search(title_window):
-            return term
+    if any(
+        line_norm.startswith(f"{header} ")
+        for header in EXCLUDED_JD_SECTION_HEADERS
+        if header.startswith("about ")
+    ):
+        return "excluded"
     return None
 
 
@@ -3132,9 +3350,9 @@ LOCAL_ATS_SOFT_KEYWORDS = (
 def _candidate_requirement_text_blob(job_description: str) -> str:
     """JD text from candidate-facing sections only, used as a strict ATS keyword source."""
     lines: List[str] = []
-    active_section = "candidate"
+    active_section = "unknown"
     for raw_line in str(job_description or "").splitlines():
-        line = raw_line.strip().strip("-*â€¢ ").strip()
+        line, is_bullet = _strip_jd_list_marker(raw_line)
         if not line:
             continue
         line_norm = normalize_phrase(line)
@@ -3144,7 +3362,8 @@ def _candidate_requirement_text_blob(job_description: str) -> str:
             continue
         if active_section == "excluded":
             continue
-        lines.append(line)
+        if active_section == "candidate" or is_bullet or _should_keep_requirement_line(line):
+            lines.append(line)
     return normalize_phrase(" ".join(lines))
 
 
@@ -3222,6 +3441,36 @@ def _looks_like_soft_ats_keyword(skill: str) -> bool:
     return norm in soft_terms or any(term in norm for term in soft_terms if len(term.split()) > 1)
 
 
+def _soft_ats_keyword_key(skill: str) -> str:
+    """Collapse wording variants so one soft skill is not scored multiple times."""
+    norm = normalize_phrase(skill)
+    norm = re.sub(
+        r"^(?:(?:apply|demonstrate|show|use|excellent|strong|good|clear|advanced|pragmatic)\s+)+",
+        "",
+        norm,
+    ).strip()
+    norm = re.sub(r"\s+(?:skill|skills|ability|abilities)$", "", norm).strip()
+    aliases = {
+        "collaborative": "collaboration",
+        "problem solving": "problem solving",
+        "problem solver": "problem solving",
+        "analytical thinking": "analytical",
+    }
+    return aliases.get(norm, norm)
+
+
+def _merge_similar_soft_ats_keywords(items: List[str]) -> List[str]:
+    merged: List[str] = []
+    seen: set[str] = set()
+    for item in items or []:
+        key = _soft_ats_keyword_key(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 def _display_ats_keyword(phrase: str) -> str:
     norm = normalize_phrase(phrase)
     display = {
@@ -3296,6 +3545,10 @@ ATS_FRAGMENT_NOISE_PREFIXES = (
     "written in",
     "running in",
     "working with",
+    "working closely",
+    "learn from",
+    "learning from",
+    "basic familiarity",
     "interest in",
     "usage of",
     "support ",
@@ -3330,6 +3583,21 @@ def _looks_like_noisy_ats_fragment(phrase: str) -> bool:
         return True
     tokens = norm.split()
     if tokens and tokens[0] in _ACTION_VERBS_SET:
+        return True
+    if len(tokens) > 1 and tokens[0] in GENERAL_ACTION_TOKEN_TO_FAMILY:
+        return True
+    contextual_heads = {
+        "actions", "colleagues", "countries", "developers", "issues",
+        "managers", "problems", "processes", "projects", "states",
+    }
+    if tokens and (
+        tokens[0] == "the"
+        or contextual_heads.intersection(tokens)
+        or {"countries", "states"}.intersection(tokens)
+        or "our" in tokens
+        or tokens[0] in {"preferred", "highly"}
+        or tokens[-1] == "preferred"
+    ):
         return True
     if len(tokens) > 4 and not any(
         _phrase_present_in_normalized_text(normalize_phrase(term), norm)
@@ -3444,7 +3712,7 @@ def _local_ats_keyword_candidates(job_description: str) -> dict:
 
     return {
         "hard": merge_unique(hard),
-        "soft": merge_unique(soft),
+        "soft": _merge_similar_soft_ats_keywords(soft),
     }
 
 
@@ -3456,9 +3724,46 @@ def _infer_requirement_category_from_context(line_norm: str, current_category: s
     return current_category
 
 
-def _should_keep_requirement_line(text: str) -> bool:
+def _looks_like_job_title_line(text: str) -> bool:
+    norm = normalize_phrase(text)
+    tokens = norm.split()
+    if not 2 <= len(tokens) <= 7 or re.search(r"[.!?;:]", str(text or "")):
+        return False
+    if any(signal in norm for signal in (
+        "experience", "knowledge", "ability", "skills", "proficiency", "degree",
+        "responsible", "required", "preferred", "develop solutions", "build ",
+    )):
+        return False
+    role_terms = {
+        "engineer", "developer", "analyst", "manager", "consultant", "specialist",
+        "architect", "scientist", "designer", "associate", "officer", "coordinator",
+        "administrator", "lead",
+    }
+    return bool(role_terms.intersection(tokens))
+
+
+def _should_keep_requirement_line(text: str, in_candidate_section: bool = False) -> bool:
     norm = normalize_phrase(text)
     if len(norm.split()) < 3:
+        return False
+    if _looks_like_job_title_line(text):
+        return False
+    if re.match(
+        r"^(?!you\b|candidate\b|the candidate\b)[a-z0-9&.-]+\s+"
+        r"(?:builds|creates|develops|offers|provides)\b.*\b(?:helps?|serves?|supports?)\b",
+        norm,
+    ):
+        return False
+    if re.search(r"\b(?:reports?|reporting)\s+to\s+(?:the\s+)?[\w -]+", norm):
+        return False
+    if norm.startswith((
+        "gained a comprehensive understanding of ",
+        "delivered first outcomes at pace ",
+        "contributed considerably in bringing our ",
+        "established yourself as ",
+    )):
+        return False
+    if "brings together a suite of" in norm:
         return False
     if _classify_jd_section_heading(norm):
         return False
@@ -3468,31 +3773,65 @@ def _should_keep_requirement_line(text: str) -> bool:
         return False
     if norm in {"experience in planning", "planning", "strong planning"}:
         return False
-    if _COMPANY_SUBJECT_RE.match(text):
+    if not in_candidate_section and _COMPANY_SUBJECT_RE.match(text):
         return False
     if any(sig in norm for sig in _COMPANY_DESC_SIGNALS):
         return False
     if any(sig in norm for sig in _JD_META_SIGNALS):
         return False
-    if re.match(r"^[a-z0-9 &.-]{2,60}\s+is\s+(?:a|an|one of|part of|the)\b", norm) and not any(
+    if not in_candidate_section and re.match(r"^[a-z0-9 &.-]{2,60}\s+is\s+(?:a|an|one of|part of|the)\b", norm) and not any(
         hint in norm for hint in _CANDIDATE_HINTS
     ):
         return False
-    if re.match(
+    if not in_candidate_section and re.match(
         r"^(?:blackrock|gip|gis|global infrastructure solutions|global infrastructure partners|the firm)\b",
         norm,
     ) and not any(hint in norm for hint in _CANDIDATE_HINTS):
         return False
-    if any(noise in norm for noise in ("salary", "benefit", "pension", "healthcare", "annual leave", "dress code")):
+    if any(noise in norm for noise in ("salary", "benefit", "pension", "annual leave", "dress code")):
         return False
+    if re.search(r"\b(?:not required|not essential|not necessary|optional only)\b", norm):
+        return False
+    if in_candidate_section:
+        return True
     tokens = norm.split()
     starts_action = bool(tokens) and (tokens[0] in _ACTION_VERBS_SET or tokens[0] in JD_REQUIREMENT_ACTION_VERBS)
     return starts_action or any(sig in norm for sig in ROLE_REQUIREMENT_SIGNALS)
 
 
-def _requirement_dict(text: str, category: str) -> dict | None:
+def _looks_like_requirement_heading(text: str) -> bool:
+    norm = normalize_phrase(text)
+    if not norm:
+        return True
+    if _classify_jd_section_heading(norm):
+        return True
+    if norm in {
+        "necessary education and experience",
+        "education and experience",
+        "required education and experience",
+        "skills and experience",
+        "required qualifications",
+        "necessary qualifications",
+        "desirable experience",
+        "desirable qualifications",
+    }:
+        return True
+    return bool(
+        len(norm.split()) <= 5
+        and re.fullmatch(
+            r"(?:necessary|required|essential|desirable|preferred|minimum|basic)?\s*"
+            r"(?:education|experience|skills|qualifications)"
+            r"(?:\s+and\s+(?:education|experience|skills|qualifications))?",
+            norm,
+        )
+    )
+
+
+def _requirement_dict(text: str, category: str, in_candidate_section: bool = False) -> dict | None:
     cleaned = str(text or "").strip().strip("-*â€¢ ").strip()
-    if not _should_keep_requirement_line(cleaned):
+    if _looks_like_requirement_heading(cleaned):
+        return None
+    if not _should_keep_requirement_line(cleaned, in_candidate_section=in_candidate_section):
         return None
     norm = normalize_phrase(cleaned)
     return {
@@ -3503,25 +3842,39 @@ def _requirement_dict(text: str, category: str) -> dict | None:
     }
 
 
-def extract_local_job_requirements(job_description: str, limit: int = 35) -> List[dict]:
-    """Deterministically extract candidate-owned requirements and responsibilities from a JD."""
-    requirements: List[dict] = []
-    seen: set[str] = set()
+ALLOWED_GROUNDED_REQUIREMENT_TYPES = {
+    "candidate_skill",
+    "candidate_experience",
+    "candidate_qualification",
+    "candidate_behaviour",
+    "candidate_responsibility",
+    "candidate_tool",
+}
+
+
+def build_jd_source_sentences(job_description: str) -> List[dict]:
+    """Build stable, section-aware source records that model output must cite."""
+    sources: List[dict] = []
+    active_section = "unknown"
+    source_section = "unknown"
     category = "essential"
-    active_section = "candidate"
 
     for raw_line in str(job_description or "").splitlines():
-        line = raw_line.strip().strip("-*â€¢ ").strip()
+        line, is_bullet = _strip_jd_list_marker(raw_line)
         if not line:
             continue
         line_norm = normalize_phrase(line)
         section_type = _classify_jd_section_heading(line_norm)
         if section_type:
-            category = "essential"
             active_section = section_type
+            source_section = line
+            category = (
+                _infer_requirement_category_from_context(line_norm, "essential")
+                if section_type == "candidate"
+                else "essential"
+            )
             continue
-        if active_section == "excluded":
-            continue
+
         next_category = _infer_requirement_category_from_context(line_norm, category)
         if next_category != category and len(line_norm.split()) <= 6:
             category = next_category
@@ -3535,12 +3888,129 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
                 for part in re.split(r"(?<=[.!?])\s+", line)
                 if part.strip()
             ] or [line]
+        for clause in clauses:
+            sources.append({
+                "sentence_id": f"s{len(sources) + 1}",
+                "text": clause,
+                "source_section": source_section,
+                "section_type": active_section,
+                "is_bullet": is_bullet,
+                "category": category,
+            })
+    return sources
+
+
+def verify_grounded_job_requirements(
+    items: List[dict],
+    source_sentences: List[dict],
+    limit: int = 35,
+) -> tuple[List[dict], List[str]]:
+    """Accept only candidate-owned model nominations grounded in exact JD sources."""
+    source_by_id = {
+        str(source.get("sentence_id") or ""): source
+        for source in source_sentences or []
+        if isinstance(source, dict)
+    }
+    verified: List[dict] = []
+    rejected: List[str] = []
+    seen: set[str] = set()
+
+    for item in items or []:
+        if not isinstance(item, dict):
+            rejected.append("Rejected malformed model item.")
+            continue
+        source_id = str(item.get("source_sentence_id") or "").strip()
+        source = source_by_id.get(source_id)
+        if not source:
+            rejected.append(f"Rejected unknown source sentence ID: {source_id or 'missing'}.")
+            continue
+        if item.get("scoreable_against_cv") is not True:
+            rejected.append(f"Rejected non-scoreable source: {source_id}.")
+            continue
+        if str(item.get("owner") or "").strip().lower() != "candidate":
+            rejected.append(f"Rejected non-candidate owner: {source_id}.")
+            continue
+        if str(item.get("type") or "").strip() not in ALLOWED_GROUNDED_REQUIREMENT_TYPES:
+            rejected.append(f"Rejected unsupported requirement type: {source_id}.")
+            continue
+        section_type = str(source.get("section_type") or "unknown")
+        if section_type == "excluded":
+            rejected.append(f"Rejected excluded JD section: {source_id}.")
+            continue
+        in_candidate_context = section_type == "candidate" or (
+            section_type == "unknown" and bool(source.get("is_bullet"))
+        )
+        category = str(item.get("category") or source.get("category") or "essential")
+        if source.get("category") == "nice_to_have":
+            category = "nice_to_have"
+        requirement = _requirement_dict(
+            str(source.get("text") or ""),
+            category,
+            in_candidate_section=in_candidate_context,
+        )
+        if not requirement:
+            rejected.append(f"Rejected invalid source text: {source_id}.")
+            continue
+        norm = requirement["normalized"]
+        if norm in seen:
+            continue
+        seen.add(norm)
+        requirement["source_sentence_id"] = source_id
+        verified.append(requirement)
+        if len(verified) >= limit:
+            break
+    return verified, rejected
+
+
+def extract_local_job_requirements(job_description: str, limit: int = 35) -> List[dict]:
+    """Deterministically extract candidate-owned requirements and responsibilities from a JD."""
+    requirements: List[dict] = []
+    seen: set[str] = set()
+    category = "essential"
+    active_section = "unknown"
+
+    for raw_line in str(job_description or "").splitlines():
+        line, is_bullet = _strip_jd_list_marker(raw_line)
+        if not line:
+            continue
+        line_norm = normalize_phrase(line)
+        section_type = _classify_jd_section_heading(line_norm)
+        if section_type:
+            category = (
+                _infer_requirement_category_from_context(line_norm, "essential")
+                if section_type == "candidate"
+                else "essential"
+            )
+            active_section = section_type
+            continue
+        if active_section == "excluded":
+            continue
+        next_category = _infer_requirement_category_from_context(line_norm, category)
+        if next_category != category and len(line_norm.split()) <= 6:
+            category = next_category
+            continue
+        category = next_category
+        in_candidate_context = active_section == "candidate" or (
+            active_section == "unknown" and is_bullet
+        )
+
+        clauses = [line]
+        if len(line.split()) > 28:
+            clauses = [
+                part.strip()
+                for part in re.split(r"(?<=[.!?])\s+", line)
+                if part.strip()
+            ] or [line]
 
         for clause in clauses:
             candidates = [clause]
             added_for_clause = False
             for candidate in candidates:
-                req = _requirement_dict(candidate, category)
+                req = _requirement_dict(
+                    candidate,
+                    category,
+                    in_candidate_section=in_candidate_context,
+                )
                 if not req:
                     continue
                 norm = req["normalized"]
@@ -3552,7 +4022,11 @@ def extract_local_job_requirements(job_description: str, limit: int = 35) -> Lis
                 if len(requirements) >= limit:
                     return requirements
             if not added_for_clause and candidates != [clause]:
-                req = _requirement_dict(clause, category)
+                req = _requirement_dict(
+                    clause,
+                    category,
+                    in_candidate_section=in_candidate_context,
+                )
                 if req and req["normalized"] not in seen:
                     seen.add(req["normalized"])
                     requirements.append(req)
@@ -3566,7 +4040,6 @@ REQUIREMENT_MERGE_GENERIC_TOKENS = set(STOPWORDS).union({
     "experience", "experienced", "skill", "skills", "strong", "excellent",
     "good", "knowledge", "proficiency", "proficient", "required",
 })
-
 
 def _requirement_meaningful_tokens(norm: str) -> set[str]:
     return {
@@ -3593,14 +4066,18 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
         if not isinstance(req, dict):
             continue
         text = str(req.get("text") or "").strip()
-        cleaned = _requirement_dict(text, req.get("category") or "essential")
+        cleaned = _requirement_dict(
+            text,
+            req.get("category") or "essential",
+            in_candidate_section=True,
+        )
         if not cleaned:
             continue
         norm = cleaned["normalized"]
         if not norm or norm in seen:
             continue
         norm_tokens = norm.split()
-        replace_indexes: list[int] = []
+        replace_indexes: set[int] = set()
         subsumed = False
         for idx, existing in enumerate(merged):
             existing_norm = existing.get("normalized") or normalize_phrase(existing.get("text") or "")
@@ -3609,15 +4086,15 @@ def merge_job_requirements(primary: List[dict], supplemental: List[dict], limit:
                 subsumed = True
                 break
             if len(existing_tokens) >= 3 and existing_norm in norm and len(norm_tokens) > len(existing_tokens):
-                replace_indexes.append(idx)
+                replace_indexes.add(idx)
             if _requirements_substantially_overlap(norm, existing_norm):
                 if len(norm_tokens) <= len(existing_tokens):
                     subsumed = True
                     break
-                replace_indexes.append(idx)
+                replace_indexes.add(idx)
         if subsumed:
             continue
-        for idx in reversed(replace_indexes):
+        for idx in sorted(replace_indexes, reverse=True):
             seen.discard(merged[idx].get("normalized") or normalize_phrase(merged[idx].get("text") or ""))
             merged.pop(idx)
         seen.add(norm)
@@ -3667,6 +4144,7 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
     effective_limit = max(limit, 35)
     local_requirements = extract_local_job_requirements(job_description, limit=effective_limit)
     local_ats = _local_ats_keyword_candidates(job_description)
+    source_sentences = build_jd_source_sentences(job_description)
 
     if not GENAI_CLIENT:
         merged = merge_job_requirements([], local_requirements, limit=effective_limit)
@@ -3689,10 +4167,18 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
         }
 
     prompt = (
-        "You are a strict job-description preflight judge. Before any CV analysis, extract only the candidate-owned hiring requirements.\n\n"
+        "You are a strict job-description preflight judge. Nominate only source sentence IDs that contain candidate-owned hiring requirements.\n\n"
         "Return ONLY valid JSON with this exact shape:\n"
         "{\n"
-        '  "requirements": [{"text": "standalone requirement", "category": "essential|nice_to_have"}],\n'
+        '  "items": [{\n'
+        '    "requirement": "concise description",\n'
+        '    "source_sentence_id": "s1",\n'
+        '    "owner": "candidate|company|team|product|role",\n'
+        '    "type": "candidate_skill|candidate_experience|candidate_qualification|candidate_behaviour|candidate_responsibility|candidate_tool|non_scoreable",\n'
+        '    "scoreable_against_cv": true,\n'
+        '    "category": "essential|nice_to_have",\n'
+        '    "confidence": 0.95\n'
+        "  }],\n"
         '  "ats_keywords": {\n'
         '    "hard_skills": ["Python", "Kafka"],\n'
         '    "soft_skills": ["collaboration"]\n'
@@ -3705,21 +4191,23 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
         "  }\n"
         "}\n\n"
         "Rules:\n"
+        "- Every item must cite exactly one source_sentence_id from the provided records.\n"
+        "- Never invent, combine, or alter source_sentence_id values.\n"
         "- essentials are mandatory requirements, responsibilities, qualifications, skills, tools, or behaviours.\n"
         "- nice_to_have means explicitly preferred, desirable, bonus, advantage, or plus.\n"
         "- Exclude company history, mission, size, benefits, perks, salary, location/flexibility, application instructions, and generic marketing copy.\n"
         "- Do not include company names or the job title as a requirement.\n"
-        "- Keep each requirement concise and candidate-owned.\n"
+        "- Set scoreable_against_cv true only when evidence could reasonably appear in a CV.\n"
         "- ATS keywords must be high-signal skills/tools/domains/behaviours from the kept requirements only.\n"
         f"- Return at most {limit} requirements.\n\n"
-        f"JOB DESCRIPTION:\n{job_description[:5000]}"
+        f"SOURCE SENTENCE RECORDS:\n{json.dumps(source_sentences, ensure_ascii=True)}"
     )
 
     try:
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_PARSE_MODEL,
             contents=prompt,
-            config=gemini_generation_config(0),
+            config=gemini_generation_config(0, response_mime_type="application/json"),
         )
         parsed = parse_json_response(getattr(response, "text", "") or "")
         if not isinstance(parsed, dict):
@@ -3728,16 +4216,28 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
         logger.warning("Gemini JD preflight failed; API-backed analysis is required: %s", exc)
         raise
 
-    generated_reqs = []
-    for req in parsed.get("requirements") or []:
-        if not isinstance(req, dict):
-            continue
-        text = str(req.get("text") or "").strip()
-        category = str(req.get("category") or "essential").strip()
-        if category not in {"essential", "nice_to_have"}:
-            category = "essential"
-        generated_reqs.append({"text": text, "category": category})
-
+    generated_items = parsed.get("items") or []
+    if not generated_items and parsed.get("requirements"):
+        source_id_by_text = {
+            normalize_phrase(source.get("text") or ""): source.get("sentence_id")
+            for source in source_sentences
+        }
+        generated_items = [
+            {
+                "source_sentence_id": source_id_by_text.get(normalize_phrase(req.get("text") or "")),
+                "owner": "candidate",
+                "type": "candidate_responsibility",
+                "scoreable_against_cv": True,
+                "category": req.get("category") or "essential",
+            }
+            for req in parsed.get("requirements") or []
+            if isinstance(req, dict)
+        ]
+    generated_reqs, verifier_rejections = verify_grounded_job_requirements(
+        generated_items,
+        source_sentences,
+        limit=effective_limit,
+    )
     merged = merge_job_requirements(generated_reqs, local_requirements, limit=effective_limit)
     cleaned_jd = _cleaned_job_description_from_requirements(merged)
     candidate_blob = normalize_phrase(cleaned_jd) or _candidate_requirement_text_blob(job_description)
@@ -3761,6 +4261,13 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
     raw_ats = parsed.get("ats_keywords") or {}
     hard = clean_keyword_list(raw_ats.get("hard_skills"), 12)
     soft = clean_keyword_list(raw_ats.get("soft_skills"), 8)
+    soft = [
+        item
+        for idx, item in enumerate(soft)
+        if _soft_ats_keyword_key(item["skill"])
+        and _soft_ats_keyword_key(item["skill"])
+        not in {_soft_ats_keyword_key(previous["skill"]) for previous in soft[:idx]}
+    ]
     for skill in local_ats["hard"]:
         if len(hard) >= 12:
             break
@@ -3770,8 +4277,8 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
     for skill in local_ats["soft"]:
         if len(soft) >= 8:
             break
-        norm = normalize_phrase(skill)
-        if norm and not any(normalize_phrase(item["skill"]) == norm for item in soft):
+        key = _soft_ats_keyword_key(skill)
+        if key and not any(_soft_ats_keyword_key(item["skill"]) == key for item in soft):
             soft.append({"skill": skill, "source": "local"})
 
     quality = parsed.get("quality") if isinstance(parsed.get("quality"), dict) else {}
@@ -3793,7 +4300,7 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
             "issues": merge_unique(issues),
             "excluded_noise": [
                 str(item).strip()
-                for item in quality.get("excluded_noise") or []
+                for item in [*(quality.get("excluded_noise") or []), *verifier_rejections]
                 if str(item).strip()
             ][:12],
         },
@@ -3868,11 +4375,19 @@ ATOMIC_REQUIREMENT_HINTS = (
     "including",
     "such as",
     "with",
+    "using",
 )
 
 
 STRICT_TOOL_TERMS = {
     "python",
+    "fastapi",
+    "postgres",
+    "postgresql",
+    "snowflake",
+    "aws",
+    "azure",
+    "gcp",
     "rust",
     "grpc",
     "rest",
@@ -3883,6 +4398,10 @@ STRICT_TOOL_TERMS = {
     "github actions",
     "ci/cd",
     "ci cd",
+    "ci-cd",
+    "cicd",
+    "continuous integration/deployment",
+    "continuous integration and deployment",
     "ecs",
     "aws ecs",
     "terraform",
@@ -3895,10 +4414,19 @@ STRICT_TOOL_TERMS = {
     "react native",
     "typescript",
     "javascript",
+    "node",
+    "node.js",
+    "node js",
+    "nodejs",
     "docker",
     "kubernetes",
     "c++",
     "c#",
+    "c sharp",
+    "csharp",
+    ".net",
+    "dotnet",
+    "dot net",
     "cpp",
     "equities",
     "equity",
@@ -3962,6 +4490,12 @@ SHORT_POSTGRADUATE_DEGREE_TERMS = {"ma", "ms", "msc", "phd"}
 
 
 def _is_postgraduate_degree_requirement(req_norm: str, tokens: set) -> bool:
+    has_undergraduate_option = any(
+        _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
+        for term in UNDERGRADUATE_DEGREE_TERMS
+    )
+    if has_undergraduate_option and " or " in f" {req_norm} ":
+        return False
     if "post graduate qualification" in req_norm or "postgraduate qualification" in req_norm:
         return True
     if "post graduate degree" in req_norm or "postgraduate degree" in req_norm:
@@ -4119,7 +4653,10 @@ def _requirement_policy(requirement: str) -> dict:
         })
         return policy
 
-    if any(term in req_norm for term in STRICT_TOOL_TERMS):
+    if exact_alias_key(requirement) or any(
+        _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
+        for term in STRICT_TOOL_TERMS
+    ):
         policy.update({
             "type": "exact_tool",
             "strict": True,
@@ -4132,9 +4669,17 @@ def _requirement_policy(requirement: str) -> dict:
         bool(re.search(r"\b0\s*(?:-|–|—|to)\s*1\s+years?\b", raw_req))
         or "0 1 years" in req_norm
     )
-    if is_early_career_range and any(
+    is_early_career_exposure = any(
         term in req_norm
-        for term in ("academic project", "academic projects", "internship", "internships", "placement", "placements", "early professional")
+        for term in (
+            "exposure to coding", "exposure to scripting", "coding or scripting",
+            "academic project", "academic projects", "personal project", "personal projects",
+            "internship", "internships", "placement", "placements", "early professional",
+        )
+    )
+    if is_early_career_exposure and (
+        is_early_career_range
+        or any(term in req_norm for term in ("coding", "scripting", "project", "internship", "placement"))
     ):
         policy.update({
             "type": "early_career_experience",
@@ -4159,7 +4704,7 @@ def _requirement_policy(requirement: str) -> dict:
         return policy
 
     if any(
-        term in req_norm
+        _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
         for term in (
             "people management",
             "line management",
@@ -4270,7 +4815,8 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
         ] or ["incident investigation", "root cause"]
     if policy["type"] == "exact_tool":
         explicit_tool_terms = {
-            "python", "rust", "grpc", "rest", "rest api", "microservices",
+            "python", "fastapi", "postgres", "postgresql", "snowflake", "aws", "azure", "gcp",
+            "rust", "grpc", "rest", "rest api", "microservices",
             "aws lambda", "step functions", "github actions", "ci/cd", "ci cd",
             "ecs", "aws ecs", "terraform",
             "excel", "word", "outlook", "sage", "proaudit", "react", "react native",
@@ -4278,6 +4824,9 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
             "cpp", "lakehouse", "messaging middleware",
             "content management system", "cms", "seo", "google analytics",
             "reporting tools", "adobe indesign", "indesign", "qts",
+            "node", "node.js", "node js", "nodejs", ".net", "dotnet", "dot net",
+            "c sharp", "csharp", "ci-cd", "cicd",
+            "continuous integration/deployment", "continuous integration and deployment",
         }
         matches = [
             term for term in explicit_tool_terms
@@ -4285,13 +4834,21 @@ def _policy_explicit_terms(policy: dict, requirement: str) -> List[str]:
         ]
         filtered = [
             term for term in matches
-            if not any(term != other and normalize_phrase(term) in normalize_phrase(other) for other in matches)
+            if not any(
+                term != other
+                and normalize_phrase(term) != normalize_phrase(other)
+                and normalize_phrase(term) in normalize_phrase(other)
+                for other in matches
+            )
         ]
         if "content management system" in filtered or "cms" in filtered:
             filtered.extend(["content management system", "cms"])
         if "adobe indesign" in filtered or "indesign" in filtered:
             filtered.extend(["adobe indesign", "indesign"])
-        return merge_unique(filtered)
+        aliases = []
+        for term in filtered:
+            aliases.extend(exact_aliases(term))
+        return merge_unique([*filtered, *aliases])
     return []
 
 
@@ -4306,19 +4863,117 @@ GENERAL_EVIDENCE_STOPWORDS = set(STOPWORDS).union({
 
 
 def _non_strict_evidence_has_signal(requirement: str, evidence_norm: str) -> bool:
-    req_norm = normalize_phrase(requirement)
-    req_tokens = [
-        token
-        for token in req_norm.split()
-        if token not in GENERAL_EVIDENCE_STOPWORDS and len(token) > 2
-    ]
-    if not req_tokens:
-        return False
+    if any(
+        _phrase_present_in_normalized_text(normalize_phrase(alias), evidence_norm)
+        for alias in _requirement_aliases(requirement)
+    ):
+        return True
+    shared_actions = _general_action_families(requirement).intersection(
+        _general_action_families(evidence_norm)
+    )
+    return bool(shared_actions.difference({"deliver"}))
+
+
+def _simple_word_stem(token: str) -> str:
+    token = str(token or "").lower()
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ied"):
+        return f"{token[:-3]}y"
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _core_capability_tokens(text: str) -> set[str]:
+    context_tokens = {
+        "degree", "engineering", "feature", "features", "project", "projects",
+        "run", "solution", "solutions", "system", "systems", "team", "technology",
+        "technologies",
+    }
+    return {
+        _simple_word_stem(token)
+        for token in normalize_phrase(text).split()
+        if token not in GENERAL_EVIDENCE_STOPWORDS
+        and token not in GENERAL_ACTION_TOKEN_TO_FAMILY
+        and token not in context_tokens
+        and token not in {"high", "level", "modern", "specific", "specifically", "robust", "scalable"}
+        and len(token) > 2
+    }
+
+
+def _canonical_capability_keys(text: str) -> set[str]:
+    norm = normalize_phrase(text)
+    return {
+        concept
+        for concept, definition in CANONICAL_CAPABILITY_TAXONOMY.items()
+        if any(
+            _phrase_present_in_normalized_text(normalize_phrase(alias), norm)
+            for alias in definition["aliases"]
+        )
+    }
+
+
+def _has_action_evidence(requirement: str, evidence_norm: str) -> bool:
     evidence_tokens = set(evidence_norm.split())
-    overlap = [token for token in req_tokens if token in evidence_tokens]
+    if _general_action_families(evidence_norm) or evidence_tokens.intersection(_ACTION_VERBS_SET):
+        return True
+    requirement_tokens = normalize_phrase(requirement).split()
+    if not requirement_tokens:
+        return False
+    first_token = requirement_tokens[0]
+    first_stem = _simple_word_stem(first_token)
+    return len(first_stem) >= 4 and any(
+        _simple_word_stem(token) == first_stem
+        or token.startswith(first_token)
+        or first_token.startswith(_simple_word_stem(token))
+        for token in evidence_tokens
+    )
+
+
+def _general_capability_evidence_confidence(requirement: str, evidence_text: str) -> str | None:
+    section = infer_evidence_section(evidence_text)
+    if section == "skills":
+        return None
+
+    req_norm = normalize_phrase(requirement)
+    evidence_norm = normalize_phrase(evidence_text)
+    action_proof = _has_action_evidence(requirement, evidence_norm) and section in {"experience", "projects"}
+    project_proof = section == "projects"
+
+    target_capabilities = _canonical_capability_keys(requirement)
+    for group in CAPABILITY_EVIDENCE_GROUPS:
+        if group["concept"] not in target_capabilities:
+            continue
+        signal_hit = any(
+            _phrase_present_in_normalized_text(normalize_phrase(signal), evidence_norm)
+            for signal in group["signals"]
+        )
+        if signal_hit and action_proof:
+            return "strong"
+        if signal_hit and project_proof:
+            return "partial"
+
+    req_tokens = _core_capability_tokens(requirement)
+    if not req_tokens:
+        return None
+    evidence_tokens = {_simple_word_stem(token) for token in evidence_norm.split()}
+    overlap = req_tokens.intersection(evidence_tokens)
     if len(req_tokens) <= 2:
-        return len(overlap) == len(req_tokens)
-    return len(overlap) >= 2 or (len(overlap) / len(req_tokens)) >= 0.5
+        lexical_proof = len(overlap) == len(req_tokens)
+    else:
+        lexical_proof = len(overlap) >= 2 and len(overlap) / len(req_tokens) >= 0.4
+    if not lexical_proof:
+        return None
+    if action_proof:
+        return "strong"
+    if project_proof:
+        return "partial"
+    return None
 
 
 def validate_evidence_for_requirement(requirement: str, evidence: str, confidence: str) -> dict | None:
@@ -4350,6 +5005,16 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
             return {"confidence": "strong", "section": section, "policy": policy}
         return None
 
+    if policy["type"] == "early_career_experience":
+        verified = classify_requirement_evidence_match(requirement, evidence)
+        if not verified:
+            return None
+        return {
+            "confidence": verified,
+            "section": section,
+            "policy": policy,
+        }
+
     explicit_terms = _policy_explicit_terms(policy, requirement)
     if policy["strict"] and explicit_terms:
         explicit_hit = any(
@@ -4358,7 +5023,11 @@ def validate_evidence_for_requirement(requirement: str, evidence: str, confidenc
         )
         if not explicit_hit:
             return None
-    elif policy["type"] == "general" and not _non_strict_evidence_has_signal(requirement, evidence_norm):
+    elif (
+        policy["type"] == "general"
+        and not _concept_evidence_confidence(requirement, evidence)
+        and not _non_strict_evidence_has_signal(requirement, evidence_norm)
+    ):
         return None
 
     adjusted = confidence if confidence in ("strong", "partial") else "partial"
@@ -4386,12 +5055,132 @@ def _split_list_fragments(text: str) -> List[str]:
 
 
 def _strip_requirement_lead(text: str) -> str:
+    cleaned = re.sub(
+        r"^[A-Za-z][A-Za-z &/-]{2,45}:\s*",
+        "",
+        str(text or "").strip(),
+    )
     return re.sub(
         r"^(excellent|solid|strong|modern|very strong|significant|hands on|hands-on|knowledge of|experience with|experience in|ability to|an interest in|interest in)\s+",
         "",
-        str(text or "").strip(),
+        cleaned,
         flags=re.IGNORECASE,
     ).strip(" -:;,.")
+
+
+def _looks_like_atomic_noise(text: str) -> bool:
+    norm = normalize_phrase(text)
+    if not norm or _looks_like_requirement_heading(text):
+        return True
+    if norm in {"data", "intelligence", "etc"} or re.fullmatch(r"\d+%?", norm):
+        return True
+    core_tokens = _core_capability_tokens(text)
+    if core_tokens and core_tokens.issubset({"data", "intelligence"}):
+        return True
+    if norm in {
+        "data skills experience",
+        "programming proficiency",
+        "software engineering fundamentals",
+        "problem solving skills",
+        "communication collaboration",
+        "cloud and mlops exposure",
+        "core ml knowledge",
+        "advanced education",
+        "basic familiarity",
+    }:
+        return True
+    if re.match(r"^learn(?:ing)?\s+from\s+senior\b", norm):
+        return True
+    return False
+
+
+def _requirement_concept_key(requirement: str) -> str | None:
+    norm = normalize_phrase(requirement)
+    tokens = set(norm.split())
+    if not norm:
+        return None
+    if any(term in norm for term in ("bachelor", "bsc", "degree", "quantitative field")):
+        return "undergraduate_degree"
+    if "python" in tokens:
+        return "python"
+    if "sql" in tokens or "relational database" in norm:
+        return "sql_relational_databases"
+    if "data structures" in norm or "algorithms" in tokens:
+        return "data_structures_algorithms"
+    if "git" in tokens or "version control" in norm or "repository tool" in norm:
+        return "version_control"
+    if "ci cd" in norm or "continuous integration" in norm or "continuous delivery" in norm:
+        return "ci_cd"
+    if "clean code" in norm or "well documented code" in norm or "documented code" in norm:
+        return "clean_documented_code"
+    if "problem solving" in norm or "analytical mindset" in norm or "analytical thinking" in norm:
+        return "analytical_problem_solving"
+    if any(term in norm for term in ("eagerness to learn", "learning new skills", "self development", "proactive learning")):
+        return "learning_attitude"
+    if "communication" in norm or "written and verbal" in norm or "verbal and written" in norm:
+        return "communication"
+    if "collaboration" in norm or "team environment" in norm or "teamwork" in norm:
+        return "collaboration"
+    if "aws" in tokens or "gcp" in tokens or "azure" in tokens or "cloud platform" in norm:
+        return "cloud_platform"
+    if "docker" in tokens or "containerization" in norm or "containerisation" in norm:
+        return "containerization"
+    if "model evaluation" in norm or "evaluation techniques" in norm:
+        return "model_evaluation"
+    if "feature engineering" in norm:
+        return "feature_engineering"
+    if "supervised" in tokens or "unsupervised" in tokens:
+        return "supervised_unsupervised_learning"
+    canonical_capabilities = _canonical_capability_keys(requirement)
+    if len(canonical_capabilities) == 1:
+        return next(iter(canonical_capabilities))
+    return None
+
+
+def _concept_evidence_confidence(requirement: str, evidence_text: str) -> str | None:
+    concept = _requirement_concept_key(requirement)
+    evidence_norm = normalize_phrase(evidence_text)
+    evidence_tokens = set(evidence_norm.split())
+    action_families = _general_action_families(evidence_norm)
+    if concept == "sql_relational_databases":
+        database_signals = {"sql", "mysql", "postgresql", "postgres", "sqlite", "database", "databases"}
+        query_signals = {"query", "queried", "querying", "join", "joins", "joined", "relational"}
+        if evidence_tokens.intersection(database_signals) and (
+            evidence_tokens.intersection(query_signals) or action_families.intersection({"analyse", "deliver"})
+        ):
+            return "strong"
+    if concept == "version_control":
+        if evidence_tokens.intersection({"git", "repository", "repositories", "branch", "branches", "commit", "commits"}):
+            return "strong"
+    if concept == "clean_documented_code":
+        if evidence_tokens.intersection({"documented", "documentation", "readme", "linting", "tests", "testing", "modular"}):
+            return "strong" if action_families else "partial"
+    if concept == "analytical_problem_solving":
+        if action_families.intersection({"analyse", "troubleshoot"}) or evidence_tokens.intersection(
+            {"requirements", "problems", "problem", "pain", "blockers", "leakage"}
+        ):
+            return "strong" if action_families else "partial"
+    if concept == "learning_attitude":
+        if evidence_tokens.intersection({
+            "coursework",
+            "course",
+            "courses",
+            "certification",
+            "certifications",
+            "training",
+            "upskilling",
+        }) or any(phrase in evidence_norm for phrase in (
+            "self development",
+            "self directed",
+            "learned new",
+            "learning new skills",
+            "professional development",
+        )):
+            return "partial"
+    if concept == "collaboration":
+        if evidence_tokens.intersection({"team", "teams", "agile", "collaborated", "collaboration", "stakeholders"}):
+            return "strong" if action_families else "partial"
+    return None
 
 
 def _looks_like_alternative_list(source: str, right: str) -> bool:
@@ -4473,14 +5262,14 @@ def decompose_requirement_text(text: str) -> List[dict]:
         return []
 
     parent_policy = _requirement_policy(source)
+    parent_concept = _requirement_concept_key(source)
     if parent_policy["type"] in {
         "degree",
         "postgraduate_degree",
         "certification",
         "years_experience",
-        "early_career_experience",
         "language",
-    }:
+    } or parent_concept in {"learning_attitude"}:
         normalized = normalize_phrase(source)
         return [{
             "text": source,
@@ -4493,7 +5282,11 @@ def decompose_requirement_text(text: str) -> List[dict]:
 
     paren_chunks = re.findall(r"\(([^)]+)\)", source)
     for chunk in paren_chunks:
-        atoms.extend(_split_list_fragments(chunk))
+        fragments = _split_list_fragments(chunk)
+        if _looks_like_alternative_list(source, chunk):
+            _append_alternative_atoms(atoms, fragments, f"any:{normalize_phrase(chunk)}")
+        else:
+            atoms.extend(fragments)
     without_parens = re.sub(r"\([^)]*\)", "", source).strip(" ,;")
 
     marker_matched = False
@@ -4504,7 +5297,7 @@ def decompose_requirement_text(text: str) -> List[dict]:
             continue
         left = _strip_requirement_lead(match.group(1))
         right = match.group(2).strip(" -:;,.")
-        if marker in {"such as", "including"} and _looks_like_alternative_list(source, right):
+        if _looks_like_alternative_list(source, right):
             fragments = _split_list_fragments(right)
             group_id = f"any:{normalize_phrase(right)}"
             if _append_alternative_atoms(atoms, fragments, group_id):
@@ -4547,7 +5340,7 @@ def decompose_requirement_text(text: str) -> List[dict]:
     for atom in atoms:
         if isinstance(atom, dict):
             norm = atom.get("normalized") or normalize_phrase(atom.get("text"))
-            if not norm or norm == normalized_parent or norm in seen:
+            if not norm or norm == normalized_parent or norm in seen or _looks_like_atomic_noise(atom.get("text") or ""):
                 continue
             seen.add(norm)
             normalized_atoms.append(atom)
@@ -4557,7 +5350,7 @@ def decompose_requirement_text(text: str) -> List[dict]:
         if len(atom.split()) == 1:
             atom = atom.replace(".", "")
         norm = normalize_phrase(atom)
-        if not norm or norm == normalized_parent or norm in seen:
+        if not norm or norm == normalized_parent or norm in seen or _looks_like_atomic_noise(atom):
             continue
         if parent_policy["type"] == "management" and norm in {"brief"}:
             continue
@@ -4579,7 +5372,16 @@ def decompose_requirement_text(text: str) -> List[dict]:
             "requirement_type": policy["type"],
         })
 
-    return normalized_atoms
+    deduped_atoms = []
+    seen_concepts = set()
+    for atom in normalized_atoms:
+        concept = _requirement_concept_key(atom.get("text") or "")
+        if concept and concept in seen_concepts:
+            continue
+        if concept:
+            seen_concepts.add(concept)
+        deduped_atoms.append(atom)
+    return deduped_atoms
 
 
 def aggregate_requirement_evidence(
@@ -4589,13 +5391,14 @@ def aggregate_requirement_evidence(
     ai_present: bool = False,
     ai_evidence: str | None = None,
     ai_confidence: str | None = None,
+    ai_atom_matches: dict[str, dict] | None = None,
 ) -> dict:
     """Evaluate one requirement using atomic deterministic checks, with AI as an ambiguity hint."""
-    parent_found = find_cv_evidence_for_requirement(requirement, parsed_resume, resume_text)
     atoms = decompose_requirement_text(requirement)
     breakdown = []
 
     for atom in atoms:
+        atom_match = (ai_atom_matches or {}).get(atom["normalized"]) or {}
         found = find_cv_evidence_for_requirement(atom["text"], parsed_resume, resume_text)
         status = "missing"
         evidence = None
@@ -4607,6 +5410,25 @@ def aggregate_requirement_evidence(
             section = found["section"]
             confidence = found["confidence"]
             status = "present" if found["confidence"] == "strong" else "partial"
+        elif atom_match and not atom["strict"]:
+            candidate_confidence = "partial"
+            atom_evidence = str(atom_match.get("evidence") or "")
+            validated = validate_evidence_for_requirement(atom["text"], atom_evidence, candidate_confidence)
+            if validated:
+                evidence = atom_evidence
+                section = validated["section"]
+                confidence = validated["confidence"]
+                status = "partial" if confidence == "partial" else "present"
+            elif (
+                _requirement_policy(atom["text"])["type"]
+                not in {"early_career_experience", "years_experience"}
+                and infer_evidence_section(atom_evidence) in {"experience", "projects"}
+                and _has_action_evidence(atom["text"], normalize_phrase(atom_evidence))
+            ):
+                evidence = atom_evidence
+                section = infer_evidence_section(atom_evidence)
+                confidence = "partial"
+                status = "partial"
         elif ai_present and ai_evidence and not atom["strict"]:
             candidate_confidence = "partial" if ai_confidence not in ("strong", "partial") else ai_confidence
             validated = validate_evidence_for_requirement(atom["text"], ai_evidence, candidate_confidence)
@@ -4616,26 +5438,43 @@ def aggregate_requirement_evidence(
                 confidence = validated["confidence"]
                 status = "partial" if confidence == "partial" else "present"
 
+        evidence_policy = atom_evidence_policy(atom["text"])
+        matched_signal_families = sorted(
+            set(evidence_policy["requested_signal_families"]).intersection(
+                _evidence_signal_families(evidence or "")
+            )
+        )
         breakdown.append({
             "requirement": atom["text"],
+            "canonical_atom": _canonical_atom_name(atom["text"]),
             "status": status,
+            "verification_result": status,
             "confidence": confidence,
             "evidence": evidence,
+            "selected_evidence": evidence,
             "section": section,
             "strict": atom["strict"],
             "requirement_type": atom.get("requirement_type") or _requirement_policy(atom["text"])["type"],
             "group_id": atom.get("group_id"),
             "group_mode": atom.get("group_mode"),
+            "alternative_group": atom.get("group_id"),
+            "evidence_policy": evidence_policy,
+            "matched_signal_families": matched_signal_families,
+            "selected_evidence_id": atom_match.get("evidence_id"),
         })
 
-    coverage_items = []
+    scoring_units = []
     grouped_items: dict[str, list[dict]] = {}
     for item in breakdown:
         group_id = item.get("group_id")
         if group_id and item.get("group_mode") == "any":
             grouped_items.setdefault(group_id, []).append(item)
         else:
-            coverage_items.append(item)
+            scoring_units.append({
+                **item,
+                "scoring_unit_id": f"atom:{item['canonical_atom']}",
+                "satisfied_by": item["canonical_atom"] if item["status"] in {"present", "partial"} else None,
+            })
 
     for group_id, items in grouped_items.items():
         matched = [item for item in items if item["status"] in {"present", "partial"}]
@@ -4650,70 +5489,75 @@ def aggregate_requirement_evidence(
             group_confidence = "missing"
         for item in items:
             item["group_status"] = group_status
-        best = next((item for item in matched if item.get("evidence")), None)
-        coverage_items.append({
+        best = next((item for item in matched if item["status"] == "present" and item.get("evidence")), None)
+        best = best or next((item for item in matched if item.get("evidence")), None)
+        scoring_units.append({
+            "scoring_unit_id": group_id,
             "requirement": " / ".join(item["requirement"] for item in items),
+            "canonical_atom": " / ".join(item["canonical_atom"] for item in items),
             "status": group_status,
+            "verification_result": group_status,
             "confidence": group_confidence,
             "evidence": best.get("evidence") if best else None,
+            "selected_evidence": best.get("evidence") if best else None,
             "section": best.get("section") if best else None,
             "strict": any(item.get("strict") for item in items),
             "requirement_type": "alternative_group",
             "group_id": group_id,
             "group_mode": "any",
+            "alternative_group": group_id,
+            "satisfied_by": best.get("canonical_atom") if best else None,
         })
 
-    present_count = sum(1 for item in coverage_items if item["status"] == "present")
-    partial_count = sum(1 for item in coverage_items if item["status"] == "partial")
+    present_count = sum(1 for item in scoring_units if item["status"] == "present")
+    partial_count = sum(1 for item in scoring_units if item["status"] == "partial")
     matched_count = present_count + partial_count
-    total_count = max(1, len(coverage_items))
+    total_count = max(1, len(scoring_units))
+    missing_count = total_count - matched_count
 
-    if parent_found and matched_count == 0:
-        overall_status = "present" if parent_found["confidence"] == "strong" else "partial"
-        overall_confidence = parent_found["confidence"]
-        best_evidence = parent_found["evidence"]
-        best_section = parent_found["section"]
-    elif matched_count == total_count and partial_count == 0:
+    if matched_count == total_count and partial_count == 0:
         overall_status = "present"
         overall_confidence = "strong"
-        best = next((item for item in coverage_items if item["evidence"]), None)
+        best = next((item for item in scoring_units if item["evidence"]), None)
         best_evidence = best["evidence"] if best else None
         best_section = best["section"] if best else None
     elif matched_count > 0:
         overall_status = "partial"
         overall_confidence = "partial"
-        best = next((item for item in coverage_items if item["status"] in ("present", "partial") and item["evidence"]), None)
+        best = next((item for item in scoring_units if item["status"] in ("present", "partial") and item["evidence"]), None)
         best_evidence = best["evidence"] if best else None
         best_section = best["section"] if best else None
-    elif ai_present and ai_evidence and not _requirement_policy(requirement)["strict"]:
-        candidate_confidence = "strong" if ai_confidence == "strong" else "partial"
-        validated = validate_evidence_for_requirement(requirement, ai_evidence, candidate_confidence)
-        if validated:
-            overall_status = "present" if validated["confidence"] == "strong" else "partial"
-            overall_confidence = validated["confidence"]
-            best_evidence = ai_evidence
-            best_section = validated["section"]
-        else:
-            overall_status = "missing"
-            overall_confidence = "missing"
-            best_evidence = None
-            best_section = None
     else:
         overall_status = "missing"
         overall_confidence = "missing"
         best_evidence = None
         best_section = None
 
-    coverage_ratio = matched_count / total_count
+    coverage_points = present_count + (partial_count * 0.5)
+    coverage_ratio = coverage_points / total_count
     return {
+        "original_requirement": requirement,
         "status": overall_status,
         "present": overall_status != "missing",
         "confidence": overall_confidence,
         "cv_where": best_evidence,
         "section": best_section,
         "matched_count": matched_count,
+        "missing_count": missing_count,
         "total_count": total_count,
         "coverage_ratio": round(coverage_ratio, 3),
+        "final_score": round(coverage_ratio, 3),
+        "matched_scoring_units": [
+            item["scoring_unit_id"]
+            for item in scoring_units
+            if item["status"] in {"present", "partial"}
+        ],
+        "missing_scoring_units": [
+            item["scoring_unit_id"]
+            for item in scoring_units
+            if item["status"] == "missing"
+        ],
+        "scoring_units": scoring_units,
         "atomic_breakdown": breakdown,
     }
 
@@ -4741,6 +5585,9 @@ SKILL_AUGMENT_ALLOWED_TYPES = {
 def _skill_identity_norms(skill: str) -> set[str]:
     norms = {normalize_phrase(skill)}
     norms.update(normalize_phrase(alias) for alias in _requirement_aliases(skill))
+    concept = _requirement_concept_key(skill)
+    if concept:
+        norms.add(f"concept:{concept}")
     return {norm for norm in norms if norm}
 
 
@@ -4760,6 +5607,29 @@ def _skill_item(
         "atomic_breakdown": aggregate["atomic_breakdown"],
         "evidence_source": "deterministic",
     }
+
+
+def _dedupe_skill_items(items: List[dict]) -> List[dict]:
+    deduped: List[dict] = []
+    identity_sets: List[set[str]] = []
+    status_rank = {"missing": 0, "partial": 1, "present": 2}
+    for item in items or []:
+        identities = _skill_identity_norms(str(item.get("skill") or ""))
+        match_index = next(
+            (idx for idx, existing in enumerate(identity_sets) if identities.intersection(existing)),
+            None,
+        )
+        if match_index is None:
+            deduped.append(item)
+            identity_sets.append(set(identities))
+            continue
+        existing = deduped[match_index]
+        existing_status = existing.get("status") or ("present" if existing.get("present") else "missing")
+        item_status = item.get("status") or ("present" if item.get("present") else "missing")
+        if status_rank.get(item_status, 0) > status_rank.get(existing_status, 0):
+            deduped[match_index] = item
+        identity_sets[match_index].update(identities)
+    return deduped
 
 
 def _local_skill_category(skill: str, local_requirements: List[dict], job_description: str = "") -> str:
@@ -4882,9 +5752,11 @@ def _augment_skills_with_local_requirements(
             must.append(item)
             must_norms.update(norms)
 
+    deduped_must = _dedupe_skill_items(must)
+    deduped_nice = _dedupe_skill_items(nice)
     return {
-        "must_have": filter_satisfied_alternative_missing_skills(must[:limit_per_bucket], job_description),
-        "nice_to_have": filter_satisfied_alternative_missing_skills(nice[:limit_per_bucket], job_description),
+        "must_have": filter_satisfied_alternative_missing_skills(deduped_must[:limit_per_bucket], job_description),
+        "nice_to_have": filter_satisfied_alternative_missing_skills(deduped_nice[:limit_per_bucket], job_description),
     }
 
 
@@ -5103,6 +5975,7 @@ def _phrase_present_in_normalized_text(phrase_norm: str, text_norm: str) -> bool
 def _requirement_aliases(requirement: str) -> List[str]:
     req_norm = normalize_phrase(requirement)
     aliases = [req_norm] if req_norm else []
+    aliases.extend(normalize_phrase(alias) for alias in exact_aliases(requirement))
     for canonical, values in TECH_SKILL_ALIASES.items():
         normalized_values = [normalize_phrase(v) for v in values]
         if req_norm == canonical or req_norm in normalized_values:
@@ -5110,8 +5983,92 @@ def _requirement_aliases(requirement: str) -> List[str]:
     return merge_unique([alias for alias in aliases if alias])
 
 
+def _canonical_atom_name(atom: str) -> str:
+    exact = exact_alias_key(atom)
+    if exact:
+        return exact
+    concept = _requirement_concept_key(atom)
+    return concept or normalize_phrase(atom)
+
+
+def _evidence_signal_families(text: str) -> set[str]:
+    norm = normalize_phrase(text)
+    return {
+        family
+        for family, signals in EVIDENCE_SIGNAL_FAMILIES.items()
+        if any(
+            _phrase_present_in_normalized_text(normalize_phrase(signal), norm)
+            for signal in signals
+        )
+    }
+
+
+def atom_evidence_policy(requirement: str) -> dict:
+    policy = _requirement_policy(requirement)
+    norm = normalize_phrase(requirement)
+    requested_families = set()
+    for hint, families in CAPABILITY_POLICY_HINTS.items():
+        if _phrase_present_in_normalized_text(normalize_phrase(hint), norm):
+            requested_families.update(families)
+
+    if policy["type"] == "exact_tool":
+        policy_type = "exact_tool"
+    elif policy["type"] in {"early_career_experience", "years_experience"}:
+        policy_type = "formal_or_early_career_experience"
+    elif requested_families:
+        policy_type = "broad_capability" if len(requested_families) >= 2 else "narrow_capability"
+    elif policy["type"] in {"communication", "management"}:
+        policy_type = "behaviour"
+    else:
+        policy_type = policy["type"]
+
+    requires_action = policy_type in {"broad_capability", "narrow_capability", "behaviour"}
+    if "devops" in norm or policy_type == "exact_tool":
+        requires_action = False
+    minimum_signals = 2 if policy_type == "broad_capability" else 1
+    return {
+        "policy_type": policy_type,
+        "requested_signal_families": sorted(requested_families),
+        "minimum_signal_families": minimum_signals,
+        "requires_action_evidence": requires_action,
+        "allowed_sections": sorted(policy["allowed_sections"]),
+    }
+
+
+def verify_evidence_policy(requirement: str, evidence: str) -> dict | None:
+    policy = atom_evidence_policy(requirement)
+    requested = set(policy["requested_signal_families"])
+    if not requested:
+        return None
+    evidence_families = _evidence_signal_families(evidence)
+    matched_families = requested.intersection(evidence_families)
+    if len(matched_families) < policy["minimum_signal_families"]:
+        return None
+    section = infer_evidence_section(evidence)
+    if section not in policy["allowed_sections"]:
+        return None
+    if policy["requires_action_evidence"] and not (
+        _has_action_evidence(requirement, normalize_phrase(evidence))
+        and section in {"experience", "projects"}
+    ):
+        return None
+    return {
+        "confidence": "strong" if requested.issubset(matched_families) else "partial",
+        "section": section,
+        "matched_signal_families": sorted(matched_families),
+        "policy": policy,
+    }
+
+
 STRICT_EVIDENCE_TERMS = (
     "python",
+    "fastapi",
+    "postgres",
+    "postgresql",
+    "snowflake",
+    "aws",
+    "azure",
+    "gcp",
     "rust",
     "grpc",
     "rest",
@@ -5150,7 +6107,10 @@ STRICT_EVIDENCE_TERMS = (
 
 def requires_strict_evidence(requirement: str) -> bool:
     req_norm = normalize_phrase(requirement)
-    return _requirement_policy(requirement)["strict"] or any(term in req_norm for term in STRICT_EVIDENCE_TERMS)
+    return _requirement_policy(requirement)["strict"] or any(
+        _phrase_present_in_normalized_text(normalize_phrase(term), req_norm)
+        for term in STRICT_EVIDENCE_TERMS
+    )
 
 
 def classify_requirement_evidence_match(requirement: str, evidence_text: str) -> str | None:
@@ -5160,6 +6120,8 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         return None
 
     policy = _requirement_policy(requirement)
+    if policy["type"] == "years_experience":
+        return None
     if policy["type"] in {"degree", "postgraduate_degree"}:
         has_degree_signal = any(
             _phrase_present_in_normalized_text(normalize_phrase(term), evidence_norm)
@@ -5174,14 +6136,27 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
 
     if policy["type"] == "early_career_experience":
         section = infer_evidence_section(evidence_text)
+        formal_markers = {"internship", "internships", "intern", "placement", "placements", "graduate scheme", "graduate programme"}
+        required_formal_markers = {
+            marker for marker in formal_markers
+            if _phrase_present_in_normalized_text(normalize_phrase(marker), req_norm)
+        }
+        if required_formal_markers:
+            if any(
+                _phrase_present_in_normalized_text(normalize_phrase(marker), evidence_norm)
+                for marker in required_formal_markers
+            ):
+                return "strong"
+            return None
         if section == "education":
             education_signals = {"bsc", "bachelor", "bachelors", "degree", "university", "graduate", "graduation"}
             if set(evidence_norm.split()).intersection(education_signals):
                 return "strong"
         if section in {"projects", "experience"}:
             experience_signals = {
-                "project", "projects", "internship", "intern", "placement", "developer",
-                "engineer", "analyst", "built", "developed", "implemented", "collaborated",
+                "built", "developed", "implemented", "programmed",
+                "coded", "coding", "scripted", "api", "apis", "application", "applications",
+                "automation", "automated", "technical",
             }
             if set(evidence_norm.split()).intersection(experience_signals):
                 return "strong"
@@ -5276,6 +6251,10 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         if "roadmap" in evidence_tokens and evidence_tokens.intersection(roadmap_signals):
             return "strong"
 
+    concept_confidence = _concept_evidence_confidence(requirement, evidence_text)
+    if concept_confidence:
+        return concept_confidence
+
     for alias in _requirement_aliases(requirement):
         alias_norm = normalize_phrase(alias)
         if not alias_norm or alias_norm in STOPWORDS:
@@ -5296,6 +6275,10 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
         )
         if signal_hit:
             return "strong"
+
+    if policy["type"] == "general":
+        if _general_action_families(requirement).intersection(_general_action_families(evidence_norm)):
+            return "partial"
 
     generic_words = {
         "ability", "abilities", "candidate", "demonstrate", "demonstrated",
@@ -5340,20 +6323,50 @@ def find_cv_evidence_for_requirement(
         if not any(normalize_phrase(existing) == line_norm for existing in evidence_lines):
             evidence_lines.append(line)
 
+    candidates = []
     for line in evidence_lines:
         confidence = classify_requirement_evidence_match(requirement, line)
         if confidence:
             validated = validate_evidence_for_requirement(requirement, line, confidence)
             if not validated:
                 continue
-            return {
+            section = validated["section"]
+            evidence_norm = normalize_phrase(line)
+            section_score = {
+                "experience": 30,
+                "projects": 25,
+                "education": 30,
+                "certifications": 30,
+                "summary": 15,
+                "skills": 40,
+            }.get(section, 0)
+            action_score = 12 if _general_action_families(evidence_norm) else 0
+            metric_score = 8 if re.search(r"\b\d+(?:\.\d+)?%?\b", line) else 0
+            confidence_score = 30 if validated["confidence"] == "strong" else 15
+            policy = validated["policy"]
+            if policy["type"] in {"degree", "postgraduate_degree"} and section == "education":
+                section_score = 50
+            if policy["strict"] and section == "skills":
+                section_score = 50
+            if policy["type"] in {"professional_experience", "general"}:
+                section_score = {
+                    "experience": 45,
+                    "projects": 40,
+                    "education": 25,
+                    "certifications": 25,
+                    "summary": 20,
+                    "skills": 10,
+                }.get(section, section_score)
+            if line.startswith("[CV]"):
+                section_score = min(section_score, 5)
+            candidates.append((confidence_score + section_score + action_score + metric_score, {
                 "evidence": line,
-                "section": validated["section"],
+                "section": section,
                 "confidence": validated["confidence"],
-                "requirement_type": validated["policy"]["type"],
-            }
+                "requirement_type": policy["type"],
+            }))
 
-    return None
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
 def extract_domain_evidence_notes(
@@ -5649,6 +6662,147 @@ def score_responsibility_match_semantic(
     }
 
 
+def _responsibility_core_concepts(requirement: str) -> List[str]:
+    concepts: List[str] = []
+    seen: set[str] = set()
+    for atom in decompose_requirement_text(requirement):
+        label = _requirement_concept_key(atom.get("text") or "") or normalize_phrase(atom.get("text") or "")
+        if not label or label in seen or _looks_like_atomic_noise(label):
+            continue
+        seen.add(label)
+        concepts.append(label)
+    return concepts[:8]
+
+
+def retrieve_responsibility_evidence_candidates(
+    responsibilities: List[dict],
+    parsed_resume: dict,
+    top_k: int = 5,
+) -> dict[str, List[dict]]:
+    """Retrieve plausible lines for verification. Retrieval never proves a match."""
+    evidence_units = evidence_units_from_parsed(parsed_resume)
+    candidates_by_requirement: dict[str, List[dict]] = {}
+    for resp_index, responsibility in enumerate(responsibilities, 1):
+        scored = []
+        for unit in evidence_units:
+            confidence = classify_requirement_evidence_match(responsibility["text"], unit["text"])
+            concept_confidence = _concept_evidence_confidence(responsibility["text"], unit["text"])
+            score = tfidf_similarity(responsibility["text"], unit["text"])
+            if responsibility["normalized"] and responsibility["normalized"] in unit["normalized"]:
+                score += 3.0
+            score += {"strong": 2.5, "partial": 1.0}.get(confidence, 0.0)
+            score += {"strong": 2.0, "partial": 0.75}.get(concept_confidence, 0.0)
+            if unit["section"] in {"experience", "projects", "education", "certifications"}:
+                score += 0.15
+            if unit["section"] == "skills":
+                score -= 0.1
+            scored.append((score, unit))
+        ranked = sorted(scored, key=lambda item: item[0], reverse=True)[:top_k]
+        candidates_by_requirement[responsibility["normalized"]] = [
+            {
+                "candidate_id": f"r{resp_index}c{candidate_index}",
+                "text": unit["text"],
+                "section": unit["section"],
+                "retrieval_score": round(score, 4),
+            }
+            for candidate_index, (score, unit) in enumerate(ranked, 1)
+        ]
+    return candidates_by_requirement
+
+
+def retrieve_atom_evidence_candidates(
+    responsibilities: List[dict],
+    parsed_resume: dict,
+    top_k: int = 5,
+) -> tuple[List[dict], dict[str, List[dict]]]:
+    """Retrieve CV-only candidate lines for each independently scoreable JD atom."""
+    evidence_units = evidence_units_from_parsed(parsed_resume)
+    atom_packets: List[dict] = []
+    candidates_by_atom: dict[str, List[dict]] = {}
+    for resp_index, responsibility in enumerate(responsibilities, 1):
+        for atom_index, atom in enumerate(decompose_requirement_text(responsibility["text"]), 1):
+            atom_id = f"r{resp_index}a{atom_index}"
+            scored = []
+            for unit in evidence_units:
+                confidence = classify_requirement_evidence_match(atom["text"], unit["text"])
+                score = tfidf_similarity(atom["text"], unit["text"])
+                score += {"strong": 3.0, "partial": 1.25}.get(confidence, 0.0)
+                if atom["normalized"] and atom["normalized"] in unit["normalized"]:
+                    score += 3.0
+                if unit["section"] in {"experience", "projects", "education", "certifications"}:
+                    score += 0.15
+                scored.append((score, unit))
+            ranked = sorted(scored, key=lambda item: item[0], reverse=True)[:top_k]
+            candidates = [
+                {
+                    "evidence_id": f"{atom_id}e{candidate_index}",
+                    "text": unit["text"],
+                    "section": unit["section"],
+                    "retrieval_score": round(score, 4),
+                }
+                for candidate_index, (score, unit) in enumerate(ranked, 1)
+            ]
+            candidates_by_atom[atom_id] = candidates
+            atom_packets.append({
+                "atom_id": atom_id,
+                "responsibility_index": resp_index,
+                "atom": atom["text"],
+                "canonical_atom": _canonical_atom_name(atom["text"]),
+                "strict": atom["strict"],
+                "requirement_type": atom.get("requirement_type") or _requirement_policy(atom["text"])["type"],
+                "group_id": atom.get("group_id"),
+                "group_mode": atom.get("group_mode"),
+                "candidate_evidence": candidates,
+            })
+    return atom_packets, candidates_by_atom
+
+
+def _evidence_reuse_limit(evidence: str, requirement: str) -> int:
+    if infer_evidence_section(evidence) == "skills":
+        return 4
+    if _requirement_policy(requirement)["type"] in {
+        "degree", "postgraduate_degree", "certification", "exact_tool",
+    }:
+        return 3
+    return 2
+
+
+def _evidence_proves_any_core_concept(requirement: str, evidence: str) -> bool:
+    for atom in decompose_requirement_text(requirement):
+        atom_text = atom.get("text") or ""
+        if _looks_like_atomic_noise(atom_text):
+            continue
+        if _concept_evidence_confidence(atom_text, evidence):
+            return True
+        if _general_capability_evidence_confidence(atom_text, evidence):
+            return True
+        confidence = classify_requirement_evidence_match(atom_text, evidence)
+        if confidence and _requirement_policy(atom_text)["type"] != "general":
+            return True
+    return False
+
+
+def _evidence_proves_all_core_concepts(requirement: str, evidence: str) -> bool:
+    atoms = [
+        atom
+        for atom in decompose_requirement_text(requirement)
+        if not _looks_like_atomic_noise(atom.get("text") or "")
+    ]
+    if not atoms:
+        return False
+    for atom in atoms:
+        atom_text = atom.get("text") or ""
+        if _concept_evidence_confidence(atom_text, evidence):
+            continue
+        if _general_capability_evidence_confidence(atom_text, evidence):
+            continue
+        confidence = classify_requirement_evidence_match(atom_text, evidence)
+        if confidence and _requirement_policy(atom_text)["type"] != "general":
+            continue
+        return False
+    return True
+
+
 def gemini_responsibility_match(
     responsibilities: List[dict],
     parsed_resume: dict,
@@ -5659,8 +6813,35 @@ def gemini_responsibility_match(
     if not responsibilities:
         return score_responsibility_match_semantic(responsibilities, [])
 
-    resp_list = "\n".join(f"{i + 1}. {r['text']}" for i, r in enumerate(responsibilities))
-    cv_section = format_cv_match_evidence(parsed_resume, work_limit=70, project_limit=70)
+    atom_packets, candidates_by_atom = retrieve_atom_evidence_candidates(
+        responsibilities,
+        parsed_resume,
+        top_k=5,
+    )
+    candidates_by_requirement: dict[str, List[dict]] = {}
+    for packet in atom_packets:
+        try:
+            original = responsibilities[int(packet["responsibility_index"]) - 1]
+        except (IndexError, TypeError, ValueError):
+            continue
+        existing = candidates_by_requirement.setdefault(original["normalized"], [])
+        seen_text = {normalize_phrase(item.get("text") or "") for item in existing}
+        for candidate in packet.get("candidate_evidence") or []:
+            norm = normalize_phrase(candidate.get("text") or "")
+            if norm and norm not in seen_text:
+                existing.append(candidate)
+                seen_text.add(norm)
+    verification_packets = []
+    for index, responsibility in enumerate(responsibilities, 1):
+        verification_packets.append({
+            "index": index,
+            "responsibility": responsibility["text"],
+            "core_concepts": _responsibility_core_concepts(responsibility["text"]),
+            "candidate_evidence": [
+                candidate["text"]
+                for candidate in candidates_by_requirement.get(responsibility["normalized"], [])
+            ],
+        })
 
     prompt = (
         "You are an expert recruiter matching a CV against job responsibilities.\n"
@@ -5708,13 +6889,30 @@ def gemini_responsibility_match(
         "- gap: be specific — e.g. 'No experience leading cross-functional teams, only individual contributor roles shown' not 'needs more leadership'\n"
         "- Return ONLY the JSON object, no markdown fences.\n"
     )
-    contents = f"{prompt}\n\nJOB RESPONSIBILITIES:\n{resp_list}\n\nCANDIDATE CV:\n{cv_section}"
+    contents = (
+        "STRICT VERIFICATION OVERRIDE:\n"
+        "- For each responsibility, choose evidence ONLY from its candidate_evidence list.\n"
+        "- If none directly proves a core concept, put the responsibility in missing.\n"
+        "- Topical similarity, shared generic actions, and keyword-only mentions are not evidence.\n"
+        "- Broad capabilities require action-based experience or project evidence, not only the SKILLS line.\n\n"
+        f"{prompt}\n\nVERIFICATION PACKETS:\n{json.dumps(verification_packets, ensure_ascii=False)}"
+    )
+    contents = (
+        "You are a strict atom-level CV evidence selector. Return ONLY valid JSON shaped as "
+        '{"atom_matches":[{"atom_id":"r1a1","evidence_id":"r1a1e1","confidence":"strong|partial"}],'
+        '"atom_missing":[{"atom_id":"r1a2","gap":"specific missing evidence"}]}.\n'
+        "Select only evidence_id values listed inside that same atom packet. Judge each atom "
+        "independently. Named tools require the same tool or exact alias. Internship, placement, "
+        "and formal-program atoms require explicit formal markers. Skills-only evidence does not "
+        "prove broad responsibilities or behaviours. Every atom_id must appear exactly once.\n\n"
+        f"ATOM VERIFICATION PACKETS:\n{json.dumps(atom_packets, ensure_ascii=False)}"
+    )
 
     try:
         response = GENAI_CLIENT.models.generate_content(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
-            config=gemini_generation_config(0),
+            config=gemini_generation_config(0, response_mime_type="application/json"),
         )
         raw = getattr(response, "text", "") or ""
         parsed = parse_json_response(raw)
@@ -5743,7 +6941,52 @@ def gemini_responsibility_match(
     missing_items: List[dict] = []
     STRONG_W, PARTIAL_W = 1.0, 0.55
     ai_match_map: dict[str, dict] = {}
+    ai_atom_match_map: dict[str, dict[str, dict]] = {}
     ai_gap_map: dict[str, str] = {}
+
+    atom_packet_by_id = {packet["atom_id"]: packet for packet in atom_packets}
+    for match in parsed.get("atom_matches") or []:
+        if not isinstance(match, dict):
+            continue
+        atom_id = str(match.get("atom_id") or "")
+        evidence_id = str(match.get("evidence_id") or "")
+        packet = atom_packet_by_id.get(atom_id)
+        candidate = next(
+            (
+                item
+                for item in candidates_by_atom.get(atom_id, [])
+                if item.get("evidence_id") == evidence_id
+            ),
+            None,
+        )
+        if not packet or not candidate:
+            continue
+        try:
+            original = responsibilities[int(packet["responsibility_index"]) - 1]
+        except (IndexError, TypeError, ValueError):
+            continue
+        atom_norm = normalize_phrase(packet.get("atom") or "")
+        if not atom_norm:
+            continue
+        ai_atom_match_map.setdefault(original["normalized"], {})[atom_norm] = {
+            "evidence_id": evidence_id,
+            "evidence": candidate["text"],
+            "confidence": str(match.get("confidence") or "partial").lower().strip(),
+        }
+
+    for missing in parsed.get("atom_missing") or []:
+        if not isinstance(missing, dict):
+            continue
+        packet = atom_packet_by_id.get(str(missing.get("atom_id") or ""))
+        if not packet:
+            continue
+        try:
+            original = responsibilities[int(packet["responsibility_index"]) - 1]
+        except (IndexError, TypeError, ValueError):
+            continue
+        gap = str(missing.get("gap") or "").strip()
+        if gap:
+            ai_gap_map[original["normalized"]] = gap
 
     for m in (parsed.get("matches") or []):
         if not isinstance(m, dict):
@@ -5751,9 +6994,27 @@ def gemini_responsibility_match(
         original = _find_original(m)
         if original is None:
             continue
+        evidence = str(m.get("evidence") or "").strip() or None
+        candidate_texts = {
+            normalize_phrase(candidate["text"]): candidate["text"]
+            for candidate in candidates_by_requirement.get(original["normalized"], [])
+        }
+        canonical_evidence = candidate_texts.get(normalize_phrase(evidence or ""))
+        if not canonical_evidence:
+            ai_gap_map[original["normalized"]] = "No supplied candidate evidence directly proved this requirement."
+            continue
+        policy = _requirement_policy(original["text"])
+        if infer_evidence_section(canonical_evidence) == "skills" and policy["type"] in {
+            "general", "professional_experience", "project_management", "management",
+        }:
+            ai_gap_map[original["normalized"]] = "Only a skills-list mention was found; no action-based evidence proved this capability."
+            continue
+        if not _evidence_proves_any_core_concept(original["text"], canonical_evidence):
+            ai_gap_map[original["normalized"]] = "The selected line was topically related but did not prove a core requirement concept."
+            continue
         ai_match_map[original["normalized"]] = {
             "confidence": str(m.get("confidence") or "partial").lower().strip(),
-            "evidence": str(m.get("evidence") or "").strip() or None,
+            "evidence": canonical_evidence,
         }
 
     for m in (parsed.get("missing") or []):
@@ -5764,8 +7025,10 @@ def gemini_responsibility_match(
             continue
         ai_gap_map[original["normalized"]] = str(m.get("gap") or "").strip()
 
+    evidence_use_counts: dict[str, int] = {}
     for original in responsibilities:
         ai_match = ai_match_map.get(original["normalized"]) or {}
+        atom_matches = ai_atom_match_map.get(original["normalized"]) or {}
         aggregate = aggregate_requirement_evidence(
             original["text"],
             parsed_resume,
@@ -5773,7 +7036,21 @@ def gemini_responsibility_match(
             ai_present=bool(ai_match),
             ai_evidence=ai_match.get("evidence"),
             ai_confidence=ai_match.get("confidence"),
+            ai_atom_matches=atom_matches,
         )
+        if (
+            not ai_match
+            and aggregate["status"] == "partial"
+            and aggregate["matched_count"] == 0
+            and _requirement_policy(original["text"])["type"] == "general"
+        ):
+            aggregate_evidence = aggregate.get("cv_where") or ""
+            if not _concept_evidence_confidence(original["text"], aggregate_evidence):
+                aggregate["status"] = "missing"
+                aggregate["present"] = False
+                aggregate["confidence"] = "missing"
+                aggregate["cv_where"] = None
+                aggregate["section"] = None
         if aggregate["status"] == "missing":
             missing_items.append({
                 "responsibility": original["text"],
@@ -5781,29 +7058,56 @@ def gemini_responsibility_match(
                 "gap": ai_gap_map.get(original["normalized"]) or "No explicit CV evidence found for this requirement.",
                 "category": original.get("category", "essential"),
                 "atomic_breakdown": aggregate["atomic_breakdown"],
+                "verification_debug": aggregate,
             })
             continue
 
         confidence = "strong" if aggregate["status"] == "present" and aggregate["confidence"] == "strong" else "partial"
+        selected_evidence = ai_match.get("evidence") or aggregate["cv_where"]
+        if confidence == "strong" and selected_evidence and not _evidence_proves_all_core_concepts(
+            original["text"],
+            selected_evidence,
+        ):
+            confidence = "partial"
+        evidence_key = normalize_phrase(selected_evidence or "")
+        if evidence_key:
+            reuse_limit = _evidence_reuse_limit(selected_evidence, original["text"])
+            if evidence_use_counts.get(evidence_key, 0) >= reuse_limit:
+                missing_items.append({
+                    "responsibility": original["text"],
+                    "action_phrases": original["action_phrases"],
+                    "gap": "The available evidence was too generic and already used for other requirements.",
+                    "category": original.get("category", "essential"),
+                    "atomic_breakdown": aggregate["atomic_breakdown"],
+                    "verification_debug": aggregate,
+                })
+                continue
+            evidence_use_counts[evidence_key] = evidence_use_counts.get(evidence_key, 0) + 1
         matched_items.append({
             "responsibility": original["text"],
             "action_phrases": original["action_phrases"],
-            "evidence": aggregate["cv_where"],
-            "section": aggregate["section"] or "experience",
-            "similarity": 1.0 if confidence == "strong" else max(0.6, aggregate["coverage_ratio"]),
-            "match_type": "ai_atomic" if ai_match else "local_atomic",
+            "evidence": selected_evidence,
+            "section": infer_evidence_section(selected_evidence) if selected_evidence else (aggregate["section"] or "experience"),
+            "similarity": 1.0 if confidence == "strong" else min(0.75, aggregate["coverage_ratio"]),
+            "match_type": "ai_atomic" if (ai_match or atom_matches) else "local_atomic",
             "confidence": confidence,
             "category": original.get("category", "essential"),
             "matched_count": aggregate["matched_count"],
             "total_count": aggregate["total_count"],
             "atomic_breakdown": aggregate["atomic_breakdown"],
+            "verification_debug": aggregate,
         })
 
-    total = len(responsibilities)
-    total_weight = sum(
-        STRONG_W if item.get("confidence") == "strong" else PARTIAL_W
-        for item in matched_items
-    )
+    category_weights = {"essential": 1.0, "nice_to_have": 0.25}
+    total = sum(category_weights.get(item.get("category", "essential"), 1.0) for item in responsibilities)
+    total_weight = 0.0
+    for item in matched_items:
+        category_weight = category_weights.get(item.get("category", "essential"), 1.0)
+        if item.get("confidence") == "strong":
+            evidence_weight = STRONG_W
+        else:
+            evidence_weight = max(0.0, min(1.0, float(item.get("similarity") or PARTIAL_W)))
+        total_weight += category_weight * evidence_weight
     score = round(max(0.0, min(100.0, 100.0 * total_weight / total)), 2) if total else 0.0
     evidence_by_section = {"experience": 0, "projects": 0, "summary": 0, "skills": 0}
     for item in matched_items:
@@ -5820,125 +7124,6 @@ def gemini_responsibility_match(
     }
 
 
-def compute_title_alignment(job_description: str, resume_text: str) -> dict:
-    job_terms = extract_seniority_terms(job_description)
-    resume_terms = extract_seniority_terms(resume_text)
-    if not job_terms:
-        return {
-            "score": None,
-            "job_terms": [],
-            "resume_terms": resume_terms,
-            "aligned": None,
-        }
-
-    job_level = max(SENIORITY_LEVELS.get(term, 0) for term in job_terms)
-    resume_level = max((SENIORITY_LEVELS.get(term, 0) for term in resume_terms), default=0)
-    if resume_level == 0:
-        score = 0.0
-    else:
-        score = max(0.0, 1.0 - (abs(job_level - resume_level) / 4))
-
-    return {
-        "score": round(score * 100, 2),
-        "job_terms": job_terms,
-        "resume_terms": resume_terms,
-        "aligned": bool(score >= 0.75),
-    }
-
-
-SENIORITY_LABELS = {
-    0: "unspecified",
-    1: "junior",
-    2: "associate/mid",
-    3: "senior",
-    4: "lead",
-    5: "principal",
-}
-
-LEADERSHIP_EVIDENCE_TERMS = (
-    "lead", "led", "mentor", "mentored", "managed", "line management",
-    "technical direction", "technical vision", "accountable", "architecture",
-    "stakeholder", "client", "delivery", "roadmap", "prioritise", "prioritize",
-)
-
-
-def infer_role_seniority(job_description: str) -> dict:
-    explicit_title_term = _extract_role_title_seniority(job_description)
-    if explicit_title_term:
-        terms = [explicit_title_term]
-        level = SENIORITY_LEVELS.get(explicit_title_term, 0)
-        return {
-            "level": level,
-            "label": SENIORITY_LABELS.get(level, "unspecified"),
-            "terms": terms,
-        }
-
-    terms = extract_seniority_terms(job_description)
-    norm = normalize_phrase(job_description)
-    if re.search(r"\b(?:technical direction|technical vision|accountable for the technical delivery)\b", norm):
-        terms.append("lead")
-    if re.search(r"\bmentor(?:ing)?\b", norm) or re.search(r"\bline management\b", norm):
-        terms.append("lead")
-    level = max((SENIORITY_LEVELS.get(term, 0) for term in terms), default=0)
-    return {
-        "level": level,
-        "label": SENIORITY_LABELS.get(level, "unspecified"),
-        "terms": merge_unique(terms),
-    }
-
-
-def infer_candidate_seniority(parsed_resume: dict, resume_text: str, resume_years: Optional[int]) -> dict:
-    terms = extract_seniority_terms(resume_text)
-    parsed_level = normalize_phrase(parsed_resume.get("seniority_level") or "")
-    if parsed_level in SENIORITY_LEVELS:
-        terms.append(parsed_level)
-    norm = normalize_phrase(resume_text)
-    leadership_hits = [term for term in LEADERSHIP_EVIDENCE_TERMS if term in norm]
-    level = max((SENIORITY_LEVELS.get(term, 0) for term in terms), default=0)
-    if level == 0:
-        if resume_years is not None and resume_years >= 8:
-            level = 3
-        elif resume_years is not None and resume_years >= 4:
-            level = 2
-        elif resume_years is not None:
-            level = 1
-    if level < 3 and len(leadership_hits) >= 4 and "junior" not in terms:
-        level = max(level, 2)
-    return {
-        "level": level,
-        "label": SENIORITY_LABELS.get(level, "unspecified"),
-        "terms": merge_unique(terms),
-        "leadership_evidence": merge_unique(leadership_hits),
-    }
-
-
-def compute_seniority_fit(job_description: str, parsed_resume: dict, resume_text: str, resume_years: Optional[int]) -> dict:
-    role = infer_role_seniority(job_description)
-    candidate = infer_candidate_seniority(parsed_resume, resume_text, resume_years)
-    role_level = role["level"]
-    candidate_level = candidate["level"]
-    if role_level == 0:
-        score = 100.0
-        gap = "No explicit seniority requirement detected."
-    elif candidate_level >= role_level:
-        score = 100.0
-        gap = "Candidate seniority appears aligned with the role level."
-    else:
-        level_gap = role_level - candidate_level
-        score = max(10.0, 100.0 - (level_gap * 32.0))
-        gap = f"Role appears {role['label']}-level while the CV reads closer to {candidate['label']} level."
-    fit_type = "aligned"
-    if role_level and candidate_level < role_level:
-        fit_type = "stretch" if role_level - candidate_level <= 2 else "underleveled"
-    return {
-        "score": round(score, 2),
-        "role": role,
-        "candidate": candidate,
-        "fit_type": fit_type,
-        "gap": gap,
-    }
-
-
 def compute_technical_relevance_score(
     responsibility_score: float,
     semantic_score: float,
@@ -5949,38 +7134,16 @@ def compute_technical_relevance_score(
     if evidence_score is None:
         evidence_score = experience_result.get("score") or 0
     score = (
-        responsibility_score * 0.45
-        + semantic_score * 0.25
-        + skills_score * 0.20
+        responsibility_score * 0.55
+        + semantic_score * 0.10
+        + skills_score * 0.25
         + float(evidence_score or 0) * 0.10
     )
     return round(max(0.0, min(100.0, score)), 2)
 
 
-def combine_final_match_score(base_score: float, technical_score: float, seniority_fit: dict) -> float:
-    role_level = (seniority_fit.get("role") or {}).get("level") or 0
-    seniority_score = seniority_fit.get("score") or 100.0
-    if role_level >= 4:
-        adjusted = technical_score * 0.60 + seniority_score * 0.40
-        return round(max(0.0, min(100.0, adjusted)), 2)
-    if role_level == 3:
-        adjusted = technical_score * 0.70 + seniority_score * 0.30
-        return round(max(0.0, min(100.0, adjusted)), 2)
-    return round(base_score, 2)
-
-
-def build_application_positioning(match_score: float, technical_score: float, seniority_fit: dict) -> dict:
-    fit_type = seniority_fit.get("fit_type") or "aligned"
-    role_label = (seniority_fit.get("role") or {}).get("label") or "unspecified"
-    candidate_label = (seniority_fit.get("candidate") or {}).get("label") or "unspecified"
-    if fit_type in {"stretch", "underleveled"}:
-        headline = "Technically relevant but under-leveled for this role"
-        tone = "stretch, evidence-based, avoid seniority overclaims"
-        cover_guidance = (
-            f"Frame the candidate as technically relevant with growth potential, but do not claim they are already a strong {role_label}-level fit. "
-            f"Acknowledge evidence honestly from a {candidate_label}-level profile."
-        )
-    elif match_score >= 75:
+def build_application_positioning(match_score: float, technical_score: float) -> dict:
+    if match_score >= 75:
         headline = "Strong fit"
         tone = "confident and evidence-led"
         cover_guidance = "Use confident fit language backed by specific CV evidence."
@@ -5989,13 +7152,10 @@ def build_application_positioning(match_score: float, technical_score: float, se
         tone = "balanced and evidence-led"
         cover_guidance = "Focus on transferable evidence and avoid unsupported claims."
     return {
-        "fit_type": fit_type,
         "headline": headline,
         "cover_letter_tone": tone,
         "cover_letter_guidance": cover_guidance,
         "technical_relevance_score": technical_score,
-        "seniority_fit_score": seniority_fit.get("score"),
-        "seniority_gap": seniority_fit.get("gap"),
     }
 
 
@@ -6021,8 +7181,6 @@ def compute_experience_match(
     else:
         years_score = min(1.0, resume_years / required_years) if required_years > 0 else 1.0
 
-    title_alignment = compute_title_alignment(job_description, resume_text)
-
     matched_experience = [
         item
         for item in responsibility_result["matched_responsibilities"]
@@ -6037,11 +7195,6 @@ def compute_experience_match(
         ("years", 0.4, years_score),
         ("dates", 0.2, date_coverage_ratio),
         ("evidence", 0.2, evidence_density),
-        (
-            "title_alignment",
-            0.2,
-            None if title_alignment["score"] is None else title_alignment["score"] / 100,
-        ),
     ]
     total_weight = sum(weight for _name, weight, value in component_weights if value is not None)
     weighted_total = sum(weight * value for _name, weight, value in component_weights if value is not None)
@@ -6066,12 +7219,6 @@ def compute_experience_match(
         )
     else:
         experience_gaps.append("Experience bullets do not strongly prove the job's key responsibilities yet.")
-    if title_alignment["score"] is not None:
-        if title_alignment["aligned"]:
-            experience_evidence.append("Seniority language in the CV aligns with the role level.")
-        else:
-            experience_gaps.append("Seniority/title language is not clearly aligned with the role level.")
-
     return {
         "score": round(max(0.0, min(100.0, experience_score)), 2),
         "required_years": required_years,
@@ -6079,8 +7226,6 @@ def compute_experience_match(
         "years_score": None if years_score is None else round(years_score * 100, 2),
         "date_coverage_score": round(date_coverage_ratio * 100, 2),
         "responsibility_evidence_score": round(evidence_density * 100, 2),
-        "title_alignment_score": title_alignment["score"],
-        "title_alignment": title_alignment,
         "experience_evidence": experience_evidence,
         "experience_gaps": experience_gaps,
     }
@@ -7432,7 +8577,14 @@ def gemini_skills_and_ats(
             if not skill or norm_skill in seen:
                 continue
             has_ai_evidence = bool(item.get("present")) or bool(str(item.get("cv_where") or "").strip())
-            if not is_valid_model_skill(skill, candidate_jd_blob_for_ats) and not has_ai_evidence:
+            hard_term_hits = {
+                normalize_phrase(term)
+                for term in _known_ats_hard_terms()
+                if _phrase_present_in_normalized_text(normalize_phrase(term), norm_skill)
+            }
+            if not is_valid_model_skill(skill, candidate_jd_blob_for_ats) and not (
+                has_ai_evidence and len(hard_term_hits) >= 2
+            ):
                 continue
             seen.add(norm_skill)
             aggregate = aggregate_requirement_evidence(
@@ -7472,7 +8624,7 @@ def gemini_skills_and_ats(
             norm_skill = normalize_phrase(skill)
             if not skill or norm_skill in seen:
                 continue
-            if not is_valid_ats_keyword(skill, candidate_jd_blob_for_ats):
+            if _looks_like_noisy_ats_fragment(skill) or not is_valid_ats_keyword(skill, candidate_jd_blob_for_ats):
                 continue
             seen.add(norm_skill)
             jd_count = max(1, int(item.get("jd_count") or 1))
@@ -7699,39 +8851,61 @@ async def analyze(
             detail=f"AI analysis failed while extracting job requirements: {exc}",
         )
 
-    # Phase 2: All independent API calls run in parallel (70 s hard cap, 20 s before frontend timeout)
+    # Phase 2: Run required scoring calls in parallel. Optional section-level AI extras
+    # also start immediately, but they no longer fail the whole analysis if Gemini is slow.
+    cv_sections_task = asyncio.create_task(
+        asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, analysis_job_description)
+    )
+    gemini_sections_task = asyncio.create_task(
+        # Skips role_fit_breakdown context here (chicken-and-egg) — the prompt is strong
+        # enough to infer JD vs CV gaps on its own.
+        asyncio.to_thread(gemini_section_feedback, parsed_resume, analysis_job_description, None)
+    )
+    optional_tasks = (cv_sections_task, gemini_sections_task)
     try:
         (
-            cv_sections_analysis,
             unified_result,
             responsibility_result,
             semantic_score,
             textrazor_terms,
-            gemini_sections,
         ) = await asyncio.wait_for(
             asyncio.gather(
-                asyncio.to_thread(analyze_cv_sections, resume_text, parsed_resume, analysis_job_description),
                 asyncio.to_thread(gemini_skills_and_ats, analysis_job_description, parsed_resume, resume_text, job_preflight),
                 asyncio.to_thread(gemini_responsibility_match, responsibility_candidates, parsed_resume),
                 asyncio.to_thread(compute_semantic_score, resume_text, analysis_job_description, None),
                 asyncio.to_thread(textrazor_extract_phrases, analysis_job_description, None),
-                # 6th task: per-section feedback via Gemini. Runs in parallel so no added latency.
-                # Skips role_fit_breakdown context here (chicken-and-egg) — the prompt is strong
-                # enough to infer JD vs CV gaps on its own.
-                asyncio.to_thread(gemini_section_feedback, parsed_resume, analysis_job_description, None),
             ),
-            timeout=70,
+            timeout=ANALYZE_CORE_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
+        for task in optional_tasks:
+            task.cancel()
         raise HTTPException(
             status_code=504,
             detail="Analysis timed out; the AI service is under load. Please try again in a moment.",
         )
     except Exception as exc:
+        for task in optional_tasks:
+            task.cancel()
         raise HTTPException(
             status_code=502,
             detail=f"AI analysis failed. Please try again in a moment. Details: {exc}",
         )
+    try:
+        cv_sections_analysis, gemini_sections = await asyncio.wait_for(
+            asyncio.gather(*optional_tasks),
+            timeout=ANALYZE_OPTIONAL_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        for task in optional_tasks:
+            task.cancel()
+        logger.warning("Optional CV section analysis timed out; returning core analysis with fallbacks.")
+        cv_sections_analysis = {}
+        gemini_sections = {}
+    except Exception as exc:
+        logger.warning("Optional CV section analysis failed; returning core analysis with fallbacks: %s", exc)
+        cv_sections_analysis = {}
+        gemini_sections = {}
     skills_result = unified_result["skills"]
     ats_keywords_result = unified_result["ats_keywords"]
     must_have_items   = skills_result["must_have"]
@@ -7769,7 +8943,7 @@ async def analyze(
         resume_years=resume_years,
     )
     skills_match_score = round(
-        ((must_coverage * 0.7) + (nice_coverage * 0.3)) * 100,
+        ((must_coverage * 0.85) + (nice_coverage * 0.15)) * 100,
         2,
     )
 
@@ -7792,15 +8966,14 @@ async def analyze(
         2,
     )
     base_match_score = max(0.0, min(100.0, base_match_score))
-    seniority_fit = compute_seniority_fit(analysis_job_description, parsed_resume, resume_text, resume_years)
     technical_relevance_score = compute_technical_relevance_score(
         responsibility_result["score"],
         semantic_score,
         skills_match_score,
         experience_result,
     )
-    match_score = combine_final_match_score(base_match_score, technical_relevance_score, seniority_fit)
-    application_positioning = build_application_positioning(match_score, technical_relevance_score, seniority_fit)
+    match_score = base_match_score
+    application_positioning = build_application_positioning(match_score, technical_relevance_score)
     cv_highlights = annotate_cv_lines(resume_sections_raw, responsibility_result, parsed_resume)
 
     role_fit_breakdown = {
@@ -7810,8 +8983,6 @@ async def analyze(
         "semantic_score": round(semantic_score, 2),
         "base_match_score": base_match_score,
         "technical_relevance_score": technical_relevance_score,
-        "seniority_fit_score": seniority_fit["score"],
-        "seniority_fit": seniority_fit,
         "application_positioning": application_positioning,
         "final_match_score": match_score,
         "matched_responsibilities": responsibility_result["matched_responsibilities"],
@@ -7842,8 +9013,6 @@ async def analyze(
             "years_score": experience_result["years_score"],
             "date_coverage_score": experience_result["date_coverage_score"],
             "responsibility_evidence_score": experience_result["responsibility_evidence_score"],
-            "title_alignment_score": experience_result["title_alignment_score"],
-            "title_alignment": experience_result["title_alignment"],
         },
         "skills_detail": {
             "must_have": must_have_items,
@@ -7884,7 +9053,6 @@ async def analyze(
             )
         ),
         "candidate_profile": {
-            "seniority_level": parsed_resume.get("seniority_level"),
             "industry_domains": parsed_resume.get("industry_domains") or [],
             "location": parsed_resume.get("location"),
             "management_experience": parsed_resume.get("management_experience") or {},
@@ -8266,17 +9434,7 @@ def gemini_generate_cover_letter(resume_text: str, job_description: str) -> str:
         if domain_notes
         else "(No special domain evidence detected by the pre-scan.)"
     )
-    seniority_fit = compute_seniority_fit(
-        job_description,
-        {},
-        resume_text,
-        extract_resume_years(resume_text),
-    )
-    cover_positioning = build_application_positioning(
-        seniority_fit.get("score") or 0,
-        0,
-        seniority_fit,
-    )
+    cover_positioning = build_application_positioning(0, 0)
 
     prompt = f"""{COVER_LETTER_SYSTEM_PROMPT}
 
@@ -8296,9 +9454,7 @@ JD-RELEVANT CV EVIDENCE TO PRIORITISE:
 APPLICATION POSITIONING RULES:
 - Fit headline: {cover_positioning['headline']}
 - Tone: {cover_positioning['cover_letter_tone']}
-- Seniority note: {cover_positioning['seniority_gap']}
 - Guidance: {cover_positioning['cover_letter_guidance']}
-- If the role is senior/lead-level and the CV is junior/early-career, do NOT say "strong fit", "ideal fit", or imply proven lead-level ownership. Frame the application as relevant technical experience plus growth potential.
 
 ---
 Generate the cover letter now."""

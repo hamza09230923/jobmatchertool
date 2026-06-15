@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import main
@@ -24,6 +25,43 @@ class RaisingModels:
 class RaisingClient:
     def __init__(self):
         self.models = RaisingModels()
+
+
+DATA_LLM_ENGINEER_JD = """
+About the job
+Key Responsibilities
+
+Design, develop, test, and support robust, production-ready software solutions, adhering to modern engineering best practices.
+Build and maintain microservices-based systems, with a strong focus on scalability, resilience, and performance.
+Develop and optimise scalable data pipelines, supporting both batch and streaming workloads, using technologies such as Apache Spark.
+Work extensively with data technologies, leveraging Python and SQL to deliver high-quality analytical and data-driven solutions.
+Lead the design and delivery of data-centric applications, translating complex business and analytical requirements into well-architected technical solutions.
+Implement and integrate large language models (LLMs), including:
+Utilising both proprietary and open-source models
+Fine-tuning models to meet specific business use cases
+Delivering solutions via APIs, such as OpenAI APIs
+Collaborate closely with product managers, data scientists, and engineering peers to shape technical designs and delivery approaches.
+Apply strong problem-solving and analytical skills to diagnose issues, optimise performance, and improve overall system reliability.
+Contribute to architectural decision-making, participate in code reviews, and support the continuous improvement of engineering standards and practices.
+
+Required Skills & Experience
+
+Demonstrable hands-on experience developing production-grade backend systems.
+Proven experience designing and implementing microservices architectures, ideally within cloud environments.
+Strong background in data engineering, including building and maintaining large-scale data pipelines.
+Advanced proficiency in Python and SQL.
+Practical experience working with large language models, including model fine-tuning and API-based integrations (e.g. OpenAI).
+Experience in solution and system design, particularly for data-driven and analytical platforms.
+Solid understanding of core software engineering principles, including version control, automated testing, and deployment pipelines.
+Excellent analytical thinking and problem-solving skills, with a pragmatic and delivery-focused mindset.
+
+Desirable Skills
+
+Experience working with major cloud platforms such as AWS, Azure, or GCP.
+Familiarity with containerisation and orchestration technologies (e.g. Docker, Kubernetes).
+Exposure to MLOps practices or deploying AI/ML models into production environments.
+Experience working in agile or fast-paced delivery teams.
+"""
 
 
 BLACKROCK_JD = """
@@ -99,22 +137,6 @@ def test_requirement_merge_rejects_model_company_background_output():
     ]
 
 
-def test_blackrock_associate_role_is_not_inferred_as_principal():
-    seniority = main.infer_role_seniority(BLACKROCK_JD)
-
-    assert seniority["level"] == main.SENIORITY_LEVELS["associate"]
-    assert seniority["terms"] == ["associate"]
-    assert seniority["label"] == "associate/mid"
-
-
-def test_principal_investing_phrase_is_not_seniority_term():
-    terms = main.extract_seniority_terms(
-        "Relevant experience with secondaries underwriting or principal investing experience."
-    )
-
-    assert "principal" not in terms
-
-
 def test_prima_preface_copy_is_not_treated_as_candidate_requirements():
     jd = """
 Since 2015, we have been using our love of data and tech to rethink motor insurance.
@@ -140,13 +162,17 @@ Proficiency in DevOps, CI/CD pipeline management, and expertise in infrastructur
     assert "ci/cd pipeline management" in joined
 
 
-def test_pipeline_management_is_not_line_management_seniority_signal():
-    seniority = main.infer_role_seniority(
-        "Data Engineer required. Proficiency in DevOps and CI/CD pipeline management is essential."
+def test_preflight_merge_rejects_requirement_headings():
+    merged = main.merge_job_requirements(
+        [
+            {"text": "Necessary education and experience", "category": "essential"},
+            {"text": "Desirable experience", "category": "nice_to_have"},
+            {"text": "Strong programming skills in Python", "category": "essential"},
+        ],
+        [],
     )
 
-    assert seniority["level"] == 0
-    assert "lead" not in seniority["terms"]
+    assert [item["text"] for item in merged] == ["Strong programming skills in Python"]
 
 
 def test_model_skill_cleanup_rejects_sentence_fragments():
@@ -159,6 +185,41 @@ def test_model_skill_cleanup_rejects_sentence_fragments():
     assert main.clean_model_skill_name("Spark etc. Experience in Databricks is a plus") == "Spark"
     assert main.is_valid_model_skill("Spark", jd_blob)
     assert not main.is_valid_model_skill("You will help build", jd_blob)
+
+
+def test_local_skill_candidates_exclude_responsibility_clause_fragments():
+    jd = """
+Key Responsibilities
+- Analyzing requirements and implementing new features.
+- Debugging complicated engineering and operational problems.
+- Working closely with product managers and developers in multiple countries.
+- Collaborating closely with other developers in Europe and the United States.
+- Participate in various R&D projects.
+- Support incident management response processes and follow-up actions.
+- Build features for our exchanges.
+
+Required Skills
+- Strong Python and SQL knowledge.
+- Basic Linux knowledge.
+- Experience with Kafka and FastAPI.
+- Preferred: Familiarity with Java.
+"""
+
+    normalized = {
+        main.normalize_phrase(item["skill"])
+        for item in main._local_requirement_skill_candidates(jd)
+    }
+
+    assert {"python", "sql", "basic linux knowledge", "kafka"}.issubset(normalized)
+    assert not {
+        "analyzing requirements",
+        "implementing new features",
+        "debugging complicated engineering",
+        "operational problems",
+        "working closely with product managers",
+        "collaborating closely with other developers in europe",
+        "the united states",
+    }.intersection(normalized)
 
 
 def test_ats_keyword_split_keeps_ab_testing_intact():
@@ -875,6 +936,487 @@ def test_candidate_requirement_extraction_excludes_company_and_application_text(
     assert any("ai tools directly into your development workflow" in text.lower() for text in texts)
     assert any("grpc to rest" in text.lower() for text in texts)
     assert any("proficiency in english" in text.lower() for text in texts)
+
+
+def test_data_llm_jd_local_extraction_keeps_all_responsibilities_and_drops_headings():
+    requirements = main.extract_local_job_requirements(DATA_LLM_ENGINEER_JD, limit=80)
+    texts = [item["text"] for item in requirements]
+    normalized = [main.normalize_phrase(text) for text in texts]
+
+    assert "required skills experience" not in normalized
+    assert "desirable skills" not in normalized
+    assert any("architectural decision making" in text and "code reviews" in text for text in normalized)
+    assert sum("microservices" in text for text in normalized) == 2
+    assert sum("data pipelines" in text for text in normalized) == 2
+
+
+def test_local_extraction_keeps_exposure_and_qualification_requirements():
+    jd = """
+    Required Skills & Experience
+    ACA or ACCA qualification.
+
+    Nice to Have
+    Exposure to MLOps practices.
+    """
+
+    requirements = main.extract_local_job_requirements(jd)
+    texts = {main.normalize_phrase(item["text"]): item["category"] for item in requirements}
+
+    assert texts["aca or acca qualification"] == "essential"
+    assert texts["exposure to mlops practices"] == "nice_to_have"
+
+
+def test_live_job_patterns_keep_background_preferred_items_and_operational_actions():
+    jd = """
+    What you'll do
+    Define and track success through business metrics and feedback loops.
+    Resolve integration and data issues with external vendors.
+    Complete all required reconciliations for each reporting period.
+
+    Preferred requirements
+    Background in consulting or customer-facing technical roles.
+    Experience with low-code or no-code orchestration tools.
+    Experience mentoring junior engineers.
+
+    About the team
+    We work remotely and value collaboration.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]): item["category"] for item in requirements}
+
+    assert texts["define and track success through business metrics and feedback loops"] == "essential"
+    assert texts["resolve integration and data issues with external vendors"] == "essential"
+    assert texts["complete all required reconciliations for each reporting period"] == "essential"
+    assert texts["background in consulting or customer facing technical roles"] == "nice_to_have"
+    assert texts["experience with low code or no code orchestration tools"] == "nice_to_have"
+    assert texts["experience mentoring junior engineers"] == "nice_to_have"
+    assert not any("work remotely" in text for text in texts)
+
+
+def test_candidate_sections_keep_unfamiliar_cross_domain_requirements_without_keyword_rules():
+    jd = """
+    Company
+    ExampleCo provides services worldwide and offers flexible working.
+
+    Key Duties
+    Calibrate optical sensors before each production run.
+    Sterilise surgical instruments according to infection-control protocols.
+    Catalogue archival manuscripts using the institution's metadata standard.
+    Reconcile controlled-substance inventory at the end of each shift.
+
+    Person Specification
+    Registered practitioner status with the relevant professional body.
+    Fluency in British Sign Language.
+
+    Perks
+    Private healthcare and generous annual leave.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]) for item in requirements}
+
+    assert "calibrate optical sensors before each production run" in texts
+    assert "sterilise surgical instruments according to infection control protocols" in texts
+    assert "catalogue archival manuscripts using the institution s metadata standard" in texts
+    assert "reconcile controlled substance inventory at the end of each shift" in texts
+    assert "registered practitioner status with the relevant professional body" in texts
+    assert "fluency in british sign language" in texts
+    assert not any("private healthcare" in text for text in texts)
+
+
+def test_unrecognized_heading_still_keeps_structured_requirement_bullets():
+    jd = """
+    Your Mission
+    - Tune concert pianos before performances.
+    2. Preserve archaeological samples under controlled humidity.
+    3) Facilitate restorative conversations between participants.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]) for item in requirements}
+
+    assert "tune concert pianos before performances" in texts
+    assert "preserve archaeological samples under controlled humidity" in texts
+    assert "facilitate restorative conversations between participants" in texts
+
+
+def test_responsible_for_heading_and_generic_posting_noise_are_classified():
+    jd = """
+    In this role you'll be responsible for:
+    Working closely with colleagues to deliver new services.
+    Debugging complicated operational problems.
+
+    Benefits And Perks
+    Private GP access and complimentary lunch.
+
+    More About ExampleCo
+    We work with purpose and celebrate our communities.
+
+    Equal Employment Opportunity
+    We are proud to be an equal opportunity employer.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]) for item in requirements}
+
+    assert "working closely with colleagues to deliver new services" in texts
+    assert "debugging complicated operational problems" in texts
+    assert not any("private gp" in text for text in texts)
+    assert not any("complimentary lunch" in text for text in texts)
+    assert not any("celebrate our communities" in text for text in texts)
+    assert not any("equal opportunity employer" in text for text in texts)
+
+
+def test_global_style_job_noise_is_excluded_from_requirements():
+    jd = """
+    AI Engineer - Python
+
+    Reporting of the Role
+    This role reports to the Lead AI Engineer.
+
+    Overview of job
+    Global:IQ brings together a suite of 1st party and partner data, tools and capabilities.
+
+    Measures of success
+    Gained a comprehensive understanding of the Global:IQ architecture and data flows.
+    Delivered first outcomes at pace into production with an eye to modern AI-enabled development methodology.
+    Contributed considerably in bringing our new Global:IQ product offering to production.
+    Established yourself as a technical leader within the team.
+
+    Key Responsibilities
+    Backend Engineering (50%): Design, build, and maintain robust APIs using Python and FastAPI.
+
+    What you will need
+    3+ years of experience in backend engineering.
+
+    Preferred / Bonus
+    Experience with end-to-end development of AI features.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]): item["category"] for item in requirements}
+    joined = " ".join(texts)
+
+    assert "reports to the lead ai engineer" not in joined
+    assert "brings together a suite" not in joined
+    assert "gained a comprehensive understanding" not in joined
+    assert "delivered first outcomes" not in joined
+    assert "contributed considerably" not in joined
+    assert "established yourself" not in joined
+    assert any("design build and maintain robust apis" in text for text in texts)
+    assert texts["3+ years of experience in backend engineering"] == "essential"
+    assert texts["experience with end to end development of ai features"] == "nice_to_have"
+
+
+def test_merge_rejects_ai_generated_reporting_and_future_success_noise():
+    generated = [
+        {"text": "This role reports to the Lead AI Engineer.", "category": "essential"},
+        {"text": "Gained a comprehensive understanding of the Global:IQ architecture and data flows.", "category": "essential"},
+        {"text": "Delivered first outcomes at pace into production with an eye to modern AI-enabled development methodology.", "category": "essential"},
+        {"text": "Contributed considerably in bringing our new Global:IQ product offering to production.", "category": "essential"},
+        {"text": "Established yourself as a technical leader within the team.", "category": "essential"},
+        {"text": "Strong proficiency in Python and FastAPI.", "category": "essential"},
+    ]
+
+    merged = main.merge_job_requirements(generated, [])
+    texts = {main.normalize_phrase(item["text"]) for item in merged}
+
+    assert texts == {"strong proficiency in python and fastapi"}
+
+
+def test_healthcare_role_keeps_candidate_requirements_and_drops_company_noise():
+    jd = """
+    Healthcare Data Platform Engineer
+
+    About MedSignal
+    MedSignal builds secure analytics platforms that help hospitals understand patient pathways.
+
+    What you will do
+    - Implement healthcare data privacy controls and support GDPR-compliant processing.
+
+    What you will bring
+    - Knowledge of healthcare or clinical data.
+    - Experience using dbt and BigQuery.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]) for item in requirements}
+
+    assert not any("medsignal builds" in text for text in texts)
+    assert "what you will bring" not in texts
+    assert any("healthcare data privacy controls" in text for text in texts)
+    assert "knowledge of healthcare or clinical data" in texts
+    assert "experience using dbt and bigquery" in texts
+
+
+def test_jd_source_sentences_classify_role_overview_and_candidate_sections():
+    jd = """
+    About Canvas Reply
+    Canvas Reply provides end-to-end product design and development services.
+
+    Role Overview
+    This role is ideal for graduates seeking to build a broad technical foundation.
+
+    Responsibilities
+    Support and develop solutions using JavaScript.
+
+    About the Candidate
+    Some exposure to coding or scripting through university or personal projects.
+    """
+
+    sources = main.build_jd_source_sentences(jd)
+    by_text = {main.normalize_phrase(item["text"]): item for item in sources}
+
+    assert by_text["canvas reply provides end to end product design and development services"]["section_type"] == "excluded"
+    assert by_text["this role is ideal for graduates seeking to build a broad technical foundation"]["section_type"] == "excluded"
+    assert by_text["support and develop solutions using javascript"]["section_type"] == "candidate"
+    assert by_text["some exposure to coding or scripting through university or personal projects"]["section_type"] == "candidate"
+
+
+def test_local_job_requirements_reject_generic_job_title_preamble():
+    requirements = main.extract_local_job_requirements(
+        "Graduate Software Developer\n\n"
+        "Responsibilities\n"
+        "Support and develop solutions using JavaScript."
+    )
+
+    assert [item["text"] for item in requirements] == [
+        "Support and develop solutions using JavaScript."
+    ]
+
+
+def test_grounded_requirement_verifier_rejects_wrong_owner_unknown_ids_and_paraphrases():
+    sources = main.build_jd_source_sentences(
+        "Responsibilities\n"
+        "Support and develop solutions using JavaScript.\n"
+        "About the Candidate\n"
+        "Some exposure to coding or scripting through university or personal projects."
+    )
+    items = [
+        {
+            "requirement": "Expert JavaScript engineer",
+            "source_sentence_id": "s1",
+            "owner": "candidate",
+            "type": "candidate_responsibility",
+            "scoreable_against_cv": True,
+            "category": "essential",
+        },
+        {
+            "source_sentence_id": "s2",
+            "owner": "company",
+            "type": "candidate_experience",
+            "scoreable_against_cv": True,
+            "category": "essential",
+        },
+        {
+            "source_sentence_id": "s99",
+            "owner": "candidate",
+            "type": "candidate_skill",
+            "scoreable_against_cv": True,
+            "category": "essential",
+        },
+    ]
+
+    verified, rejected = main.verify_grounded_job_requirements(items, sources)
+
+    assert [item["text"] for item in verified] == [
+        "Support and develop solutions using JavaScript."
+    ]
+    assert any("non-candidate owner" in reason for reason in rejected)
+    assert any("unknown source sentence ID" in reason for reason in rejected)
+
+
+def test_preflight_only_scores_verified_source_sentences(monkeypatch):
+    jd = """
+    About Canvas Reply
+    Canvas Reply provides end-to-end product design and development services.
+
+    Role Overview
+    This role is ideal for graduates seeking to build a broad technical foundation.
+
+    Responsibilities
+    Support and develop solutions using JavaScript across front-end and back-end components.
+
+    About the Candidate
+    Some exposure to coding or scripting through university, personal projects, or placements.
+    """
+    generated = {
+        "items": [
+            {
+                "requirement": "Work for a leading digital consultancy",
+                "source_sentence_id": "s1",
+                "owner": "company",
+                "type": "non_scoreable",
+                "scoreable_against_cv": False,
+                "category": "essential",
+                "confidence": 0.99,
+            },
+            {
+                "requirement": "Build a broad technical foundation",
+                "source_sentence_id": "s2",
+                "owner": "role",
+                "type": "non_scoreable",
+                "scoreable_against_cv": False,
+                "category": "essential",
+                "confidence": 0.99,
+            },
+            {
+                "requirement": "Expert full-stack JavaScript development",
+                "source_sentence_id": "s3",
+                "owner": "candidate",
+                "type": "candidate_responsibility",
+                "scoreable_against_cv": True,
+                "category": "essential",
+                "confidence": 0.95,
+            },
+            {
+                "requirement": "Coding exposure",
+                "source_sentence_id": "s4",
+                "owner": "candidate",
+                "type": "candidate_experience",
+                "scoreable_against_cv": True,
+                "category": "essential",
+                "confidence": 0.95,
+            },
+            {
+                "requirement": "Invented requirement",
+                "source_sentence_id": "s99",
+                "owner": "candidate",
+                "type": "candidate_skill",
+                "scoreable_against_cv": True,
+                "category": "essential",
+                "confidence": 0.95,
+            },
+        ],
+        "ats_keywords": {"hard_skills": ["JavaScript"], "soft_skills": []},
+        "quality": {"makes_sense": True, "confidence": "high", "issues": [], "excluded_noise": []},
+    }
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(json.dumps(generated)))
+
+    result = main.preflight_job_requirements(jd)
+    cleaned = result["cleaned_job_description"]
+
+    assert "Canvas Reply provides" not in cleaned
+    assert "This role is ideal" not in cleaned
+    assert "Expert full-stack JavaScript development" not in cleaned
+    assert "Support and develop solutions using JavaScript" in cleaned
+    assert "Some exposure to coding or scripting" in cleaned
+    assert any("unknown source sentence ID" in reason for reason in result["quality"]["excluded_noise"])
+
+
+def test_merge_rejects_generated_company_description_and_candidate_heading():
+    merged = main.merge_job_requirements(
+        [
+            {
+                "text": "MedSignal builds secure analytics platforms that help hospitals understand patient pathways.",
+                "category": "essential",
+            },
+            {"text": "What you will bring", "category": "essential"},
+            {"text": "Knowledge of healthcare or clinical data.", "category": "essential"},
+        ],
+        [],
+    )
+
+    assert [main.normalize_phrase(item["text"]) for item in merged] == [
+        "knowledge of healthcare or clinical data"
+    ]
+
+
+def test_merge_keeps_distinct_tool_familiarity_alongside_action_evidence():
+    requirements = [
+        {"text": "Maintain accurate equity records in Equity Edge Online.", "category": "essential"},
+        {"text": "Familiarity with E*TRADE and Equity Edge Online.", "category": "essential"},
+    ]
+
+    merged = main.merge_job_requirements(requirements, [])
+    texts = [main.normalize_phrase(item["text"]) for item in merged]
+
+    assert len(texts) == 2
+    assert any("e trade" in text for text in texts)
+
+
+def test_data_llm_jd_preflight_removes_noise_without_domain_specific_deduplication(monkeypatch):
+    generated = {
+        "requirements": [
+            {
+                "text": "Build and maintain microservices-based systems, with a strong focus on scalability, resilience, and performance.",
+                "category": "essential",
+            },
+            {
+                "text": "Develop and optimise scalable data pipelines, supporting both batch and streaming workloads, using technologies such as Apache Spark.",
+                "category": "essential",
+            },
+            {
+                "text": "Work extensively with data technologies, leveraging Python and SQL to deliver high-quality analytical and data-driven solutions.",
+                "category": "essential",
+            },
+            {
+                "text": "Lead the design and delivery of data-centric applications, translating complex business and analytical requirements into well-architected technical solutions.",
+                "category": "essential",
+            },
+            {
+                "text": "Implement and integrate large language models (LLMs), including utilising both proprietary and open-source models, fine-tuning models to meet specific business use cases, and delivering solutions via APIs, such as OpenAI APIs.",
+                "category": "essential",
+            },
+            {
+                "text": "Required Skills & Experience",
+                "category": "essential",
+            },
+            {
+                "text": "Proven experience designing and implementing microservices architectures, ideally within cloud environments.",
+                "category": "essential",
+            },
+            {
+                "text": "Strong background in data engineering, including building and maintaining large-scale data pipelines.",
+                "category": "essential",
+            },
+            {
+                "text": "Advanced proficiency in Python and SQL.",
+                "category": "essential",
+            },
+            {
+                "text": "Practical experience working with large language models, including model fine-tuning and API-based integrations (e.g. OpenAI).",
+                "category": "essential",
+            },
+            {
+                "text": "Experience in solution and system design, particularly for data-driven and analytical platforms.",
+                "category": "essential",
+            },
+        ],
+        "ats_keywords": {
+            "hard_skills": ["Python", "SQL", "microservices", "data pipelines"],
+            "soft_skills": [
+                "problem-solving",
+                "problem-solving skills",
+                "Apply strong problem-solving",
+                "analytical skills",
+            ],
+        },
+        "quality": {
+            "makes_sense": True,
+            "confidence": "high",
+            "issues": [],
+            "excluded_noise": ["Required Skills & Experience"],
+        },
+    }
+    monkeypatch.setattr(main, "GENAI_CLIENT", FakeClient(json.dumps(generated)))
+
+    result = main.preflight_job_requirements(DATA_LLM_ENGINEER_JD)
+    texts = [item["text"] for item in result["requirements"]]
+    normalized = [main.normalize_phrase(text) for text in texts]
+    soft = result["ats_keywords"]["soft_skills"]
+
+    assert "required skills experience" not in normalized
+    assert any("architectural decision making" in text and "code reviews" in text for text in normalized)
+    assert sum("microservices" in text for text in normalized) == 2
+    assert sum("data pipelines" in text or "data engineering" in text for text in normalized) == 2
+    assert sum("python and sql" in text for text in normalized) == 2
+    assert sum("large language models" in text for text in normalized) == 2
+    assert sum("data centric applications" in text or "solution and system design" in text for text in normalized) == 2
+    assert len(result["requirements_by_category"]["nice_to_have"]) == 4
+    assert main._soft_ats_keyword_key("Apply strong problem-solving") == "problem solving"
+    assert sum(main._soft_ats_keyword_key(item["skill"]) == "problem solving" for item in soft) == 1
 
 
 def test_ats_keywords_are_augmented_when_model_under_returns(monkeypatch):

@@ -250,7 +250,7 @@ export default function AnalyzePage() {
     }, 5000);
 
     const analyzeController = new AbortController();
-    const analyzeTimeout = setTimeout(() => analyzeController.abort(), 90000);
+    const analyzeTimeout = setTimeout(() => analyzeController.abort(), 180000);
 
     try {
       const form = new FormData();
