@@ -1415,6 +1415,24 @@ def test_missing_skills_from_satisfied_alternative_list_are_not_penalized():
     assert "C#" not in skills
 
 
+def test_plain_or_skill_alternative_suppresses_only_the_missing_option():
+    items = [
+        {"skill": "Power BI", "status": "present", "present": True},
+        {"skill": "dashboarding experience", "status": "missing", "present": False},
+        {"skill": "dashboarding", "status": "missing", "present": False},
+        {"skill": "Git familiarity", "status": "missing", "present": False},
+    ]
+    jd = "Preferred Skills\nPower BI or dashboarding experience and Git familiarity."
+
+    result = main.filter_satisfied_alternative_missing_skills(items, jd)
+    skills = [item["skill"] for item in result]
+
+    assert "Power BI" in skills
+    assert "dashboarding experience" not in skills
+    assert "dashboarding" not in skills
+    assert "Git familiarity" in skills
+
+
 def test_early_career_project_experience_satisfies_zero_to_one_year_requirement():
     parsed_resume = {
         "_resume_text": """

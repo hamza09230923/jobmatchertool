@@ -950,6 +950,36 @@ def test_data_llm_jd_local_extraction_keeps_all_responsibilities_and_drops_headi
     assert sum("data pipelines" in text for text in normalized) == 2
 
 
+def test_jpm_style_headings_extract_requirements_after_about_section():
+    jd = """
+    About the job
+    J.P. Morgan is a global leader in financial services.
+
+    Job Responsibilities
+    Price client requests for equity performance swaps, futures, synthetics, rolls, and swaps on Global EM/DM indexes.
+    Code quick win tools for the trading desk using Python and VBA.
+
+    Required Qualifications, Capabilities, And Skills
+    Experience in trading or financial markets.
+    Strong quantitative and coding skills, with proficiency in Python and VBA.
+
+    Preferred Qualifications, Capabilities, And Skills
+    Experience trading delta one products or global indexes.
+    Familiarity with corporate actions hedging and dividends reinvestment.
+    """
+
+    requirements = main.extract_local_job_requirements(jd, limit=80)
+    texts = {main.normalize_phrase(item["text"]): item["category"] for item in requirements}
+
+    assert "j p morgan is a global leader in financial services" not in texts
+    assert texts["price client requests for equity performance swaps futures synthetics rolls and swaps on global em dm indexes"] == "essential"
+    assert texts["code quick win tools for the trading desk using python and vba"] == "essential"
+    assert texts["experience in trading or financial markets"] == "essential"
+    assert texts["strong quantitative and coding skills with proficiency in python and vba"] == "essential"
+    assert texts["experience trading delta one products or global indexes"] == "nice_to_have"
+    assert texts["familiarity with corporate actions hedging and dividends reinvestment"] == "nice_to_have"
+
+
 def test_local_extraction_keeps_exposure_and_qualification_requirements():
     jd = """
     Required Skills & Experience

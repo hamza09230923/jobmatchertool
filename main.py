@@ -12,6 +12,7 @@ import secrets
 import threading
 import uuid
 import xml.etree.ElementTree as ET
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse, quote_plus
@@ -60,6 +61,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_REQUEST_ANALYSIS_CACHE: ContextVar[dict | None] = ContextVar(
+    "_REQUEST_ANALYSIS_CACHE",
+    default=None,
+)
+
+
+@app.middleware("http")
+async def request_analysis_cache_middleware(request, call_next):
+    token = _REQUEST_ANALYSIS_CACHE.set({})
+    try:
+        return await call_next(request)
+    finally:
+        _REQUEST_ANALYSIS_CACHE.reset(token)
+
+
+def _request_cache_bucket(name: str) -> dict | None:
+    cache = _REQUEST_ANALYSIS_CACHE.get()
+    if not isinstance(cache, dict):
+        return None
+    return cache.setdefault(name, {})
 
 
 def custom_openapi():
@@ -3137,6 +3159,7 @@ CANDIDATE_JD_SECTION_HEADERS = (
     "duties",
     "key duties",
     "your responsibilities",
+    "job responsibilities",
     "what you'll do",
     "what you ll do",
     "what you will do",
@@ -3154,11 +3177,13 @@ CANDIDATE_JD_SECTION_HEADERS = (
     "role responsibilities",
     "responsibilities",
     "preferred qualifications skills",
+    "preferred qualifications capabilities and skills",
     "preferred qualifications",
     "preferred requirements",
     "preferred experience",
     "minimum qualifications",
     "basic qualifications",
+    "required qualifications capabilities and skills",
     "essential criteria",
     "desirable criteria",
     "person specification",
@@ -5192,6 +5217,45 @@ def _looks_like_alternative_list(source: str, right: str) -> bool:
     )
 
 
+def _alternative_fragment_norms(fragment: str) -> set[str]:
+    cleaned = _strip_requirement_lead(fragment)
+    variants = {cleaned}
+    stripped_suffix = re.sub(
+        r"\s+(experience|familiarity|knowledge|skills?|proficiency|capability|capabilities|background)$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip(" -:;,.")
+    if stripped_suffix and stripped_suffix != cleaned:
+        variants.add(stripped_suffix)
+    return {normalize_phrase(variant) for variant in variants if normalize_phrase(variant)}
+
+
+def _add_alternative_group(groups: List[set[str]], fragments: List[str]) -> None:
+    source_fragments = [fragment for fragment in fragments if normalize_phrase(fragment)]
+    if len(source_fragments) < 2:
+        return
+    group: set[str] = set()
+    for fragment in source_fragments:
+        group.update(_alternative_fragment_norms(fragment))
+    if len(group) >= 2:
+        groups.append(group)
+
+
+def _plain_or_alternative_fragments(line: str) -> List[List[str]]:
+    groups: List[List[str]] = []
+    for match in re.finditer(r"\bor\b", line, flags=re.IGNORECASE):
+        left_context = line[: match.start()]
+        right_context = line[match.end() :]
+        left_parts = re.split(r"[,;:.]|\band\b", left_context, flags=re.IGNORECASE)
+        right_parts = re.split(r"[,;:.]|\band\b", right_context, flags=re.IGNORECASE)
+        left = _strip_requirement_lead(left_parts[-1] if left_parts else "")
+        right = _strip_requirement_lead(right_parts[0] if right_parts else "")
+        if left and right:
+            groups.append([left, right])
+    return groups
+
+
 def extract_alternative_skill_groups(text: str) -> List[set[str]]:
     groups: List[set[str]] = []
     for raw_line in str(text or "").splitlines():
@@ -5206,10 +5270,10 @@ def extract_alternative_skill_groups(text: str) -> List[set[str]]:
             if not _looks_like_alternative_list(line, right):
                 continue
             fragments = _split_list_fragments(right)
-            group = {normalize_phrase(fragment) for fragment in fragments if normalize_phrase(fragment)}
-            if len(group) >= 2:
-                groups.append(group)
+            _add_alternative_group(groups, fragments)
             break
+        for fragments in _plain_or_alternative_fragments(line):
+            _add_alternative_group(groups, fragments)
     return groups
 
 
@@ -5218,22 +5282,22 @@ def filter_satisfied_alternative_missing_skills(items: List[dict], job_descripti
     if not groups:
         return items
 
-    item_norms = {id(item): normalize_phrase(item.get("skill") or "") for item in items}
-    suppress: set[str] = set()
+    item_norms = {id(item): _skill_identity_norms(str(item.get("skill") or "")) for item in items}
+    suppress_ids: set[int] = set()
     for group in groups:
-        matching_items = [item for item in items if item_norms.get(id(item)) in group]
+        matching_items = [item for item in items if item_norms.get(id(item), set()).intersection(group)]
         if not matching_items:
             continue
         group_satisfied = any((item.get("status") or "") in {"present", "partial"} for item in matching_items)
         if group_satisfied:
-            suppress.update(
-                item_norms[id(item)]
+            suppress_ids.update(
+                id(item)
                 for item in matching_items
                 if (item.get("status") or "missing") == "missing"
             )
-    if not suppress:
+    if not suppress_ids:
         return items
-    return [item for item in items if item_norms.get(id(item)) not in suppress]
+    return [item for item in items if id(item) not in suppress_ids]
 
 
 def _append_alternative_atoms(atoms: List[dict], fragments: List[str], group_id: str) -> bool:
@@ -5255,11 +5319,25 @@ def _append_alternative_atoms(atoms: List[dict], fragments: List[str], group_id:
     return added
 
 
+def _clone_atom_list(atoms: List[dict]) -> List[dict]:
+    return [dict(atom) for atom in atoms]
+
+
+def _store_requirement_atoms(source: str, atoms: List[dict]) -> List[dict]:
+    bucket = _request_cache_bucket("requirement_atoms")
+    if bucket is not None:
+        bucket[source] = _clone_atom_list(atoms)
+    return _clone_atom_list(atoms)
+
+
 def decompose_requirement_text(text: str) -> List[dict]:
     """Split bundled JD requirements into atomic sub-requirements."""
     source = str(text or "").strip()
     if not source:
         return []
+    bucket = _request_cache_bucket("requirement_atoms")
+    if bucket is not None and source in bucket:
+        return _clone_atom_list(bucket[source])
 
     parent_policy = _requirement_policy(source)
     parent_concept = _requirement_concept_key(source)
@@ -5271,12 +5349,12 @@ def decompose_requirement_text(text: str) -> List[dict]:
         "language",
     } or parent_concept in {"learning_attitude"}:
         normalized = normalize_phrase(source)
-        return [{
+        return _store_requirement_atoms(source, [{
             "text": source,
             "normalized": normalized,
             "strict": parent_policy["strict"],
             "requirement_type": parent_policy["type"],
-        }]
+        }])
 
     atoms: List[str | dict] = []
 
@@ -5381,7 +5459,7 @@ def decompose_requirement_text(text: str) -> List[dict]:
         if concept:
             seen_concepts.add(concept)
         deduped_atoms.append(atom)
-    return deduped_atoms
+    return _store_requirement_atoms(source, deduped_atoms)
 
 
 def aggregate_requirement_evidence(
@@ -6406,6 +6484,10 @@ def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
     """Build precise evidence units from structured Gemini-parsed CV data."""
     if not parsed_resume or not isinstance(parsed_resume, dict):
         return []
+    bucket = _request_cache_bucket("parsed_evidence_units")
+    cache_key = id(parsed_resume)
+    if bucket is not None and cache_key in bucket:
+        return [dict(unit) for unit in bucket[cache_key]]
     units: List[dict] = []
     seen: set = set()
 
@@ -6444,6 +6526,8 @@ def evidence_units_from_parsed(parsed_resume: dict) -> List[dict]:
     for line in cv_project_evidence_lines(parsed_resume, limit=100):
         _add(line, "projects", 0.85)
 
+    if bucket is not None:
+        bucket[cache_key] = [dict(unit) for unit in units]
     return units
 
 
@@ -8747,7 +8831,7 @@ def gemini_skills_and_ats(
 @app.post("/analyze")
 async def analyze(
     resume: UploadFile = File(...),
-    job_description: str = Form(...),
+    job_description: str = Form(""),
     job_source: str = Form("paste"),
     session_token: str = Form(""),
     authorization: Optional[str] = Header(None),
