@@ -133,7 +133,11 @@ ANALYZE_OPTIONAL_TIMEOUT_SECONDS = _env_int("ANALYZE_OPTIONAL_TIMEOUT_SECONDS", 
 # can block a single request for minutes, hanging the whole /analyze pipeline until
 # the client aborts (504/timeout in production). Tunable via env on Render.
 GEMINI_HTTP_TIMEOUT_MS = _env_int("GEMINI_HTTP_TIMEOUT_MS", 40000)
-GEMINI_HTTP_RETRIES = _env_int("GEMINI_HTTP_RETRIES", 2)
+# Total attempts (incl. the first), matching Google's recommended retry strategy:
+# ~1, 2, 4, 8s exponential backoff with jitter, so transient 429/5xx demand spikes
+# (e.g. 503 UNAVAILABLE) are ridden out instead of surfacing to the user. Only
+# server error codes retry; client-side timeouts do not, so this can't cause long hangs.
+GEMINI_HTTP_RETRIES = _env_int("GEMINI_HTTP_RETRIES", 5)
 
 
 def _genai_http_options():
@@ -8940,6 +8944,20 @@ def gemini_skills_and_ats(
     }
 
 
+def _ai_overload_message(exc: Exception) -> str | None:
+    """If the error is a transient AI-provider overload, return a friendly retry
+    message; otherwise None. Lets the handler return a clean 503 instead of raw
+    '503 UNAVAILABLE ...' text when Gemini is momentarily at capacity."""
+    text = str(exc).upper()
+    markers = ("503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "429", "HIGH DEMAND", "OVERLOAD")
+    if any(marker in text for marker in markers):
+        return (
+            "The AI service is busy right now (temporary high demand). "
+            "Please wait a few seconds and try again."
+        )
+    return None
+
+
 @app.post("/analyze")
 async def analyze(
     resume: UploadFile = File(...),
@@ -9005,16 +9023,18 @@ async def analyze(
         return_exceptions=True,
     )
     if isinstance(job_preflight, Exception):
+        overload = _ai_overload_message(job_preflight)
         raise HTTPException(
-            status_code=502,
-            detail=f"AI preflight failed while extracting job requirements: {job_preflight}",
+            status_code=503 if overload else 502,
+            detail=overload or f"AI preflight failed while extracting job requirements: {job_preflight}",
         )
     if isinstance(parsed_resume, Exception):
         if isinstance(parsed_resume, HTTPException):
             raise parsed_resume
+        overload = _ai_overload_message(parsed_resume)
         raise HTTPException(
-            status_code=502,
-            detail=f"AI analysis failed while parsing the CV: {parsed_resume}",
+            status_code=503 if overload else 502,
+            detail=overload or f"AI analysis failed while parsing the CV: {parsed_resume}",
         )
 
     analysis_job_description = job_preflight.get("cleaned_job_description") or job_description
@@ -9085,9 +9105,10 @@ async def analyze(
     except Exception as exc:
         for task in optional_tasks:
             task.cancel()
+        overload = _ai_overload_message(exc)
         raise HTTPException(
-            status_code=502,
-            detail=f"AI analysis failed. Please try again in a moment. Details: {exc}",
+            status_code=503 if overload else 502,
+            detail=overload or f"AI analysis failed. Please try again in a moment. Details: {exc}",
         )
     try:
         cv_sections_analysis, gemini_sections = await asyncio.wait_for(
