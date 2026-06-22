@@ -129,8 +129,27 @@ def _env_int(name: str, default: int) -> int:
 
 ANALYZE_CORE_TIMEOUT_SECONDS = _env_int("ANALYZE_CORE_TIMEOUT_SECONDS", 100)
 ANALYZE_OPTIONAL_TIMEOUT_SECONDS = _env_int("ANALYZE_OPTIONAL_TIMEOUT_SECONDS", 8)
+# Per-call HTTP timeout + transient-error retry. Without this the google-genai SDK
+# can block a single request for minutes, hanging the whole /analyze pipeline until
+# the client aborts (504/timeout in production). Tunable via env on Render.
+GEMINI_HTTP_TIMEOUT_MS = _env_int("GEMINI_HTTP_TIMEOUT_MS", 40000)
+GEMINI_HTTP_RETRIES = _env_int("GEMINI_HTTP_RETRIES", 2)
+
+
+def _genai_http_options():
+    return types.HttpOptions(
+        timeout=GEMINI_HTTP_TIMEOUT_MS,
+        retry_options=types.HttpRetryOptions(
+            attempts=max(1, GEMINI_HTTP_RETRIES),
+            http_status_codes=[429, 500, 502, 503, 504],
+        ),
+    )
+
+
 GENAI_CLIENT = (
-    genai.Client(api_key=GEMINI_API_KEY) if genai is not None and GEMINI_API_KEY else None
+    genai.Client(api_key=GEMINI_API_KEY, http_options=_genai_http_options())
+    if genai is not None and GEMINI_API_KEY
+    else None
 )
 SCORER_VERSION = analysis_cache.SCORER_VERSION
 ANALYZE_CACHE_MAX_ENTRIES = analysis_cache.ANALYZE_CACHE_MAX_ENTRIES
@@ -3004,6 +3023,8 @@ _COMPANY_DESC_SIGNALS = (
     "shareowners", "own and operate", "company culture",
     "trusted by", "number one online", "online motor insurance provider",
     "expanding to help", "future of insurance",
+    "roster of", "blue chip", "career development opportunities",
+    "our team helps", "impressive roster",
 )
 _JD_META_SIGNALS = (
     "by applying", "stepping into", "you may work directly", "part of a high performing",
@@ -3190,6 +3211,11 @@ CANDIDATE_JD_SECTION_HEADERS = (
     "qualifications skills",
     "qualifications",
     "skills",
+    "skills knowledge and expertise",
+    "skills knowledge expertise",
+    "skills and expertise",
+    "knowledge and expertise",
+    "skills knowledge and experience",
     "requirements",
     "required skills",
     "required experience",
@@ -3531,8 +3557,24 @@ def _display_ats_keyword(phrase: str) -> str:
 def clean_model_skill_name(skill: str) -> str:
     cleaned = str(skill or "").strip(" -:;,.")
     cleaned = re.split(r"\betc\.?\b|\.|;", cleaned, maxsplit=1, flags=re.IGNORECASE)[0].strip(" -:;,.")
+    # Drop a dangling unbalanced parenthesis fragment left by sentence splitting,
+    # e.g. "data-product experience (producing" or "Data visualisation libraries (charts".
+    if cleaned.count("(") > cleaned.count(")"):
+        cleaned = re.sub(r"\s*\([^)]*$", "", cleaned).strip(" -:;,.")
     cleaned = re.sub(
-        r"^(?:expert in|proficient in|proficiency in|experience in|experience with|knowledge on|knowledge of|exposure to|hands-on experience in|technologies like)\s+",
+        r"^(?:expert in|proficient in|proficiency in|experience (?:building|developing|with|in|of)|"
+        r"strong experience (?:with|in|of)|working knowledge of|knowledge on|knowledge of|exposure to|"
+        r"familiarity with|(?:strong )?focus on|hands-on experience in|hands-on with|ability to|"
+        r"technologies like|ensure|a|an|the)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip(" -:;,.")
+    # Drop trailing qualifier noise: "FastAPI a plus", "X (a plus)", "X where required",
+    # "X experience" -> "X", "X practices" -> "X".
+    cleaned = re.sub(
+        r"\s+(?:is\s+)?a\s+(?:strong\s+)?plus$|\s+a\s+bonus$|\s+where\s+(?:required|applicable)$|"
+        r"\s+if\s+required$|\s+preferred$|\s+desirable$|\s+experience$|\s+practices$",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -3610,6 +3652,19 @@ def _looks_like_noisy_ats_fragment(phrase: str) -> bool:
     if tokens and tokens[0] in _ACTION_VERBS_SET:
         return True
     if len(tokens) > 1 and tokens[0] in GENERAL_ACTION_TOKEN_TO_FAMILY:
+        return True
+    # Requirement-sentence fragments that are not skills: trailing filler nouns and
+    # experience-duration phrases ("6+ months hands-on", "platform interaction",
+    # "audit/compliance/cost views", "a testing-first mindset", "development for other teams").
+    non_skill_tail_nouns = {"mindset", "views", "interaction", "focus", "teams", "needs", "field"}
+    if len(tokens) > 1 and tokens[-1] in non_skill_tail_nouns:
+        return True
+    if re.search(r"\b\d+\s*\+?\s*(?:month|months|year|years)\b", norm):
+        return True
+    extra_leading_verbs = JD_REQUIREMENT_ACTION_VERBS | {
+        "take", "run", "ensure", "ship", "drive", "steer", "unblock", "accelerate", "surface",
+    }
+    if len(tokens) > 1 and tokens[0] in extra_leading_verbs:
         return True
     contextual_heads = {
         "actions", "colleagues", "countries", "developers", "issues",
@@ -3814,6 +3869,13 @@ def _should_keep_requirement_line(text: str, in_candidate_section: bool = False)
     ) and not any(hint in norm for hint in _CANDIDATE_HINTS):
         return False
     if any(noise in norm for noise in ("salary", "benefit", "pension", "annual leave", "dress code")):
+        return False
+    # Work-eligibility / legal lines are never scoreable against CV evidence.
+    if re.search(
+        r"\b(?:right to work|eligible to work|work authoris\w*|work authoriz\w*|"
+        r"visa sponsor\w*|require sponsorship|work permit)\b",
+        norm,
+    ):
         return False
     if re.search(r"\b(?:not required|not essential|not necessary|optional only)\b", norm):
         return False
@@ -4330,6 +4392,34 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
             ][:12],
         },
     }
+
+
+def cached_preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
+    """`preflight_job_requirements` with a JD-keyed, version-scoped cache.
+
+    Preflight output is a pure function of (job_description, limit, SCORER_VERSION), so a
+    cache hit is byte-identical to recomputation — quality is unchanged. It removes the
+    ~12s Gemini preflight call from repeat analyses of the same JD (screening several CVs
+    against one role, or a retry after a failed downstream step). The raw
+    `preflight_job_requirements` stays uncached so unit tests exercise it directly.
+    """
+    cleaned = clean_text(job_description)
+    if not cleaned:
+        return preflight_job_requirements(job_description, limit)
+
+    cache_key = analysis_cache.secondary_cache_key(
+        "jd_preflight", {"jd": cleaned, "limit": int(limit)}
+    )
+    cached = analysis_cache.get_cached_secondary_response(cache_key, "jd_preflight")
+    if cached is not None:
+        return cached
+
+    result = preflight_job_requirements(job_description, limit)
+    # Only cache a high-confidence API extraction; never freeze the local (no-key) fallback
+    # or an empty extraction, so a transient run can't poison later requests.
+    if result.get("source") == "gemini" and result.get("requirements"):
+        analysis_cache.set_cached_secondary_response(cache_key, "jd_preflight", result)
+    return result
 
 
 def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[dict]:
@@ -6191,6 +6281,17 @@ def requires_strict_evidence(requirement: str) -> bool:
     )
 
 
+def _strip_evidence_provenance(text: str) -> str:
+    """Drop a leading '[Role @ Company]' / '[Project: Name]' provenance tag.
+
+    The bracket is metadata, not a candidate-authored achievement, yet proper nouns
+    inside it (e.g. the employer 'NHS Test & Trace' or a job title) otherwise leak in
+    as capability/action signals. Capability must be proven by the achievement sentence
+    that follows the tag, not by the name of the employer or role.
+    """
+    return re.sub(r"^\s*\[[^\]]*\]\s*", "", str(text or ""))
+
+
 def classify_requirement_evidence_match(requirement: str, evidence_text: str) -> str | None:
     req_norm = normalize_phrase(requirement)
     evidence_norm = normalize_phrase(evidence_text)
@@ -6355,7 +6456,11 @@ def classify_requirement_evidence_match(requirement: str, evidence_text: str) ->
             return "strong"
 
     if policy["type"] == "general":
-        if _general_action_families(requirement).intersection(_general_action_families(evidence_norm)):
+        # Only count action families that appear in the achievement body, not in the
+        # provenance tag — otherwise an employer/role proper noun (e.g. "Test & Trace"
+        # -> "test" family) falsely partial-matches unrelated capabilities.
+        evidence_body_norm = normalize_phrase(_strip_evidence_provenance(evidence_text))
+        if _general_action_families(requirement).intersection(_general_action_families(evidence_body_norm)):
             return "partial"
 
     generic_words = {
@@ -7154,6 +7259,13 @@ def gemini_responsibility_match(
         ):
             confidence = "partial"
         evidence_key = normalize_phrase(selected_evidence or "")
+        if evidence_key and infer_evidence_section(selected_evidence or "") == "skills":
+            # The skills line names many distinct skills; crediting different skills from
+            # it (Python, Docker, React...) is not evidence reuse. Key the cap by the
+            # specific matched skill(s) so only the SAME skill cited repeatedly is capped.
+            matched_units = "+".join(sorted(aggregate.get("matched_scoring_units") or []))
+            if matched_units:
+                evidence_key = f"{evidence_key}|{matched_units}"
         if evidence_key:
             reuse_limit = _evidence_reuse_limit(selected_evidence, original["text"])
             if evidence_use_counts.get(evidence_key, 0) >= reuse_limit:
@@ -8426,7 +8538,7 @@ async def extract_job_requirements_endpoint(payload: dict):
     if not job_description:
         raise HTTPException(status_code=400, detail="Missing job_description.")
     try:
-        return {"job_preflight": preflight_job_requirements(job_description)}
+        return {"job_preflight": cached_preflight_job_requirements(job_description)}
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -8885,13 +8997,26 @@ async def analyze(
         )
 
     debug_info = {} if debug else None
-    try:
-        job_preflight = await asyncio.to_thread(preflight_job_requirements, job_description)
-    except Exception as exc:
+    # Phase 1: preflight (JD-only) and resume parsing (resume-only) are independent —
+    # run them concurrently to cut one Gemini round-trip off the critical path.
+    job_preflight, parsed_resume = await asyncio.gather(
+        asyncio.to_thread(cached_preflight_job_requirements, job_description),
+        asyncio.to_thread(parse_resume, resume_text, debug_info),
+        return_exceptions=True,
+    )
+    if isinstance(job_preflight, Exception):
         raise HTTPException(
             status_code=502,
-            detail=f"AI preflight failed while extracting job requirements: {exc}",
+            detail=f"AI preflight failed while extracting job requirements: {job_preflight}",
         )
+    if isinstance(parsed_resume, Exception):
+        if isinstance(parsed_resume, HTTPException):
+            raise parsed_resume
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI analysis failed while parsing the CV: {parsed_resume}",
+        )
+
     analysis_job_description = job_preflight.get("cleaned_job_description") or job_description
     if debug_info is not None:
         debug_info["job_preflight"] = {
@@ -8899,17 +9024,6 @@ async def analyze(
             "requirements_count": len(job_preflight.get("requirements") or []),
             "quality": job_preflight.get("quality") or {},
         }
-
-    # Phase 1: Parse resume — everything else depends on this
-    try:
-        parsed_resume = await asyncio.to_thread(parse_resume, resume_text, debug_info)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI analysis failed while parsing the CV: {exc}",
-        )
     parsed_resume["_resume_text"] = resume_text
 
     # Local computation — no API calls
