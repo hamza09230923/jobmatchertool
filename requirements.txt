@@ -3,7 +3,7 @@ uvicorn
 python-multipart
 requests
 beautifulsoup4
-google-genai
+google-genai>=1.47.0
 pypdf
 python-dotenv
 scikit-learn

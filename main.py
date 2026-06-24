@@ -8,8 +8,10 @@ import logging
 import math
 import os
 import re
+import random
 import secrets
 import threading
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from contextvars import ContextVar
@@ -141,13 +143,12 @@ GEMINI_HTTP_RETRIES = _env_int("GEMINI_HTTP_RETRIES", 5)
 
 
 def _genai_http_options():
-    return types.HttpOptions(
-        timeout=GEMINI_HTTP_TIMEOUT_MS,
-        retry_options=types.HttpRetryOptions(
-            attempts=max(1, GEMINI_HTTP_RETRIES),
-            http_status_codes=[429, 500, 502, 503, 504],
-        ),
-    )
+    # Only the per-call timeout is set here. Transient-error retries are handled at
+    # the application level (see _genai_generate / _genai_embed) instead of via the
+    # SDK's HttpRetryOptions: requirements.txt does not pin google-genai, so the
+    # deployed SDK version may not honor retry_options, and we don't want the two
+    # mechanisms compounding into 25 nested attempts during a real outage.
+    return types.HttpOptions(timeout=GEMINI_HTTP_TIMEOUT_MS)
 
 
 GENAI_CLIENT = (
@@ -169,6 +170,50 @@ def gemini_generation_config(temperature: float = 0.0, **kwargs):
     }
     config_kwargs.update(kwargs)
     return types.GenerateContentConfig(**config_kwargs)
+
+
+# Markers for transient AI-provider overload/availability errors that are safe to
+# retry (Gemini reports momentary capacity issues as 503 UNAVAILABLE / "high demand"
+# and rate spikes as 429 RESOURCE_EXHAUSTED). Kept in sync with _ai_overload_message.
+_GEMINI_TRANSIENT_MARKERS = (
+    "503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "429",
+    "HIGH DEMAND", "OVERLOAD", "500", "502", "504",
+)
+
+
+def _is_transient_gemini_error(exc: Exception) -> bool:
+    text = str(exc).upper()
+    return any(marker in text for marker in _GEMINI_TRANSIENT_MARKERS)
+
+
+def _genai_retry(call, what: str):
+    """Run a Gemini SDK call with explicit exponential-backoff retry on transient
+    overload/availability errors. Version-independent (does not rely on the SDK's
+    HttpRetryOptions). Non-transient errors are re-raised immediately; the final
+    transient error is re-raised after the attempt budget is exhausted."""
+    attempts = max(1, GEMINI_HTTP_RETRIES)
+    for attempt in range(attempts):
+        try:
+            return call()
+        except Exception as exc:
+            if attempt == attempts - 1 or not _is_transient_gemini_error(exc):
+                raise
+            delay = min(8.0, 2.0 ** attempt) + random.uniform(0, 0.75)
+            logger.warning(
+                "Gemini %s transient error (attempt %d/%d), retrying in %.1fs: %s",
+                what, attempt + 1, attempts, delay, str(exc)[:140],
+            )
+            time.sleep(delay)
+
+
+def _genai_generate(**kwargs):
+    """GENAI_CLIENT.models.generate_content with application-level transient retry."""
+    return _genai_retry(lambda: GENAI_CLIENT.models.generate_content(**kwargs), "generate_content")
+
+
+def _genai_embed(**kwargs):
+    """GENAI_CLIENT.models.embed_content with application-level transient retry."""
+    return _genai_retry(lambda: GENAI_CLIENT.models.embed_content(**kwargs), "embed_content")
 
 
 def analyze_cache_key(resume_text: str, job_description: str) -> str:
@@ -1601,7 +1646,7 @@ def gemini_parse_resume(resume_text: str) -> dict:
         "- For industry_domains: list the industries/sectors the candidate has worked in based on company descriptions and role context.\n"
         "- Return ONLY the JSON object, no markdown fences, no extra commentary."
     )
-    response = GENAI_CLIENT.models.generate_content(
+    response = _genai_generate(
         model=GEMINI_PARSE_MODEL,
         contents=f"{prompt}\n\nRESUME:\n{resume_text}",
         config=gemini_generation_config(0),
@@ -1725,7 +1770,7 @@ def analyze_cv_sections(
             f"JOB DESCRIPTION:\n{job_description[:3000]}"
         )
 
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_PARSE_MODEL,
             contents=full_prompt,
             config=gemini_generation_config(0),
@@ -2106,7 +2151,7 @@ GENERATED CV REWRITE:
 """.strip()
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_LITE_MODEL,
             contents=prompt,
             config=gemini_generation_config(0),
@@ -2500,7 +2545,7 @@ def rewrite_json_with_gemini(prompt: str, max_output_tokens: int) -> dict:
         if GENAI_IMPORT_ERROR:
             detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=503, detail=detail)
-    response = GENAI_CLIENT.models.generate_content(
+    response = _genai_generate(
         model=GEMINI_REWRITE_MODEL,
         contents=prompt,
         config=gemini_generation_config(0.2, max_output_tokens=max_output_tokens),
@@ -2809,7 +2854,7 @@ Structured analysis:
 {analysis_blob}
 """.strip()
 
-    response = GENAI_CLIENT.models.generate_content(
+    response = _genai_generate(
         model=GEMINI_REWRITE_MODEL,
         contents=prompt,
         config=gemini_generation_config(0.2),
@@ -2828,7 +2873,7 @@ def gemini_embed_texts(texts: List[str]) -> List[List[float]]:
         if GENAI_IMPORT_ERROR:
             detail = f"Gemini SDK unavailable: {GENAI_IMPORT_ERROR}"
         raise HTTPException(status_code=500, detail=detail)
-    result = GENAI_CLIENT.models.embed_content(
+    result = _genai_embed(
         model=GEMINI_EMBED_MODEL,
         contents=texts,
     )
@@ -4295,7 +4340,7 @@ def preflight_job_requirements(job_description: str, limit: int = 35) -> dict:
     )
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_PARSE_MODEL,
             contents=prompt,
             config=gemini_generation_config(0, response_mime_type="application/json"),
@@ -4434,7 +4479,7 @@ def extract_job_responsibilities(job_description: str, limit: int = 25) -> List[
         raise RuntimeError("Gemini API is required for requirement extraction.")
     if GENAI_CLIENT:
         try:
-            response = GENAI_CLIENT.models.generate_content(
+            response = _genai_generate(
                 model=GEMINI_PARSE_MODEL,
                 contents=(
                     "Extract the candidate requirements from this job description — the things the candidate must HAVE or BRING to be hired.\n\n"
@@ -7102,7 +7147,7 @@ def gemini_responsibility_match(
     )
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
             config=gemini_generation_config(0, response_mime_type="application/json"),
@@ -7605,7 +7650,7 @@ EDUCATION:
 """
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_REWRITE_MODEL,
             contents=prompt,
             config=gemini_generation_config(0.2),
@@ -8583,7 +8628,7 @@ def gemini_skills_match(job_description: str, parsed_resume: dict) -> dict:
                 "- Return ONLY the JSON object, no markdown fences.\n"
             )
             contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description[:3000]}\n\nCANDIDATE CV:\n{cv_section}"
-            response = GENAI_CLIENT.models.generate_content(
+            response = _genai_generate(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
                 config=gemini_generation_config(0),
@@ -8755,7 +8800,7 @@ def gemini_skills_and_ats(
     )
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
             config=gemini_generation_config(0),
@@ -9679,7 +9724,7 @@ APPLICATION POSITIONING RULES:
 ---
 Generate the cover letter now."""
 
-    response = GENAI_CLIENT.models.generate_content(
+    response = _genai_generate(
         model=GEMINI_REWRITE_MODEL,
         contents=prompt,
         config=gemini_generation_config(0.4),
@@ -9816,7 +9861,7 @@ def gemini_business_fit(resume_text: str, job_description: str) -> dict:
     )
     contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description}\n\nCANDIDATE CV:\n{resume_text}"
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=_model,
             contents=contents,
             config=gemini_generation_config(0.1),
@@ -9894,7 +9939,7 @@ def gemini_ats_keywords(job_description: str, resume_text: str) -> dict:
     )
     contents = f"{prompt}\n\nJOB DESCRIPTION:\n{job_description[:4000]}\n\nCANDIDATE CV:\n{resume_text[:3000]}"
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_REWRITE_MODEL,
             contents=contents,
             config=gemini_generation_config(0),
@@ -10018,7 +10063,7 @@ def gemini_recruiter_view(resume_text: str, job_description: str, role_fit_break
         f"CANDIDATE CV:\n{resume_text}"
     )
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=_model,
             contents=contents,
             config=gemini_generation_config(0.1),
@@ -10166,7 +10211,7 @@ def gemini_interview_prep(resume_text: str, job_description: str, role_fit_break
     )
 
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_LITE_MODEL,
             contents=contents,
             config=gemini_generation_config(0.2),
@@ -10249,7 +10294,7 @@ def extract_company_name(job_description: str) -> str:
         m = re.search(r'\bAbout\s+([A-Z][A-Za-z0-9\s&\.,]+?)(?:\n|\.)', job_description)
         return m.group(1).strip()[:80] if m else ""
     try:
-        response = GENAI_CLIENT.models.generate_content(
+        response = _genai_generate(
             model=GEMINI_PARSE_MODEL,
             contents=(
                 "Extract only the company name from this job description. "
@@ -10321,7 +10366,7 @@ def gemini_company_insights(company_name: str, job_description: str) -> dict:
     raw = ""
     if types is not None:
         try:
-            grounded_response = GENAI_CLIENT.models.generate_content(
+            grounded_response = _genai_generate(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
                 config=gemini_generation_config(
@@ -10337,7 +10382,7 @@ def gemini_company_insights(company_name: str, job_description: str) -> dict:
 
     if not grounded_ok:
         try:
-            fallback_response = GENAI_CLIENT.models.generate_content(
+            fallback_response = _genai_generate(
                 model=GEMINI_REWRITE_MODEL,
                 contents=contents,
                 config=gemini_generation_config(0.2),
