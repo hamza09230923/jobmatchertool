@@ -8544,9 +8544,10 @@ async def extract_job_requirements_endpoint(payload: dict):
     try:
         return {"job_preflight": cached_preflight_job_requirements(job_description)}
     except Exception as exc:
+        overload = _ai_overload_message(exc)
         raise HTTPException(
-            status_code=502,
-            detail=f"AI preflight failed while extracting job requirements: {exc}",
+            status_code=503 if overload else 502,
+            detail=overload or f"AI preflight failed while extracting job requirements: {exc}",
         )
 
 
