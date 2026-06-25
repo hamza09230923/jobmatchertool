@@ -8576,6 +8576,13 @@ async def status():
             "openai_rewrite": OPENAI_REWRITE_MODEL,
         },
         "gemini_seed": GEMINI_SEED,
+        "build": {
+            # Render sets RENDER_GIT_COMMIT automatically; lets us confirm which
+            # code is actually live instead of guessing about deploys.
+            "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
+            "gemini_app_retry": True,
+            "gemini_http_retries": GEMINI_HTTP_RETRIES,
+        },
         "users_db": db.status_metadata(),
         "analyze_cache": analysis_cache.status_metadata(),
     }
