@@ -113,6 +113,11 @@ GEMINI_PARSE_MODEL = os.getenv("GEMINI_PARSE_MODEL", "gemini-2.5-flash-lite")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 GEMINI_REWRITE_MODEL = os.getenv("GEMINI_REWRITE_MODEL", "gemini-2.5-flash-lite")
 GEMINI_LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-2.5-flash-lite")
+# Fallback model used when the primary model keeps returning transient overload
+# errors (503/429) after exhausting retries. flash-lite shares free-tier capacity
+# and browns out for stretches; gemini-2.5-flash is a separate capacity pool, so a
+# flash-lite outage doesn't necessarily take it down. Set to "" to disable.
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
 try:
     GEMINI_SEED = int(os.getenv("GEMINI_SEED", "1337"))
 except ValueError:
@@ -206,9 +211,34 @@ def _genai_retry(call, what: str):
             time.sleep(delay)
 
 
+def _model_candidates(model: str) -> list[str]:
+    """Primary model, then the fallback model (if configured and different)."""
+    candidates = [model] if model else []
+    if GEMINI_FALLBACK_MODEL and GEMINI_FALLBACK_MODEL != model:
+        candidates.append(GEMINI_FALLBACK_MODEL)
+    return candidates or [model]
+
+
 def _genai_generate(**kwargs):
-    """GENAI_CLIENT.models.generate_content with application-level transient retry."""
-    return _genai_retry(lambda: GENAI_CLIENT.models.generate_content(**kwargs), "generate_content")
+    """GENAI_CLIENT.models.generate_content with application-level transient retry,
+    plus a cross-model fallback: if the primary model exhausts its retry budget on a
+    transient overload, the same request is retried on GEMINI_FALLBACK_MODEL (a
+    different capacity pool) before giving up."""
+    candidates = _model_candidates(kwargs.get("model"))
+    for idx, model in enumerate(candidates):
+        call_kwargs = {**kwargs, "model": model}
+        try:
+            return _genai_retry(
+                lambda ck=call_kwargs: GENAI_CLIENT.models.generate_content(**ck),
+                f"generate_content[{model}]",
+            )
+        except Exception as exc:
+            if idx == len(candidates) - 1 or not _is_transient_gemini_error(exc):
+                raise
+            logger.warning(
+                "Gemini model %s still overloaded after retries; falling back to %s",
+                model, candidates[idx + 1],
+            )
 
 
 def _genai_embed(**kwargs):
@@ -8582,6 +8612,7 @@ async def status():
             "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
             "gemini_app_retry": True,
             "gemini_http_retries": GEMINI_HTTP_RETRIES,
+            "gemini_fallback_model": GEMINI_FALLBACK_MODEL or None,
         },
         "users_db": db.status_metadata(),
         "analyze_cache": analysis_cache.status_metadata(),
